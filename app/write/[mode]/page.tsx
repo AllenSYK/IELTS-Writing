@@ -249,8 +249,10 @@ async function evaluateInBrowser(payload: EvaluatePayload) {
       ok: false,
       message:
         response.status === 401
-          ? '请在已激活的桌面应用中提交批改。浏览器预览没有授权 token。'
-          : data.message || data.error || 'AI 批改失败。'
+          ? '请先登录后再使用批改功能。'
+          : response.status === 403
+            ? data.message || '请先激活账号后再使用批改功能。'
+            : data.message || data.error || 'AI 批改失败。'
     }
   }
   return { ok: true, data: data as EssayEvaluation }

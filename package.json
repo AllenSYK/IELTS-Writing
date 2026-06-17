@@ -27,6 +27,7 @@
     "supabase:functions:deploy": "supabase functions deploy license && supabase functions deploy app-update && supabase functions deploy admin-license"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.57.4",
     "dotenv": "^17.4.2",
     "electron-updater": "^6.3.9",

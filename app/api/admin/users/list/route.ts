@@ -1,0 +1,81 @@
+import { json } from '@/lib/http'
+import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
+
+function toNumber(value: string | null, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+export async function GET(request: Request) {
+  try {
+    const { service } = await requireAdminService()
+    const url = new URL(request.url)
+    const page = Math.max(1, toNumber(url.searchParams.get('page'), 1))
+    const pageSize = Math.min(100, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
+    const search = url.searchParams.get('search')?.trim().toLowerCase() || ''
+
+    const { data: authData, error: authError } = await service.auth.admin.listUsers({
+      page,
+      perPage: pageSize
+    })
+    if (authError) throw authError
+
+    const userIds = authData.users.map((user) => user.id)
+    const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, { data: usage, error: usageError }] = await Promise.all([
+      service.from('profiles').select('id, email, role, license_status, license_expires_at, created_at').in('id', userIds),
+      service
+        .from('license_activations')
+        .select('id, user_id, email, activated_at, expires_at, status, last_used_at, license_codes(plan, status)')
+        .in('user_id', userIds)
+        .order('expires_at', { ascending: false }),
+      service.from('usage_records').select('user_id, created_at, success').in('user_id', userIds)
+    ])
+
+    if (profilesError) throw profilesError
+    if (activationsError) throw activationsError
+    if (usageError) throw usageError
+
+    const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]))
+    const activationMap = new Map<string, (typeof activations)[number]>()
+    for (const activation of activations || []) {
+      if (!activationMap.has(activation.user_id)) activationMap.set(activation.user_id, activation)
+    }
+    const usageMap = new Map<string, { count: number; lastUsedAt: string | null }>()
+    for (const item of usage || []) {
+      const current = usageMap.get(item.user_id) || { count: 0, lastUsedAt: null }
+      current.count += 1
+      if (!current.lastUsedAt || new Date(item.created_at).getTime() > new Date(current.lastUsedAt).getTime()) {
+        current.lastUsedAt = item.created_at
+      }
+      usageMap.set(item.user_id, current)
+    }
+
+    const users = authData.users
+      .map((user) => {
+        const profile = profileMap.get(user.id)
+        const activation = activationMap.get(user.id)
+        const license = Array.isArray(activation?.license_codes)
+          ? activation?.license_codes[0]
+          : activation?.license_codes
+        const usageInfo = usageMap.get(user.id) || { count: 0, lastUsedAt: null }
+        return {
+          id: user.id,
+          email: user.email,
+          createdAt: user.created_at,
+          lastSignInAt: user.last_sign_in_at,
+          role: profile?.role || 'user',
+          licenseStatus: profile?.license_status || 'inactive',
+          licenseExpiresAt: profile?.license_expires_at || null,
+          plan: license?.plan || null,
+          activation,
+          lastUsedAt: usageInfo.lastUsedAt,
+          evaluationCount: usageInfo.count
+        }
+      })
+      .filter((user) => !search || user.email?.toLowerCase().includes(search) || user.id.includes(search))
+
+    return json({ success: true, users, total: authData.total || users.length })
+  } catch (error) {
+    return adminApiError(error, '无法加载用户列表')
+  }
+}

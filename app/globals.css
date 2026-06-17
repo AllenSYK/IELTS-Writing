@@ -4179,6 +4179,239 @@ img {
   }
 }
 
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 18px;
+  background:
+    radial-gradient(circle at top left, rgba(0, 88, 188, 0.12), transparent 34%),
+    linear-gradient(135deg, #f7f9fc, #eef4f7 56%, #f9fafb);
+}
+
+.auth-panel {
+  width: min(100%, 430px);
+  display: grid;
+  gap: 22px;
+  padding: 28px;
+  border: 1px solid rgba(80, 96, 116, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 20px 60px rgba(20, 29, 47, 0.12);
+}
+
+.auth-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.auth-heading h1 {
+  margin: 2px 0 0;
+  font-size: 30px;
+  letter-spacing: 0;
+}
+
+.auth-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #0058bc;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-form label,
+.dashboard-definition-list div {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-form label span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid rgba(80, 96, 116, 0.22);
+  border-radius: 8px;
+  padding: 0 14px;
+  font: inherit;
+  color: var(--text-primary);
+  background: #ffffff;
+}
+
+.auth-form input:focus {
+  outline: 3px solid rgba(0, 88, 188, 0.18);
+  border-color: #0058bc;
+}
+
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-switch {
+  margin: 0;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.auth-switch a {
+  color: #0058bc;
+  font-weight: 800;
+}
+
+.auth-error,
+.auth-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.auth-error {
+  color: #a01b2f;
+  background: rgba(217, 45, 32, 0.08);
+}
+
+.auth-success {
+  color: #12603a;
+  background: rgba(26, 127, 55, 0.1);
+}
+
+.dashboard-page {
+  background: #f7f9fc;
+}
+
+.dashboard-main {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 22px;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: 0;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dashboard-card,
+.dashboard-panel {
+  border: 1px solid rgba(80, 96, 116, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgba(20, 29, 47, 0.08);
+}
+
+.dashboard-card {
+  display: grid;
+  gap: 9px;
+  padding: 18px;
+}
+
+.dashboard-card svg {
+  color: #0058bc;
+}
+
+.dashboard-card span,
+.dashboard-definition-list dt,
+.dashboard-usage-list small,
+.dashboard-empty {
+  color: var(--text-secondary);
+}
+
+.dashboard-card strong {
+  font-size: 28px;
+}
+
+.dashboard-panel {
+  padding: 20px;
+}
+
+.dashboard-panel h2 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.dashboard-definition-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+
+.dashboard-definition-list dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.dashboard-usage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-usage-list div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 12px;
+  border: 1px solid rgba(80, 96, 116, 0.12);
+  border-radius: 8px;
+}
+
+.dashboard-usage-list small {
+  grid-column: 1 / -1;
+}
+
+.web-admin-workspace .admin-main-panel {
+  width: 100%;
+}
+
+.web-admin-workspace .admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.web-admin-workspace .admin-generated-list code,
+.web-admin-workspace .admin-table code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -6594,6 +6827,19 @@ img {
   .admin-drawer {
     max-height: 96vh;
     width: 100%;
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+  }
+
+  .dashboard-grid,
+  .dashboard-definition-list {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-panel {
+    padding: 22px;
   }
 
   .record-actions,

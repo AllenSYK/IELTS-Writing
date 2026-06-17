@@ -12,6 +12,7 @@ const routeMeta: Array<{ match: (pathname: string) => boolean; title: string; su
   { match: (pathname) => pathname.startsWith('/analytics'), title: '学习分析', subtitle: 'Analytics' },
   { match: (pathname) => pathname.startsWith('/result'), title: '批改结果', subtitle: 'Result' },
   { match: (pathname) => pathname.startsWith('/settings'), title: '设置', subtitle: 'Settings' },
+  { match: (pathname) => pathname.startsWith('/dashboard'), title: '账号中心', subtitle: 'Dashboard' },
   { match: (pathname) => pathname.startsWith('/support'), title: '支持中心', subtitle: 'Support' },
   { match: (pathname) => pathname.startsWith('/terms'), title: '服务条款', subtitle: 'Terms of Service' },
   { match: (pathname) => pathname.startsWith('/privacy'), title: '隐私政策', subtitle: 'Privacy Policy' }
@@ -23,7 +24,12 @@ function pageMeta(pathname: string) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
-  const fullScreenRoute = pathname.startsWith('/write') || pathname.startsWith('/admin')
+  const fullScreenRoute =
+    pathname.startsWith('/write') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/register') ||
+    pathname.startsWith('/activate')
   const meta = pageMeta(pathname)
 
   if (fullScreenRoute) {
