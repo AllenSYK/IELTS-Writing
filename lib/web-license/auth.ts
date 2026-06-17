@@ -89,6 +89,10 @@ export async function requireActiveWebLicense(): Promise<WebLicenseCheck> {
     }
   }
 
+  return checkActiveWebLicenseForUser(user)
+}
+
+export async function checkActiveWebLicenseForUser(user: User): Promise<WebLicenseCheck> {
   const service = createSupabaseServiceRoleClient()
   const nowIso = new Date().toISOString()
 

@@ -75,13 +75,13 @@ export default function ActivatePage() {
           <span className="auth-icon"><KeyRound size={22} /></span>
           <div>
             <p className="stitch-label">{checking ? '正在读取登录状态' : email}</p>
-            <h1>激活账号</h1>
+            <h1>输入软件激活码</h1>
           </div>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>
-            <span>激活码</span>
+            <span>软件激活码</span>
             <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="IELTS-ABCD-EFGH-1234" autoCapitalize="characters" required disabled={checking} />
           </label>
           {message ? <p className="auth-success" role="status"><CheckCircle2 size={16} />{message}</p> : null}
