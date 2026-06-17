@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400" role="img" aria-labelledby="title desc">
+  <title id="title">Harbour area changes</title>
+  <desc id="desc">Two maps comparing a small harbour area in 2005 and 2025.</desc>
+  <rect width="720" height="400" fill="#ffffff"/>
+  <text x="360" y="34" fill="#181c23" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">Harbour area: 2005 and 2025</text>
+  <g font-family="Inter, Arial, sans-serif">
+    <g transform="translate(54 70)">
+      <text x="140" y="0" fill="#181c23" font-size="18" font-weight="700" text-anchor="middle">2005</text>
+      <rect y="18" width="280" height="250" fill="#eef7ff" stroke="#c1c6d7"/>
+      <path d="M0 190 C70 170 120 205 185 178 C230 160 260 172 280 162 L280 268 L0 268 Z" fill="#b9ddff"/>
+      <rect x="30" y="42" width="96" height="54" fill="#d8e2ff" stroke="#414755"/>
+      <text x="78" y="73" fill="#181c23" font-size="12" text-anchor="middle">Warehouse</text>
+      <rect x="162" y="48" width="70" height="38" fill="#f7efe5" stroke="#414755"/>
+      <text x="197" y="72" fill="#181c23" font-size="12" text-anchor="middle">Car park</text>
+      <line x1="20" y1="122" x2="252" y2="122" stroke="#777" stroke-width="12"/>
+      <text x="136" y="116" fill="#181c23" font-size="12" text-anchor="middle">Main road</text>
+      <rect x="120" y="168" width="72" height="18" fill="#8b6b44"/>
+      <text x="156" y="162" fill="#181c23" font-size="12" text-anchor="middle">Pier</text>
+    </g>
+    <g transform="translate(386 70)">
+      <text x="140" y="0" fill="#181c23" font-size="18" font-weight="700" text-anchor="middle">2025</text>
+      <rect y="18" width="280" height="250" fill="#eef7ff" stroke="#c1c6d7"/>
+      <path d="M0 190 C70 170 120 205 185 178 C230 160 260 172 280 162 L280 268 L0 268 Z" fill="#b9ddff"/>
+      <rect x="28" y="38" width="104" height="62" fill="#d8e2ff" stroke="#0058bc"/>
+      <text x="80" y="72" fill="#181c23" font-size="12" text-anchor="middle">Apartments</text>
+      <rect x="164" y="44" width="70" height="42" fill="#e8f5e9" stroke="#2f8f46"/>
+      <text x="199" y="69" fill="#181c23" font-size="12" text-anchor="middle">Park</text>
+      <line x1="20" y1="122" x2="252" y2="122" stroke="#777" stroke-width="12"/>
+      <circle cx="238" cy="122" r="11" fill="#0058bc"/>
+      <text x="238" y="148" fill="#181c23" font-size="12" text-anchor="middle">Bus</text>
+      <rect x="106" y="158" width="108" height="20" fill="#8b6b44"/>
+      <path d="M48 196 H232" stroke="#2f8f46" stroke-width="8" stroke-linecap="round"/>
+      <text x="140" y="220" fill="#181c23" font-size="12" text-anchor="middle">Promenade and larger marina</text>
+    </g>
+  </g>
+</svg>

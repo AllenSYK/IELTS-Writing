@@ -1,0 +1,11 @@
+version: 1.0.1
+files:
+  - url: 1.0.1/IELTS Writing 1.0.1-mac-arm64.zip
+    sha512: KHlYer6nxMbOhxSWyJwyNj0uH/W92PpAWUMSQbEAVsxnWMvaNpNRBA6X+npw/r3nFdyA6k54ViIuxm+xvCiqOA==
+    size: 216937881
+  - url: 1.0.1/IELTS Writing 1.0.1-mac-arm64.dmg
+    sha512: Trh6yqkXYARkAPi7vjlAEp3bOzvTiOu7K0gkTJWVatQuauUZxzX8u0G0Q8Fk7kHE0Kl6nDdl//pZ71H2PyWiEw==
+    size: 215776165
+path: 1.0.1/IELTS Writing 1.0.1-mac-arm64.zip
+sha512: KHlYer6nxMbOhxSWyJwyNj0uH/W92PpAWUMSQbEAVsxnWMvaNpNRBA6X+npw/r3nFdyA6k54ViIuxm+xvCiqOA==
+releaseDate: '2026-06-15T11:50:34.892Z'

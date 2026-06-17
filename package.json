@@ -1,0 +1,142 @@
+{
+  "name": "ielts-writing-desktop",
+  "version": "1.1.0",
+  "private": true,
+  "description": "IELTS writing desktop app with Electron licensing and Supabase-backed activation.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "next dev -H 127.0.0.1",
+    "build": "next build && node scripts/prepare-next-standalone.mjs",
+    "start": "next start -H 127.0.0.1",
+    "open:admin": "node scripts/open-admin.mjs",
+    "open:app": "node scripts/open-user-app.mjs",
+    "close:admin": "node scripts/close-admin.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "node --test --experimental-strip-types --loader ./tests/alias-loader.mjs tests/*.test.ts",
+    "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://127.0.0.1:3000 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:3000 electron .\"",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:portable": "npm run build && electron-builder --win dir",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64",
+    "release:mac": "node scripts/release-mac.mjs",
+    "release:cleanup-r2": "node scripts/release-mac.mjs --cleanup-r2",
+    "release": "npm run build && electron-builder --publish always",
+    "supabase:migrate": "supabase db push",
+    "supabase:functions:serve": "supabase functions serve --env-file .env.local",
+    "supabase:functions:deploy": "supabase functions deploy license && supabase functions deploy app-update && supabase functions deploy admin-license"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "dotenv": "^17.4.2",
+    "electron-updater": "^6.3.9",
+    "jose": "^5.9.6",
+    "lucide-react": "^0.468.0",
+    "next": "^16.1.6",
+    "node-machine-id": "^1.1.12",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "recharts": "^3.8.1",
+    "semver": "^7.7.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1068.0",
+    "@aws-sdk/lib-storage": "^3.1068.0",
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@types/semver": "^7.7.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^39.8.10",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "^16.1.6",
+    "typescript": "^5.9.3",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "com.qgyx.ieltswriting",
+    "productName": "IELTS Writing",
+    "artifactName": "IELTS Writing ${version}-${os}-${arch}.${ext}",
+    "asar": true,
+    "asarUnpack": [
+      ".next/standalone/**",
+      "node_modules/node-machine-id/**"
+    ],
+    "files": [
+      "electron/**",
+      "!electron/config.production.json",
+      "public/**",
+      ".next/standalone/**",
+      ".next/static/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/config.production.json",
+        "to": "config.production.json"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://qbytmwiszeucnxbnaede.supabase.co/storage/v1/object/public/ielts-app-updates/stable/darwin-arm64"
+      }
+    ],
+    "afterPack": "scripts/after-pack-mac.mjs",
+    "win": {
+      "target": [
+        "nsis",
+        "portable",
+        "dir"
+      ],
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "IELTS Writing"
+    },
+    "portable": {
+      "artifactName": "IELTS Writing Portable ${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.education",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "artifactName": "IELTS Writing ${version}-mac-arm64.${ext}"
+    }
+  },
+  "allowScripts": {
+    "electron@39.8.10": true,
+    "electron-winstaller@5.4.0": true,
+    "sharp@0.34.5": true,
+    "unrs-resolver@1.12.2": true
+  }
+}

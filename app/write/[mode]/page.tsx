@@ -1,0 +1,1513 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import Image from 'next/image'
+import { useParams, useRouter } from 'next/navigation'
+import { AsyncButton, ConfirmDialog, PageSkeleton, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
+import { MaterialIcon } from '@/components/stitch-ui'
+import { Task1Visual } from '@/components/task1/Task1Visual'
+import {
+  buildLocalGeneratedQuestion,
+  buildMockQuestionSetForSelection,
+  buildPrompt,
+  getQuestionById,
+  questionLabel,
+  randomQuestionForSelection,
+  type WritingQuestion,
+  type Task1QuestionType,
+  type Task1TrainingType,
+  type Task2QuestionType
+} from '@/lib/ielts-questions'
+import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec } from '@/lib/task1-chart-schema'
+import { calculateWritingOverall, formatBandNumber, parseBand, weightedCriterionScore } from '@/lib/ielts-scoring'
+import {
+  countWords,
+  createRecordId,
+  getLocalDeviceId,
+  getWritingRecord,
+  saveWritingRecord,
+  type EssayAnnotation,
+  type CriterionKey,
+  type CriterionScore,
+  type EssayEvaluation,
+  type WritingRecord,
+  type WritingTaskType
+} from '@/lib/writing-records'
+import {
+  buildExcludePromptSummaries,
+  currentPromptProfileId,
+  findDuplicatePrompt,
+  markGeneratedPromptCompleted,
+  recordGeneratedPrompt
+} from '@/lib/generated-prompt-history'
+import {
+  DefaultPromptSelection,
+  Task1ChartLabels,
+  Task1SubtypeLabels,
+  Task2EssayLabels,
+  Task2TopicLabels,
+  selectionFromSearchParams,
+  type PromptSelection
+} from '@/lib/writing-options'
+import { getRandomFallbackQuestion } from '@/lib/task1-fallback-questions'
+
+type MockTaskType = Exclude<WritingTaskType, 'mock'>
+type MockEssays = Record<MockTaskType, string>
+type MockQuestions = Record<MockTaskType, WritingQuestion>
+
+type DraftPayload = {
+  essay: string
+  updatedAt: string
+  wordCount: number
+  questionId?: string
+  chartSpec?: Record<string, unknown>
+  processSpec?: Record<string, unknown>
+  mapSpec?: Record<string, unknown>
+  imageUrl?: string
+  promptLead?: string
+  promptDetail?: string
+  questionType?: string
+  trainingType?: string
+  title?: string
+}
+
+type SaveStatus = 'restoring' | 'idle' | 'saving' | 'saved' | 'offline' | 'error'
+type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'analyzing' | 'organizing' | 'success' | 'error'
+
+const mockTaskOrder: MockTaskType[] = ['task1', 'task2']
+const evaluationStages = [
+  '正在保存作文',
+  '正在请求AI评分',
+  '正在解析评分结果',
+  '初步评分已完成',
+  '正在补充详细批改',
+  '详细批改已完成'
+]
+const AI_EVALUATION_TIMEOUT_MS = 260000
+
+const pendingEvaluations = new Map<string, Promise<EssayEvaluation>>()
+
+function normalizeMode(value: string | string[] | undefined): WritingTaskType {
+  const mode = Array.isArray(value) ? value[0] : value
+  if (mode === 'task1' || mode === 'task2' || mode === 'mock') return mode
+  return 'task2'
+}
+
+function formatTime(seconds: number) {
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+function singleDraftKey(mode: WritingTaskType) {
+  return `aerowrite-draft-${mode}`
+}
+
+function mockDraftKey(taskType: MockTaskType) {
+  return `aerowrite-draft-mock-${taskType}`
+}
+
+function timerKeyFor(mode: WritingTaskType) {
+  return `aerowrite-timer-${mode}`
+}
+
+function readDraft(draftKey: string): DraftPayload | null {
+  const raw = window.localStorage.getItem(draftKey)
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && 'essay' in parsed && typeof parsed.essay === 'string') {
+      return parsed as DraftPayload
+    }
+  } catch {
+    return { essay: raw, updatedAt: new Date().toISOString(), wordCount: countWords(raw) }
+  }
+  return null
+}
+
+function writeDraft(draftKey: string, essay: string, questionId?: string, question?: WritingQuestion) {
+  const payload: DraftPayload = {
+    essay,
+    updatedAt: new Date().toISOString(),
+    wordCount: countWords(essay),
+    questionId,
+    chartSpec: question?.chartSpec as Record<string, unknown> | undefined,
+    processSpec: question?.processSpec as Record<string, unknown> | undefined,
+    mapSpec: question?.mapSpec as Record<string, unknown> | undefined,
+    imageUrl: question?.image,
+    promptLead: question?.promptLead,
+    promptDetail: question?.promptDetail,
+    questionType: question?.questionType,
+    trainingType: question?.trainingType,
+    title: question?.title
+  }
+  window.localStorage.setItem(draftKey, JSON.stringify(payload))
+}
+
+function restoreQuestionFromRecord(source: {
+  id: string
+  questionId?: string
+  taskType: string
+  title: string
+  prompt: string
+  promptLead?: string
+  promptDetail?: string
+  questionType?: string
+  trainingType?: string
+  chartSpec?: Record<string, unknown>
+  processSpec?: Record<string, unknown>
+  mapSpec?: Record<string, unknown>
+  imageUrl?: string
+}): WritingQuestion {
+  const isTask1 = source.taskType === 'task1'
+
+  let promptLead = source.promptLead
+  let promptDetail = source.promptDetail
+
+  if (!promptLead && source.prompt) {
+    const firstNewline = source.prompt.indexOf('\n')
+    if (firstNewline > 0) {
+      promptLead = source.prompt.slice(0, firstNewline)
+      promptDetail = source.prompt.slice(firstNewline + 1)
+    } else {
+      promptLead = source.prompt
+      promptDetail = ''
+    }
+  }
+  if (!promptDetail) promptDetail = ''
+
+  return {
+    id: source.questionId || `restored-${source.id}`,
+    taskType: (isTask1 ? 'task1' : 'task2') as Exclude<WritingTaskType, 'mock'>,
+    title: source.title,
+    promptLead: promptLead || source.title,
+    promptDetail,
+    durationMinutes: isTask1 ? 20 : 40,
+    wordTarget: isTask1 ? 150 : 250,
+    questionType: (source.questionType || (isTask1 ? 'line_chart' : 'opinion')) as Task1QuestionType | Task2QuestionType,
+    trainingType: (source.trainingType as Task1TrainingType) || (isTask1 ? 'academic' : undefined),
+    generatedSource: 'static-bank',
+    chartSpec: source.chartSpec as unknown as Task1ChartSpec | undefined,
+    processSpec: source.processSpec as unknown as Task1ProcessSpec | undefined,
+    mapSpec: source.mapSpec as unknown as Task1MapSpec | undefined,
+    image: source.imageUrl
+  }
+}
+
+function readTimerEnd(timerKey: string, durationMinutes: number) {
+  const durationMs = durationMinutes * 60 * 1000
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(timerKey) || '{}')
+    if (parsed && typeof parsed === 'object' && 'endAt' in parsed && typeof parsed.endAt === 'number') {
+      const endAt = parsed.endAt
+      // 检查 timer 是否已经过期
+      if (endAt <= Date.now()) {
+        // Timer 已过期，创建一个新的 timer
+        const newEndAt = Date.now() + durationMs
+        window.localStorage.setItem(timerKey, JSON.stringify({ endAt: newEndAt, durationMs, startedAt: Date.now() }))
+        return newEndAt
+      }
+      return endAt
+    }
+  } catch {
+    // Start a fresh timer below.
+  }
+  const endAt = Date.now() + durationMs
+  window.localStorage.setItem(timerKey, JSON.stringify({ endAt, durationMs, startedAt: Date.now() }))
+  return endAt
+}
+
+function timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs)
+    promise.then(resolve, reject).finally(() => window.clearTimeout(timer))
+  })
+}
+
+type EvaluatePayload = {
+  essay: string
+  taskType: MockTaskType
+  prompt: string
+  questionType: string
+}
+
+type GeneratePromptPayload = {
+  taskType: MockTaskType
+  selection: PromptSelection
+  excludePromptSummaries: Array<Record<string, unknown>>
+}
+
+async function evaluateInBrowser(payload: EvaluatePayload) {
+  const response = await fetch('/api/ai/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  const data = (await response.json().catch(() => ({}))) as Partial<EssayEvaluation> & { error?: string; message?: string }
+  if (!response.ok) {
+    return {
+      ok: false,
+      message:
+        response.status === 401
+          ? '请在已激活的桌面应用中提交批改。浏览器预览没有授权 token。'
+          : data.message || data.error || 'AI 批改失败。'
+    }
+  }
+  return { ok: true, data: data as EssayEvaluation }
+}
+
+function criterionFrom(evaluation: EssayEvaluation, key: CriterionKey) {
+  return evaluation.criteria?.[key] ?? evaluation[key]
+}
+
+function weightedCriterion(task1: EssayEvaluation, task2: EssayEvaluation, key: Extract<CriterionKey, 'coherenceCohesion' | 'lexicalResource' | 'grammaticalRangeAccuracy'>): CriterionScore {
+  const first = criterionFrom(task1, key)
+  const second = criterionFrom(task2, key)
+  return {
+    score: weightedCriterionScore(first?.score, second?.score) || second?.score || first?.score || '—',
+    feedback: [`Task 1: ${first?.feedback || '未返回'}`, `Task 2: ${second?.feedback || '未返回'}`].join('\n')
+  }
+}
+
+function offsetAnnotations(annotations: EssayAnnotation[] | undefined, offset: number) {
+  return (annotations ?? []).map((annotation) => ({
+    ...annotation,
+    start: annotation.unresolved ? annotation.start : annotation.start + offset,
+    end: annotation.unresolved ? annotation.end : annotation.end + offset
+  }))
+}
+
+function combineMockEvaluation(task1: EssayEvaluation, task2: EssayEvaluation, task1Essay = '', task2Essay = ''): EssayEvaluation {
+  const task1Band = parseBand(task1.overallBand || task1.bandEstimate)
+  const task2Band = parseBand(task2.overallBand || task2.bandEstimate)
+  if (task1Band === null || task2Band === null) {
+    throw new Error('AI 返回的模考分数无法计算。请重试批改。')
+  }
+  const overall = formatBandNumber(calculateWritingOverall(task1Band, task2Band))
+  const taskAchievement = criterionFrom(task1, 'taskAchievement')
+  const taskResponse = criterionFrom(task2, 'taskResponse')
+  const criteria: Partial<Record<CriterionKey, CriterionScore>> = {
+    taskAchievement,
+    taskResponse,
+    coherenceCohesion: weightedCriterion(task1, task2, 'coherenceCohesion'),
+    lexicalResource: weightedCriterion(task1, task2, 'lexicalResource'),
+    grammaticalRangeAccuracy: weightedCriterion(task1, task2, 'grammaticalRangeAccuracy')
+  }
+  const task1Offset = 'Task 1\n'.length
+  const task2Offset = `Task 1\n${task1Essay}\n\nTask 2\n`.length
+  const annotations = [
+    ...offsetAnnotations(task1.annotations, task1Offset),
+    ...offsetAnnotations(task2.annotations, task2Offset)
+  ]
+
+  return {
+    overallBand: overall,
+    bandEstimate: overall,
+    taskAchievement,
+    taskResponse,
+    coherenceCohesion: criteria.coherenceCohesion,
+    lexicalResource: criteria.lexicalResource,
+    grammaticalRangeAccuracy: criteria.grammaticalRangeAccuracy,
+    criteria,
+    summary: `完整模考预估分数为 ${overall}。Task 2 按约两倍权重计入总分。`,
+    overallFeedback: `完整模考预估分数为 ${overall}。Task 2 按约两倍权重计入总分。`,
+    strengths: [...(task1.strengths ?? []), ...(task2.strengths ?? [])].slice(0, 6),
+    weaknesses: [...(task1.weaknesses ?? []), ...(task2.weaknesses ?? [])].slice(0, 6),
+    annotations,
+    annotationVersion: annotations.length > 0 ? 1 : undefined,
+    sentenceAnnotations: [...(task1.sentenceAnnotations ?? task1.sentenceErrors ?? []), ...(task2.sentenceAnnotations ?? task2.sentenceErrors ?? [])],
+    sentenceErrors: [...(task1.sentenceErrors ?? []), ...(task2.sentenceErrors ?? [])],
+    suggestions: [...(task1.nextSteps ?? task1.suggestions ?? []), ...(task2.nextSteps ?? task2.suggestions ?? [])].slice(0, 6),
+    correctedEssay: `Task 1\n${task1.correctedEssay || task1.improvedEssay || ''}\n\nTask 2\n${task2.correctedEssay || task2.improvedEssay || ''}`,
+    improvedEssay: `Task 1\n${task1.improvedEssay || ''}\n\nTask 2\n${task2.improvedEssay || ''}`,
+    revisedEssay: `Task 1\n${task1.improvedEssay || ''}\n\nTask 2\n${task2.improvedEssay || ''}`,
+    modelEssay: `Task 1\n${task1.modelEssay || ''}\n\nTask 2\n${task2.modelEssay || ''}`,
+    nextSteps: [...(task1.nextSteps ?? []), ...(task2.nextSteps ?? [])].slice(0, 6),
+    feedback: [`Task 1: ${task1.summary || task1.overallFeedback || ''}`, `Task 2: ${task2.summary || task2.overallFeedback || ''}`].filter(Boolean),
+    provider: task2.provider || task1.provider,
+    model: task2.model || task1.model
+  }
+}
+
+function defaultQuestionFor(mode: WritingTaskType, selection = DefaultPromptSelection) {
+  return randomQuestionForSelection(mode === 'task1' ? 'task1' : 'task2', selection)
+}
+
+export default function WritePage() {
+  const params = useParams()
+  const router = useRouter()
+  const { pushToast } = useToast()
+  const online = useNetworkStatus()
+  const mode = normalizeMode(params.mode)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const layoutRef = useRef<HTMLElement>(null)
+  const submitEssayRef = useRef<() => Promise<void>>(async () => undefined)
+  const lastAutoSaveAtRef = useRef(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
+  const [mockQuestions, setMockQuestions] = useState<MockQuestions | null>(null)
+  const [activeMockTask, setActiveMockTask] = useState<MockTaskType>('task1')
+  const [essay, setEssay] = useState('')
+  const [mockEssays, setMockEssays] = useState<MockEssays>({ task1: '', task2: '' })
+  const debouncedEssay = useDebouncedValue(essay, 900)
+  const debouncedMockEssays = useDebouncedValue(mockEssays, 900)
+  const [timeLeft, setTimeLeft] = useState(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
+  const [spellcheck, setSpellcheck] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('restoring')
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
+  const [stageIndex, setStageIndex] = useState(0)
+  const [draftRestored, setDraftRestored] = useState(false)
+  const [showShortfallConfirm, setShowShortfallConfirm] = useState(false)
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
+  const [showTimeConfirm, setShowTimeConfirm] = useState(false)
+  const [splitWidth, setSplitWidth] = useState(50)
+  const [error, setError] = useState('')
+  const [promptSelection, setPromptSelection] = useState<PromptSelection>(DefaultPromptSelection)
+  const [promptGenerationNotice, setPromptGenerationNotice] = useState('')
+  const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
+  const [elapsedTime, setElapsedTime] = useState(0)
+
+  const activeQuestion = mode === 'mock' ? mockQuestions?.[activeMockTask] ?? null : singleQuestion
+  const activeEssay = mode === 'mock' ? mockEssays[activeMockTask] : essay
+  const activeTaskType: MockTaskType = mode === 'mock' ? activeMockTask : mode === 'task1' ? 'task1' : 'task2'
+  const durationMinutes = mode === 'mock' ? 60 : activeQuestion?.durationMinutes ?? (mode === 'task1' ? 20 : 40)
+  const wordTarget = activeQuestion?.wordTarget ?? (activeTaskType === 'task1' ? 150 : 250)
+  const wordCount = useMemo(() => countWords(activeEssay), [activeEssay])
+  const mockWordCounts = useMemo(
+    () => ({
+      task1: countWords(mockEssays.task1),
+      task2: countWords(mockEssays.task2)
+    }),
+    [mockEssays]
+  )
+  const totalMockWords = mockWordCounts.task1 + mockWordCounts.task2
+  const progress = 62.8 - (timeLeft / (durationMinutes * 60)) * 62.8
+  const loading = submitStatus !== 'idle' && submitStatus !== 'error' && submitStatus !== 'success'
+  const timerTone = timeLeft <= 60 ? 'timer-critical' : timeLeft <= 600 ? 'timer-warning' : ''
+  const promptChoiceSummary =
+    mode === 'task1'
+      ? Task1ChartLabels[promptSelection.task1ChartType]
+      : mode === 'task2'
+        ? `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
+        : `${Task1ChartLabels[promptSelection.task1ChartType]} + ${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
+  const timerKey = timerKeyFor(mode)
+  const positionKey = `aerowrite-editor-position-${mode}-${activeTaskType}`
+  const splitKey = `aerowrite-editor-split-${mode}`
+
+  const saveAllDrafts = useCallback(
+    (showToast = false) => {
+      try {
+        if (mode === 'mock') {
+          if (mockQuestions) {
+            writeDraft(mockDraftKey('task1'), mockEssays.task1, mockQuestions.task1.id, mockQuestions.task1)
+            writeDraft(mockDraftKey('task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2)
+          }
+        } else if (singleQuestion) {
+          writeDraft(singleDraftKey(mode), essay, singleQuestion.id, singleQuestion)
+        }
+        lastAutoSaveAtRef.current = Date.now()
+        setSaveStatus(online ? 'saved' : 'offline')
+        if (showToast) {
+          pushToast({
+            kind: online ? 'success' : 'info',
+            title: online ? '草稿已保存' : '已保存到本地',
+            message: online ? undefined : '网络恢复后可以继续提交。'
+          })
+        }
+      } catch {
+        setSaveStatus('error')
+        if (showToast) pushToast({ kind: 'error', title: '保存失败', message: '请检查磁盘空间后重试。' })
+      }
+    },
+    [essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion]
+  )
+
+  useEffect(() => {
+    submitEssayRef.current = submitCurrent
+  })
+
+  useEffect(() => {
+    let timer: number | undefined
+    if (evaluationStartTime && loading) {
+      timer = window.setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - evaluationStartTime) / 1000))
+      }, 1000)
+    }
+    return () => {
+      if (timer) window.clearInterval(timer)
+    }
+  }, [evaluationStartTime, loading])
+
+  useEffect(() => {
+    let cancelled = false
+
+    window.queueMicrotask(() => {
+      void (async () => {
+        const params = new URLSearchParams(window.location.search)
+        const selection = selectionFromSearchParams(params)
+        const recordId = params.get('record')
+        const sourceRecord = recordId ? getWritingRecord(recordId) : null
+        if (cancelled) return
+        setPromptSelection(selection)
+
+        if (mode === 'mock') {
+          const fallback = buildMockQuestionSetForSelection(selection)
+          const task1Draft = readDraft(mockDraftKey('task1'))
+          const task2Draft = readDraft(mockDraftKey('task2'))
+          const restoredTask1 = sourceRecord?.components?.task1?.essay || task1Draft?.essay || ''
+          const restoredTask2 = sourceRecord?.components?.task2?.essay || task2Draft?.essay || ''
+
+          let task1Question: WritingQuestion
+          if (sourceRecord) {
+            const task1Comp = sourceRecord.components?.task1
+            task1Question = restoreQuestionFromRecord({
+              id: sourceRecord.id,
+              questionId: task1Comp?.questionId || sourceRecord.questionId?.split('+')[0],
+              taskType: 'task1',
+              title: task1Comp?.title || sourceRecord.title,
+              prompt: task1Comp?.prompt || '',
+              promptLead: task1Comp?.promptLead,
+              promptDetail: task1Comp?.promptDetail,
+              questionType: task1Comp?.questionType,
+              trainingType: task1Comp?.trainingType,
+              chartSpec: task1Comp?.chartSpec || sourceRecord.chartSpec,
+              processSpec: task1Comp?.processSpec || sourceRecord.processSpec,
+              mapSpec: task1Comp?.mapSpec || sourceRecord.mapSpec,
+              imageUrl: task1Comp?.imageUrl
+            })
+            if (!task1Question.chartSpec && !task1Question.processSpec && !task1Question.mapSpec && !task1Question.image) {
+              const bankQuestion = getQuestionById(task1Comp?.questionId || sourceRecord.questionId?.split('+')[0])
+              if (bankQuestion && (bankQuestion.chartSpec || bankQuestion.processSpec || bankQuestion.mapSpec || bankQuestion.image)) {
+                task1Question = {
+                  ...task1Question,
+                  chartSpec: bankQuestion.chartSpec,
+                  processSpec: bankQuestion.processSpec,
+                  mapSpec: bankQuestion.mapSpec,
+                  image: bankQuestion.image || task1Question.image,
+                  imageAlt: bankQuestion.imageAlt || task1Question.imageAlt
+                }
+              }
+            }
+          } else if (task1Draft && (task1Draft.chartSpec || task1Draft.processSpec || task1Draft.mapSpec)) {
+            task1Question = restoreQuestionFromRecord({
+              id: 'draft-mock-task1',
+              questionId: task1Draft.questionId,
+              taskType: 'task1',
+              title: task1Draft.title || '',
+              prompt: '',
+              promptLead: task1Draft.promptLead,
+              promptDetail: task1Draft.promptDetail,
+              questionType: task1Draft.questionType,
+              trainingType: task1Draft.trainingType,
+              chartSpec: task1Draft.chartSpec,
+              processSpec: task1Draft.processSpec,
+              mapSpec: task1Draft.mapSpec,
+              imageUrl: task1Draft.imageUrl
+            })
+          } else {
+            task1Question =
+              getQuestionById(task1Draft?.questionId) ||
+              (restoredTask1 ? fallback.task1 : await generateQuestionFor('task1', selection))
+          }
+
+          let task2Question: WritingQuestion
+          if (sourceRecord) {
+            const task2Comp = sourceRecord.components?.task2
+            task2Question = restoreQuestionFromRecord({
+              id: sourceRecord.id,
+              questionId: task2Comp?.questionId || sourceRecord.questionId?.split('+')[1],
+              taskType: 'task2',
+              title: task2Comp?.title || sourceRecord.title,
+              prompt: task2Comp?.prompt || '',
+              promptLead: task2Comp?.promptLead,
+              promptDetail: task2Comp?.promptDetail,
+              questionType: task2Comp?.questionType,
+              trainingType: task2Comp?.trainingType,
+              chartSpec: task2Comp?.chartSpec,
+              processSpec: task2Comp?.processSpec,
+              mapSpec: task2Comp?.mapSpec,
+              imageUrl: task2Comp?.imageUrl
+            })
+          } else {
+            task2Question =
+              getQuestionById(task2Draft?.questionId) ||
+              (restoredTask2 ? fallback.task2 : await generateQuestionFor('task2', selection))
+          }
+
+          if (cancelled) return
+          setMockQuestions({ task1: task1Question, task2: task2Question })
+          setMockEssays({ task1: restoredTask1, task2: restoredTask2 })
+          if (restoredTask1 || restoredTask2) {
+            setDraftRestored(true)
+            setSaveStatus('saved')
+            pushToast({ kind: 'success', title: sourceRecord ? '已带回模考作文' : '已恢复模考草稿' })
+          } else {
+            setSaveStatus('idle')
+          }
+        } else {
+          const taskType = mode === 'task1' ? 'task1' : 'task2'
+          const draft = readDraft(singleDraftKey(mode))
+          const restoredEssay = sourceRecord?.essay || draft?.essay || ''
+          let question: WritingQuestion | null = null
+
+          if (sourceRecord) {
+            question = restoreQuestionFromRecord(sourceRecord)
+            if (question && !question.chartSpec && !question.processSpec && !question.mapSpec && !question.image && sourceRecord.questionId) {
+              const bankQuestion = getQuestionById(sourceRecord.questionId)
+              if (bankQuestion && (bankQuestion.chartSpec || bankQuestion.processSpec || bankQuestion.mapSpec || bankQuestion.image)) {
+                question = {
+                  ...question,
+                  chartSpec: bankQuestion.chartSpec,
+                  processSpec: bankQuestion.processSpec,
+                  mapSpec: bankQuestion.mapSpec,
+                  image: bankQuestion.image || question.image,
+                  imageAlt: bankQuestion.imageAlt || question.imageAlt
+                }
+              }
+            }
+          }
+          if (!question && draft && (draft.chartSpec || draft.processSpec || draft.mapSpec)) {
+            question = restoreQuestionFromRecord({
+              id: `draft-${mode}`,
+              questionId: draft.questionId,
+              taskType,
+              title: draft.title || '',
+              prompt: '',
+              promptLead: draft.promptLead,
+              promptDetail: draft.promptDetail,
+              questionType: draft.questionType,
+              trainingType: draft.trainingType,
+              chartSpec: draft.chartSpec,
+              processSpec: draft.processSpec,
+              mapSpec: draft.mapSpec,
+              imageUrl: draft.imageUrl
+            })
+          }
+          if (!question && draft?.questionId) {
+            question = getQuestionById(draft.questionId)
+          }
+          if (!question) {
+            question = restoredEssay ? defaultQuestionFor(taskType, selection) : await generateQuestionFor(taskType, selection)
+          }
+          if (cancelled) return
+          setSingleQuestion(question)
+          if (sourceRecord?.essay) {
+            setEssay(sourceRecord.essay)
+            setDraftRestored(true)
+            setSaveStatus('saved')
+            pushToast({ kind: 'info', title: '已带回原文', message: '你可以继续修改，原批改结果仍保留在历史记录中。' })
+          } else if (draft?.essay) {
+            setEssay(draft.essay)
+            setDraftRestored(true)
+            setSaveStatus('saved')
+            pushToast({ kind: 'success', title: '已恢复草稿', message: `上次保存于 ${new Date(draft.updatedAt).toLocaleTimeString()}` })
+          } else {
+            setSaveStatus('idle')
+          }
+        }
+
+        const initialDurationMinutes = mode === 'mock' ? 60 : mode === 'task1' ? 20 : 40
+        const endAt = readTimerEnd(timerKey, initialDurationMinutes)
+        setTimeLeft(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)))
+
+        const storedSplit = Number(window.localStorage.getItem(splitKey))
+        if (Number.isFinite(storedSplit) && storedSplit >= 34 && storedSplit <= 66) {
+          setSplitWidth(storedSplit)
+        }
+
+        setHydrated(true)
+      })()
+    })
+
+    return () => {
+      cancelled = true
+    }
+    // Question generation must only run for the current route/session seed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, splitKey, timerKey])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const endAt = readTimerEnd(timerKey, durationMinutes)
+      setTimeLeft(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [durationMinutes, timerKey])
+
+  useEffect(() => {
+    if (!hydrated) return
+    const hasContent = mode === 'mock' ? Boolean(debouncedMockEssays.task1.trim() || debouncedMockEssays.task2.trim()) : Boolean(debouncedEssay.trim())
+    if (!hasContent) {
+      const idleTimer = window.setTimeout(() => setSaveStatus('idle'), 0)
+      return () => window.clearTimeout(idleTimer)
+    }
+    const statusTimer = window.setTimeout(() => setSaveStatus(online ? 'saving' : 'offline'), 0)
+    const elapsed = Date.now() - lastAutoSaveAtRef.current
+    const delay = Math.max(0, 3500 - elapsed)
+    const timer = window.setTimeout(() => saveAllDrafts(false), delay)
+    return () => {
+      window.clearTimeout(statusTimer)
+      window.clearTimeout(timer)
+    }
+  }, [debouncedEssay, debouncedMockEssays, hydrated, mode, online, saveAllDrafts])
+
+  useEffect(() => {
+    if (timeLeft === 0 && hydrated && submitStatus === 'idle') {
+      const timer = window.setTimeout(() => setShowTimeConfirm(true), 0)
+      return () => window.clearTimeout(timer)
+    }
+  }, [hydrated, submitStatus, timeLeft])
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (saveStatus === 'saving' || saveStatus === 'error') {
+        event.preventDefault()
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [saveStatus])
+
+  const saveNow = useCallback(() => saveAllDrafts(true), [saveAllDrafts])
+
+  useEffect(() => {
+    const handleUpdateInstall = () => saveAllDrafts(false)
+    window.addEventListener('aerowrite:save-drafts-before-update', handleUpdateInstall)
+    return () => window.removeEventListener('aerowrite:save-drafts-before-update', handleUpdateInstall)
+  }, [saveAllDrafts])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return
+      const modifier = event.metaKey || event.ctrlKey
+      if (modifier && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        saveNow()
+      }
+      if (modifier && event.key === 'Enter') {
+        event.preventDefault()
+        if (hasWordShortfall()) setShowShortfallConfirm(true)
+        else setShowSubmitConfirm(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  })
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      const storedPosition = window.localStorage.getItem(positionKey)
+      if (storedPosition && textareaRef.current) {
+        try {
+          const parsed = JSON.parse(storedPosition) as { start?: number; end?: number; scrollTop?: number }
+          textareaRef.current.selectionStart = parsed.start ?? textareaRef.current.selectionStart
+          textareaRef.current.selectionEnd = parsed.end ?? textareaRef.current.selectionEnd
+          textareaRef.current.scrollTop = parsed.scrollTop ?? 0
+        } catch {
+          // Ignore corrupted cursor state.
+        }
+      }
+    })
+  }, [positionKey, activeMockTask])
+
+  const persistEditorPosition = useCallback(() => {
+    if (!textareaRef.current) return
+    window.localStorage.setItem(
+      positionKey,
+      JSON.stringify({
+        start: textareaRef.current.selectionStart,
+        end: textareaRef.current.selectionEnd,
+        scrollTop: textareaRef.current.scrollTop
+      })
+    )
+  }, [positionKey])
+
+  async function evaluateEssay(payload: EvaluatePayload, dedupeKey?: string) {
+    if (dedupeKey && pendingEvaluations.has(dedupeKey)) {
+      console.info('[evaluate] dedup: reusing pending evaluation for', dedupeKey.slice(0, 20))
+      return pendingEvaluations.get(dedupeKey)!
+    }
+
+    const evaluationPromise = (async () => {
+      try {
+        const result = window.desktopAi
+          ? await timeoutPromise(window.desktopAi.evaluateEssay(payload), AI_EVALUATION_TIMEOUT_MS, 'AI服务响应超时，请检查网络后重试。')
+          : await timeoutPromise(evaluateInBrowser(payload), AI_EVALUATION_TIMEOUT_MS, 'AI服务响应超时，请检查网络后重试。')
+        if (!result.ok || !result.data) {
+          const message = 'message' in result ? result.message : undefined
+          const resultError = 'error' in result ? result.error : undefined
+          throw new Error(message || resultError || 'AI 批改失败。')
+        }
+        return result.data
+      } finally {
+        if (dedupeKey) pendingEvaluations.delete(dedupeKey)
+      }
+    })()
+
+    if (dedupeKey) pendingEvaluations.set(dedupeKey, evaluationPromise)
+    return evaluationPromise
+  }
+
+  async function requestGeneratedQuestion(payload: GeneratePromptPayload) {
+    if (window.desktopAi?.generatePrompt) {
+      const result = await timeoutPromise(window.desktopAi.generatePrompt(payload), 65000, 'AI 题目生成超时，已改用本地题库。')
+      if (result.ok && result.question) return result.question
+      throw new Error(result.message || result.error || 'AI 题目生成失败。')
+    }
+
+    const response = await fetch('/api/ai/generate-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const data = (await response.json().catch(() => ({}))) as { question?: WritingQuestion; error?: string; message?: string }
+    if (!response.ok || !data.question) {
+      throw new Error(data.message || data.error || 'AI 题目生成失败。')
+    }
+    return data.question
+  }
+
+  async function generateQuestionFor(taskType: MockTaskType, selection: PromptSelection) {
+    const userProfileId = currentPromptProfileId()
+    const duplicateContext = {
+      taskType,
+      userProfileId,
+      chartType: taskType === 'task1' ? selection.task1ChartType : undefined,
+      essayType: taskType === 'task2' ? selection.task2EssayType : undefined,
+      topic: taskType === 'task2' ? selection.task2Topic : undefined
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const question = await requestGeneratedQuestion({
+          taskType,
+          selection,
+          excludePromptSummaries: buildExcludePromptSummaries(taskType, userProfileId, 20)
+        })
+        const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
+        if (!duplicate.duplicate) {
+          recordGeneratedPrompt(question, selection, question.generatedSource === 'ai' ? 'ai' : 'local-template', userProfileId)
+          return question
+        }
+      } catch (caught) {
+        if (attempt === 0) {
+          setPromptGenerationNotice(caught instanceof Error ? caught.message : 'AI 题目生成失败，已使用本地题库。')
+        }
+      }
+    }
+
+    if (taskType === 'task1') {
+      const fbQuestion = getRandomFallbackQuestion(selection.task1ChartType)
+      const question: WritingQuestion = {
+        id: fbQuestion.id,
+        taskType: 'task1',
+        title: fbQuestion.title,
+        promptLead: fbQuestion.prompt,
+        promptDetail: fbQuestion.instructions,
+        durationMinutes: 20,
+        wordTarget: 150,
+        questionType: fbQuestion.chartType as Task1QuestionType,
+        trainingType: 'academic',
+        generatedSource: 'local-template',
+        chartSpec: fbQuestion.chartSpec,
+        processSpec: fbQuestion.processSpec,
+        mapSpec: fbQuestion.mapSpec
+      }
+      recordGeneratedPrompt(question, selection, 'local-template', userProfileId)
+      setPromptGenerationNotice('已使用本地题库生成题目。')
+      return question
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const question = buildLocalGeneratedQuestion(taskType, selection, attempt)
+      const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
+      if (!duplicate.duplicate) {
+        recordGeneratedPrompt(question, selection, 'local-template', userProfileId)
+        return question
+      }
+    }
+
+    const fallback = randomQuestionForSelection(taskType, selection)
+    const duplicate = findDuplicatePrompt(buildPrompt(fallback), duplicateContext)
+    if (duplicate.duplicate) {
+      setPromptGenerationNotice('最近已经生成过高度相似题目，已显示题库中最接近当前选择的备用题。')
+    }
+    recordGeneratedPrompt(fallback, selection, 'static-bank', userProfileId)
+    return fallback
+  }
+
+  async function submitCurrent() {
+    if (mode === 'mock') return submitMock()
+    return submitSingle()
+  }
+
+  async function submitSingle() {
+    if (loading) return
+    setError('')
+    if (!online) {
+      setError('当前离线。作文已保存在本地，网络恢复后再提交批改。')
+      pushToast({ kind: 'warning', title: '当前离线', message: '写作不会丢失，请稍后重试提交。' })
+      return
+    }
+    if (!activeQuestion) {
+      setError('题目加载失败，请返回练习页重试。')
+      return
+    }
+    if (essay.trim().length < 50) {
+      setError('请至少输入 50 个字符后再提交批改。当前字数：' + countWords(essay))
+      pushToast({ kind: 'warning', title: '字数不足', message: `当前 ${countWords(essay)} 字，至少需要 50 字才能提交批改。` })
+      return
+    }
+
+    const essayHashKey = `${essay.trim().toLowerCase().slice(0, 100)}:${activeQuestion.taskType}`
+    if (pendingEvaluations.has(essayHashKey)) {
+      const confirmResubmit = window.confirm('检测到相同内容的批改正在进行中。\n\n点击"确定"等待当前批改完成，\n点击"取消"强制重新批改。')
+      if (!confirmResubmit) {
+        pendingEvaluations.delete(essayHashKey)
+      } else {
+        pushToast({ kind: 'info', title: '正在处理中', message: '请等待当前批改完成。' })
+        return
+      }
+    }
+
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+    let succeeded = false
+    setSubmitStatus('saving')
+    setStageIndex(0)
+    setEvaluationStartTime(Date.now())
+    setElapsedTime(0)
+    try {
+      saveAllDrafts(false)
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+      if (abortController.signal.aborted) throw new Error('用户取消了批改。')
+      setSubmitStatus('submitting')
+      setStageIndex(1)
+
+      const evaluation = await evaluateEssay({
+        essay,
+        taskType: activeQuestion.taskType,
+        prompt: buildPrompt(activeQuestion),
+        questionType: activeQuestion.questionType
+      }, essayHashKey)
+
+      if (abortController.signal.aborted) throw new Error('用户取消了批改。')
+      setStageIndex(2)
+      await new Promise((resolve) => window.setTimeout(resolve, 100))
+      setStageIndex(3)
+
+      setSubmitStatus('organizing')
+      setStageIndex(4)
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+
+      const now = new Date().toISOString()
+      const record: WritingRecord = {
+        id: createRecordId(),
+        deviceId: getLocalDeviceId(),
+        taskType: activeQuestion.taskType,
+        title: activeQuestion.title,
+        prompt: buildPrompt(activeQuestion),
+        essay,
+        originalEssay: essay,
+        submittedAt: now,
+        durationSeconds: durationMinutes * 60 - timeLeft,
+        wordCount,
+        evaluation,
+        acceptedChanges: [],
+        annotationVersion: evaluation.annotationVersion,
+        questionId: activeQuestion.id,
+        questionType: activeQuestion.questionType,
+        trainingType: activeQuestion.trainingType,
+        chartSpec: activeQuestion.chartSpec as Record<string, unknown> | undefined,
+        processSpec: activeQuestion.processSpec as Record<string, unknown> | undefined,
+        mapSpec: activeQuestion.mapSpec as Record<string, unknown> | undefined,
+        promptLead: activeQuestion.promptLead,
+        promptDetail: activeQuestion.promptDetail,
+        imageUrl: activeQuestion.image
+      }
+
+      saveWritingRecord(record)
+      markGeneratedPromptCompleted(activeQuestion.id)
+      window.localStorage.removeItem(singleDraftKey(mode))
+      window.localStorage.removeItem(timerKey)
+      setStageIndex(5)
+      setSubmitStatus('success')
+      succeeded = true
+      pushToast({ kind: 'success', title: '批改完成', message: '正在打开结果页。' })
+      router.push(`/result?id=${record.id}`)
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : 'AI 批改失败。'
+      let userFriendlyError = errorMessage
+      let errorTitle = '批改失败'
+
+      if (errorMessage.includes('用户取消')) {
+        userFriendlyError = '批改已取消。'
+        errorTitle = '已取消'
+        pushToast({ kind: 'info', title: '已取消', message: '批改已取消。' })
+      } else if (errorMessage.includes('ai_json_parse_error') || errorMessage.includes('JSON')) {
+        userFriendlyError = 'AI返回格式异常，作文已保存，请重新批改。'
+        errorTitle = '格式异常'
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('超时')) {
+        userFriendlyError = 'AI服务响应超时，请检查网络后重试。'
+        errorTitle = '响应超时'
+      } else if (errorMessage.includes('network') || errorMessage.includes('网络') || errorMessage.includes('fetch')) {
+        userFriendlyError = '网络连接失败，请检查网络后重试。作文已保存在本地。'
+        errorTitle = '网络错误'
+      } else if (errorMessage.includes('429') || errorMessage.includes('频率')) {
+        userFriendlyError = '请求过于频繁，请稍后重试。'
+        errorTitle = '请求限制'
+      } else if (errorMessage.includes('503') || errorMessage.includes('不可用')) {
+        userFriendlyError = 'AI服务暂时不可用，请稍后重试。'
+        errorTitle = '服务不可用'
+      } else if (errorMessage.includes('license') || errorMessage.includes('激活')) {
+        userFriendlyError = '许可证验证失败，请检查激活状态。'
+        errorTitle = '许可证错误'
+      } else if (errorMessage.includes('length') || errorMessage.includes('截断')) {
+        userFriendlyError = 'AI输出被截断，请减少作文长度后重试。'
+        errorTitle = '输出截断'
+      }
+
+      if (!errorMessage.includes('用户取消')) {
+        setError(userFriendlyError)
+        setSubmitStatus('error')
+        pushToast({ kind: 'error', title: errorTitle, message: userFriendlyError })
+      }
+    } finally {
+      abortControllerRef.current = null
+      setEvaluationStartTime(null)
+      if (!succeeded) {
+        window.setTimeout(() => setSubmitStatus((current) => (current === 'success' ? current : 'idle')), 800)
+      }
+    }
+  }
+
+  function cancelEvaluation() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      pushToast({ kind: 'info', title: '正在取消', message: '正在取消批改...' })
+    }
+  }
+
+  async function submitMock() {
+    if (loading) return
+    setError('')
+    if (!online) {
+      setError('当前离线。两篇作文已保存在本地，网络恢复后再提交批改。')
+      pushToast({ kind: 'warning', title: '当前离线', message: '模考草稿不会丢失，请稍后重试提交。' })
+      return
+    }
+    if (!mockQuestions) {
+      setError('模考题目加载失败，请返回练习页重试。')
+      return
+    }
+    if (mockEssays.task1.trim().length < 50 || mockEssays.task2.trim().length < 50) {
+      setError('完整模考需要 Task 1 和 Task 2 都至少输入 50 个字符。')
+      return
+    }
+
+    const dedupeKey1 = `mock-task1:${mockEssays.task1.trim().toLowerCase().slice(0, 100)}`
+    const dedupeKey2 = `mock-task2:${mockEssays.task2.trim().toLowerCase().slice(0, 100)}`
+
+    let succeeded = false
+    setSubmitStatus('saving')
+    setStageIndex(0)
+    try {
+      saveAllDrafts(false)
+      await new Promise((resolve) => window.setTimeout(resolve, 180))
+      setSubmitStatus('submitting')
+      setStageIndex(1)
+
+      const task1Evaluation = await evaluateEssay({
+        essay: mockEssays.task1,
+        taskType: 'task1',
+        prompt: buildPrompt(mockQuestions.task1),
+        questionType: mockQuestions.task1.questionType
+      }, dedupeKey1)
+
+      setStageIndex(2)
+      const task2Evaluation = await evaluateEssay({
+        essay: mockEssays.task2,
+        taskType: 'task2',
+        prompt: buildPrompt(mockQuestions.task2),
+        questionType: mockQuestions.task2.questionType
+      }, dedupeKey2)
+
+      setStageIndex(3)
+      setSubmitStatus('organizing')
+      setStageIndex(4)
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+
+      const now = new Date().toISOString()
+      const elapsedSeconds = durationMinutes * 60 - timeLeft
+      const task1Share = totalMockWords > 0 ? mockWordCounts.task1 / totalMockWords : 0.33
+      const task1Duration = Math.round(elapsedSeconds * task1Share)
+      const task2Duration = Math.max(0, elapsedSeconds - task1Duration)
+      const evaluation = combineMockEvaluation(task1Evaluation, task2Evaluation, mockEssays.task1, mockEssays.task2)
+      const originalEssay = `Task 1\n${mockEssays.task1}\n\nTask 2\n${mockEssays.task2}`
+      const record: WritingRecord = {
+        id: createRecordId(),
+        deviceId: getLocalDeviceId(),
+        taskType: 'mock',
+        title: 'Full IELTS Writing Test',
+        prompt: `Task 1\n${buildPrompt(mockQuestions.task1)}\n\nTask 2\n${buildPrompt(mockQuestions.task2)}`,
+        essay: originalEssay,
+        originalEssay,
+        submittedAt: now,
+        durationSeconds: elapsedSeconds,
+        wordCount: totalMockWords,
+        evaluation,
+        acceptedChanges: [],
+        annotationVersion: evaluation.annotationVersion,
+        questionId: `${mockQuestions.task1.id}+${mockQuestions.task2.id}`,
+        questionType: 'mock',
+        chartSpec: mockQuestions.task1.chartSpec as Record<string, unknown> | undefined,
+        processSpec: mockQuestions.task1.processSpec as Record<string, unknown> | undefined,
+        mapSpec: mockQuestions.task1.mapSpec as Record<string, unknown> | undefined,
+        promptLead: mockQuestions.task1.promptLead,
+        promptDetail: mockQuestions.task1.promptDetail,
+        imageUrl: mockQuestions.task1.image,
+        components: {
+          task1: {
+            taskType: 'task1',
+            title: mockQuestions.task1.title,
+            prompt: buildPrompt(mockQuestions.task1),
+            essay: mockEssays.task1,
+            durationSeconds: task1Duration,
+            wordCount: mockWordCounts.task1,
+            evaluation: task1Evaluation,
+            questionId: mockQuestions.task1.id,
+            questionType: mockQuestions.task1.questionType,
+            trainingType: mockQuestions.task1.trainingType,
+            chartSpec: mockQuestions.task1.chartSpec as Record<string, unknown> | undefined,
+            processSpec: mockQuestions.task1.processSpec as Record<string, unknown> | undefined,
+            mapSpec: mockQuestions.task1.mapSpec as Record<string, unknown> | undefined,
+            imageUrl: mockQuestions.task1.image,
+            promptLead: mockQuestions.task1.promptLead,
+            promptDetail: mockQuestions.task1.promptDetail
+          },
+          task2: {
+            taskType: 'task2',
+            title: mockQuestions.task2.title,
+            prompt: buildPrompt(mockQuestions.task2),
+            essay: mockEssays.task2,
+            durationSeconds: task2Duration,
+            wordCount: mockWordCounts.task2,
+            evaluation: task2Evaluation,
+            questionId: mockQuestions.task2.id,
+            questionType: mockQuestions.task2.questionType,
+            chartSpec: mockQuestions.task2.chartSpec as Record<string, unknown> | undefined,
+            processSpec: mockQuestions.task2.processSpec as Record<string, unknown> | undefined,
+            mapSpec: mockQuestions.task2.mapSpec as Record<string, unknown> | undefined,
+            imageUrl: mockQuestions.task2.image,
+            promptLead: mockQuestions.task2.promptLead,
+            promptDetail: mockQuestions.task2.promptDetail
+          }
+        }
+      }
+
+      saveWritingRecord(record)
+      markGeneratedPromptCompleted(mockQuestions.task1.id)
+      markGeneratedPromptCompleted(mockQuestions.task2.id)
+      window.localStorage.removeItem(mockDraftKey('task1'))
+      window.localStorage.removeItem(mockDraftKey('task2'))
+      window.localStorage.removeItem(timerKey)
+      setStageIndex(5)
+      setSubmitStatus('success')
+      succeeded = true
+      pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
+      router.push(`/result?id=${record.id}`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'AI 批改失败。')
+      setSubmitStatus('error')
+      pushToast({ kind: 'error', title: '批改失败', message: caught instanceof Error ? caught.message : '两篇作文已保留，可重试。' })
+    } finally {
+      if (!succeeded) {
+        window.setTimeout(() => setSubmitStatus((current) => (current === 'success' ? current : 'idle')), 800)
+      }
+    }
+  }
+
+  function hasWordShortfall() {
+    if (mode !== 'mock') return wordCount < wordTarget
+    return mockWordCounts.task1 < 150 || mockWordCounts.task2 < 250
+  }
+
+  function requestSubmit() {
+    if (hasWordShortfall()) {
+      setShowShortfallConfirm(true)
+      return
+    }
+    void submitCurrent()
+  }
+
+  function handleResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    const layout = layoutRef.current
+    if (!layout) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const rect = layout.getBoundingClientRect()
+    const move = (moveEvent: PointerEvent) => {
+      const next = ((moveEvent.clientX - rect.left) / rect.width) * 100
+      const clamped = Math.min(66, Math.max(34, next))
+      setSplitWidth(clamped)
+      window.localStorage.setItem(splitKey, String(clamped))
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  function resetSplit() {
+    setSplitWidth(50)
+    window.localStorage.setItem(splitKey, '50')
+    pushToast({ kind: 'info', title: '布局已恢复默认' })
+  }
+
+  function updateActiveEssay(value: string) {
+    if (mode === 'mock') {
+      setMockEssays((current) => ({ ...current, [activeMockTask]: value }))
+    } else {
+      setEssay(value)
+    }
+  }
+
+  const shortfallMessage =
+    mode === 'mock'
+      ? `当前 Task 1 为 ${mockWordCounts.task1}/150 words，Task 2 为 ${mockWordCounts.task2}/250 words。你可以继续写，也可以确认提交并接受可能影响评分的风险。`
+      : `当前 ${wordCount} words，建议至少 ${wordTarget} words。你可以继续写，也可以确认提交并接受可能影响评分的风险。`
+
+  if (!hydrated || !activeQuestion) return <PageSkeleton variant="editor" />
+
+  return (
+    <main className="exam-page" data-main-content tabIndex={-1}>
+      <header className="exam-topbar">
+        <div className="exam-brand-row">
+          <span className="exam-ielts-mark">IELTS</span>
+          <span className="stitch-body-md">|</span>
+          <span className="stitch-body-md">{mode === 'mock' ? `Mock · ${activeMockTask === 'task1' ? 'Task 1' : 'Task 2'}` : activeQuestion.taskType === 'task1' ? 'Task 1' : 'Task 2'}</span>
+        </div>
+
+        <div className="exam-info-pill">
+          <div className="exam-info-item">
+            <div className="mini-ring">
+              <svg viewBox="0 0 24 24">
+                <circle className="track" cx="12" cy="12" fill="transparent" r="10" strokeWidth="2" />
+                <circle
+                  className="value"
+                  cx="12"
+                  cy="12"
+                  fill="transparent"
+                  r="10"
+                  strokeDasharray="62.8"
+                  strokeDashoffset={progress}
+                  strokeLinecap="round"
+                  strokeWidth="2"
+                />
+              </svg>
+              <MaterialIcon name="timer" filled />
+            </div>
+            <span className={`exam-timer ${timerTone}`} aria-live={timeLeft <= 60 ? 'assertive' : 'polite'}>
+              {formatTime(timeLeft)}
+            </span>
+          </div>
+          <div className="exam-divider" />
+          <div className="exam-info-item">
+            <span className="stitch-label">Words</span>
+            <span 
+              className={`exam-word-count ${wordCount >= wordTarget ? 'word-count-good' : wordCount >= wordTarget * 0.8 ? 'word-count-medium' : wordCount < wordTarget * 0.5 ? 'word-count-low' : ''}`}
+              title="字数统计按空格分词计算，与 IELTS 官方标准可能略有差异"
+            >
+              {wordCount}
+              <span>/{wordTarget}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="exam-actions">
+          <span className={`saved-state inline-status ${saveStatus === 'saved' ? 'success' : saveStatus === 'error' ? 'error' : ''}`} aria-live="polite">
+            <MaterialIcon
+              name={saveStatus === 'saving' ? 'sync' : saveStatus === 'offline' ? 'cloud_off' : saveStatus === 'error' ? 'sync_problem' : 'cloud_done'}
+              size={16}
+            />
+            {saveStatus === 'saving'
+              ? '保存中...'
+              : saveStatus === 'offline'
+                ? '本地保存'
+                : saveStatus === 'error'
+                  ? '保存失败'
+                  : saveStatus === 'saved'
+                    ? '已保存'
+                    : '草稿'}
+          </span>
+          <button className="exam-exit" type="button" onClick={() => setShowExitConfirm(true)}>
+            <MaterialIcon name="logout" size={16} />
+            Exit
+          </button>
+        </div>
+      </header>
+
+      <div className="exam-status-bar" role="status" aria-live="polite">
+        <span>
+          <MaterialIcon name="assignment" size={15} />
+          {questionLabel(activeQuestion)}
+        </span>
+        <span>
+          <MaterialIcon name={online ? 'wifi' : 'wifi_off'} size={15} />
+          {online ? 'Online' : 'Offline'}
+        </span>
+        <span>
+          <MaterialIcon name={draftRestored ? 'restore' : 'draft'} size={15} />
+          {draftRestored ? 'Draft restored' : 'New draft'}
+        </span>
+        <span title={mode === 'task1' ? Task1SubtypeLabels[promptSelection.task1Subtype] : undefined}>
+          <MaterialIcon name="tune" size={15} />
+          {promptChoiceSummary}
+        </span>
+        {mode === 'mock' ? (
+          <span>
+            <MaterialIcon name="functions" size={15} />
+            Total {totalMockWords}/400 words
+          </span>
+        ) : null}
+      </div>
+
+      <section ref={layoutRef} className="exam-layout">
+        <aside className="exam-left-pane" style={{ width: `${splitWidth}%` }}>
+          <div className="exam-left-inner">
+            {mode === 'mock' ? (
+              <div className="result-tabs" role="tablist" aria-label="模考任务切换" style={{ marginBottom: 16 }}>
+                {mockTaskOrder.map((taskType) => (
+                  <button
+                    key={taskType}
+                    className={`result-tab ${activeMockTask === taskType ? 'is-active' : ''}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeMockTask === taskType}
+                    onClick={() => setActiveMockTask(taskType)}
+                  >
+                    {taskType === 'task1' ? 'Task 1' : 'Task 2'}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="exam-section-header">
+              <h1 className="stitch-title-headline">{activeQuestion.title}</h1>
+              <p className="stitch-body-md">
+                You should spend about {activeQuestion.durationMinutes} minutes on this task.
+                {mode === 'mock' ? ' The full test timer remains 60 minutes.' : ''}
+              </p>
+            </div>
+
+            <div className="exam-prompt-box">
+              <p className="stitch-body-lg" style={{ color: 'var(--on-surface)', fontWeight: 500 }}>
+                {activeQuestion.promptLead}
+              </p>
+              <p className="stitch-body-md">{activeQuestion.promptDetail}</p>
+            </div>
+
+            {activeQuestion.taskType === 'task1' && (activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
+              <div className="exam-graph-frame">
+                <Task1Visual
+                  chartType={activeQuestion.questionType}
+                  chartSpec={activeQuestion.chartSpec}
+                  processSpec={activeQuestion.processSpec}
+                  mapSpec={activeQuestion.mapSpec}
+                  title={activeQuestion.title}
+                />
+              </div>
+            ) : activeQuestion.image ? (
+              <div className="exam-graph-frame">
+                <Image
+                  alt={activeQuestion.imageAlt || activeQuestion.title}
+                  src={activeQuestion.image}
+                  width={720}
+                  height={400}
+                  priority
+                  style={{ width: '100%', height: 'auto' }}
+                  unoptimized
+                />
+              </div>
+            ) : null}
+
+            <div className="exam-requirement">
+              <span>
+                <MaterialIcon name="info" size={18} />
+                Write at least <strong>{activeQuestion.wordTarget} words</strong>.
+              </span>
+            </div>
+          </div>
+        </aside>
+
+        <div
+          className="resizer-handle"
+          role="separator"
+          aria-label="调整题目区和写作区宽度"
+          aria-orientation="vertical"
+          tabIndex={0}
+          onPointerDown={handleResizeStart}
+          onDoubleClick={resetSplit}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+              event.preventDefault()
+              const next = Math.min(66, Math.max(34, splitWidth + (event.key === 'ArrowRight' ? 2 : -2)))
+              setSplitWidth(next)
+              window.localStorage.setItem(splitKey, String(next))
+            }
+          }}
+        />
+
+        <section className="exam-right-pane" style={{ width: `${100 - splitWidth}%` }}>
+          <div className="editor-toolbar">
+            <button className="spell-toggle" type="button" onClick={() => setSpellcheck((current) => !current)}>
+              <MaterialIcon name="spellcheck" size={18} />
+              Spell Check: {spellcheck ? 'On' : 'Off'}
+            </button>
+            <AsyncButton
+              className="submit-essay-button"
+              icon="check_circle"
+              loading={loading}
+              error={submitStatus === 'error'}
+              success={submitStatus === 'success'}
+              disabledReason={!activeEssay.trim() ? '请先输入作文内容。' : undefined}
+              onClick={requestSubmit}
+            >
+              {loading ? 'Analyzing...' : submitStatus === 'error' ? '重新批改' : mode === 'mock' ? 'Submit Test' : 'Submit Essay'}
+            </AsyncButton>
+          </div>
+
+          <div className="editor-canvas">
+            {promptGenerationNotice ? (
+              <div className="prompt-generation-notice" role="alert">
+                <div className="notice-icon">
+                  <MaterialIcon name="info" size={20} />
+                </div>
+                <div className="notice-content">
+                  <strong>题目生成提示</strong>
+                  <span>{promptGenerationNotice}</span>
+                </div>
+                <button className="notice-dismiss" type="button" onClick={() => setPromptGenerationNotice('')}>
+                  知道了
+                </button>
+              </div>
+            ) : null}
+            {error ? (
+              <div className="editor-error" role="alert">
+                <span>{error}</span>
+                <button className="toast-action" type="button" onClick={() => void submitCurrent()}>
+                  重新批改
+                </button>
+              </div>
+            ) : null}
+            <textarea
+              ref={textareaRef}
+              className="editor-textarea"
+              placeholder={mode === 'mock' ? `Begin writing ${activeMockTask === 'task1' ? 'Task 1' : 'Task 2'} here...` : 'Begin writing your response here...'}
+              spellCheck={spellcheck}
+              value={activeEssay}
+              onChange={(event) => updateActiveEssay(event.target.value)}
+              onSelect={persistEditorPosition}
+              onKeyUp={persistEditorPosition}
+              onMouseUp={persistEditorPosition}
+              onScroll={persistEditorPosition}
+              aria-label={`${activeQuestion.taskType} writing editor`}
+            />
+            <div className="editor-footer">
+              <span className="word-count-hint">
+                {wordCount < 50 ? (
+                  <span className="hint-warning">至少需要 50 字才能提交批改（当前 {wordCount} 字）</span>
+                ) : wordCount < wordTarget ? (
+                  <span className="hint-info">建议至少 {wordTarget} 字（当前 {wordCount} 字）</span>
+                ) : (
+                  <span className="hint-success">字数已达标（{wordCount} 字）</span>
+                )}
+              </span>
+            </div>
+            {loading ? (
+              <section className="editor-progress-panel" role="status" aria-live="polite">
+                <div className="progress-header">
+                  <h2 className="stitch-title-md">AI 批改处理中</h2>
+                  <button className="cancel-button" type="button" onClick={cancelEvaluation}>
+                    取消
+                  </button>
+                </div>
+                <ol className="stage-list">
+                  {evaluationStages.map((stage, index) => (
+                    <li key={stage} className={index < stageIndex ? 'is-done' : index === stageIndex ? 'is-active' : ''}>
+                      <span className="stage-dot" />
+                      <span>{stage}</span>
+                    </li>
+                  ))}
+                </ol>
+                <div className="progress-footer">
+                  <p className="stitch-body-md" style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
+                    {stageIndex < 3 ? '正在等待 AI 响应...' : '详细批改正在后台生成，不影响初步评分展示'}
+                  </p>
+                  <p className="elapsed-time" style={{ fontSize: 12, color: 'var(--on-surface-variant)', marginTop: 4 }}>
+                    已用时：{elapsedTime} 秒
+                  </p>
+                </div>
+              </section>
+            ) : null}
+          </div>
+        </section>
+      </section>
+
+      <ConfirmDialog
+        open={showShortfallConfirm}
+        title="字数还没有达到建议要求"
+        message={shortfallMessage}
+        confirmLabel="仍然提交"
+        cancelLabel="继续写"
+        onCancel={() => setShowShortfallConfirm(false)}
+        onConfirm={() => {
+          setShowShortfallConfirm(false)
+          void submitCurrent()
+        }}
+      />
+
+      <ConfirmDialog
+        open={showSubmitConfirm}
+        title="提交当前作文？"
+        message="AI 批改期间会保留本地草稿，请确认当前内容已经准备好提交。"
+        confirmLabel="提交批改"
+        cancelLabel="继续写"
+        onCancel={() => setShowSubmitConfirm(false)}
+        onConfirm={() => {
+          setShowSubmitConfirm(false)
+          void submitCurrent()
+        }}
+      />
+
+      <ConfirmDialog
+        open={showExitConfirm}
+        title="退出当前写作？"
+        message="草稿已保存到本地。离开后可以从同一 Task 页面恢复。"
+        confirmLabel="退出"
+        cancelLabel="留下"
+        onCancel={() => setShowExitConfirm(false)}
+        onConfirm={() => {
+          saveNow()
+          router.push('/practice')
+        }}
+      />
+
+      <ConfirmDialog
+        open={showTimeConfirm}
+        title="时间已到"
+        message={mode === 'mock' ? '60 分钟模考时间已结束。你可以立即提交两篇作文，或先保留草稿稍后处理。' : '限时已结束。你可以立即提交批改，或先保留草稿稍后处理。'}
+        confirmLabel="提交批改"
+        cancelLabel="保留草稿"
+        onCancel={() => setShowTimeConfirm(false)}
+        onConfirm={() => {
+          setShowTimeConfirm(false)
+          void submitCurrent()
+        }}
+      />
+    </main>
+  )
+}

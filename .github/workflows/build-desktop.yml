@@ -1,0 +1,66 @@
+name: Build Desktop Packages
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows installer and portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Build Windows packages
+        run: npx electron-builder --win nsis portable dir --publish never
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          UPDATE_FEED_URL: ${{ secrets.UPDATE_FEED_URL }}
+      - name: Hash artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem release -File | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash)  $($_.Name)" | Out-File -Append release/SHA256SUMS.txt
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: release/**
+
+  macos:
+    name: macOS Apple Silicon dmg
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Build macOS package
+        run: npx electron-builder --mac dmg --arm64 --publish never
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          UPDATE_FEED_URL: ${{ secrets.UPDATE_FEED_URL }}
+      - name: Hash artifacts
+        run: shasum -a 256 release/* > release/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: release/**

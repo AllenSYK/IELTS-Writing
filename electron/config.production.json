@@ -1,0 +1,8 @@
+{
+  "LICENSE_SERVER_URL": "https://qbytmwiszeucnxbnaede.supabase.co/functions/v1/license",
+  "APP_UPDATE_URL": "https://qbytmwiszeucnxbnaede.supabase.co/functions/v1/app-update",
+  "UPDATE_FEED_URL": "https://qbytmwiszeucnxbnaede.supabase.co/storage/v1/object/public/ielts-app-updates/stable/darwin-arm64",
+  "UPDATE_CHANNEL": "stable",
+  "AUTO_UPDATE_DOWNLOAD_ENABLED": "false",
+  "NEXT_PUBLIC_DEVELOPER_CONTACT": ""
+}

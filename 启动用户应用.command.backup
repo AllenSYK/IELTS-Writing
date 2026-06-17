@@ -1,0 +1,43 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+LOG_DIR="$SCRIPT_DIR/.logs"
+LOG_FILE="$LOG_DIR/electron-dev.log"
+INSTALLED_APP="/Applications/IELTS Writing.app"
+PACKAGED_APP="$SCRIPT_DIR/release/mac-arm64/IELTS Writing.app"
+mkdir -p "$LOG_DIR"
+show_message() {
+  /usr/bin/osascript -e "display dialog \"$1\" buttons {\"确定\"} default button \"确定\" with title \"IELTS Writing\"" >/dev/null 2>&1
+}
+echo "正在查找 IELTS Writing 应用……"
+# 第一优先级：应用程序文件夹中的正式安装版
+if [ -d "$INSTALLED_APP" ]; then
+  echo "已找到正式安装版，正在打开……"
+  open "$INSTALLED_APP"
+  exit 0
+fi
+# 第二优先级：release 目录中的打包版
+if [ -d "$PACKAGED_APP" ]; then
+  echo "已找到打包版，正在打开……"
+  open "$PACKAGED_APP"
+  exit 0
+fi
+# 第三优先级：Electron 开发版
+echo "未找到已安装或已打包的应用，将尝试启动开发版。"
+if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
+  echo "启动失败：项目依赖尚未安装，请先运行 npm install。"
+  show_message "项目依赖尚未安装，请先在终端运行 npm install。"
+  exit 1
+fi
+echo "正在启动 Electron 开发版……"
+echo "详细日志：$LOG_FILE"
+nohup npm run electron:dev >"$LOG_FILE" 2>&1 &
+sleep 3
+if pgrep -f "electron.*雅思写作系统" >/dev/null 2>&1 || \
+   pgrep -f "IELTS Writing" >/dev/null 2>&1; then
+  echo "用户应用已启动。"
+  exit 0
+fi
+echo "用户应用正在启动中。若没有出现窗口，请查看日志："
+echo "$LOG_FILE"
+exit 0

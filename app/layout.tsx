@@ -1,0 +1,24 @@
+import type { Metadata } from 'next'
+import { AppShell } from '@/components/layout/AppShell'
+import { AppInteractionProvider } from '@/components/interaction-system'
+import { UserProfileProvider } from '@/stores/user-profile-store'
+import './globals.css'
+
+export const metadata: Metadata = {
+  title: '空与梦 IELTS Writing',
+  description: 'IELTS writing practice and AI feedback desktop app.'
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="zh-CN">
+      <body>
+        <AppInteractionProvider>
+          <UserProfileProvider>
+            <AppShell>{children}</AppShell>
+          </UserProfileProvider>
+        </AppInteractionProvider>
+      </body>
+    </html>
+  )
+}

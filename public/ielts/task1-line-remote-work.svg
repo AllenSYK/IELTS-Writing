@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400" role="img" aria-labelledby="title desc">
+  <title id="title">Remote work by industry</title>
+  <desc id="desc">Line chart showing the percentage of employees working from home between 2018 and 2024.</desc>
+  <rect width="720" height="400" fill="#ffffff"/>
+  <text x="360" y="34" fill="#181c23" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">Employees working from home (%)</text>
+  <g stroke="#c1c6d7" stroke-width="1">
+    <line x1="70" y1="320" x2="660" y2="320"/>
+    <line x1="70" y1="260" x2="660" y2="260"/>
+    <line x1="70" y1="200" x2="660" y2="200"/>
+    <line x1="70" y1="140" x2="660" y2="140"/>
+    <line x1="70" y1="80" x2="660" y2="80"/>
+    <line x1="70" y1="80" x2="70" y2="320"/>
+  </g>
+  <g fill="#414755" font-family="Inter, Arial, sans-serif" font-size="13">
+    <text x="40" y="324">0</text>
+    <text x="34" y="264">15</text>
+    <text x="34" y="204">30</text>
+    <text x="34" y="144">45</text>
+    <text x="34" y="84">60</text>
+    <text x="70" y="350" text-anchor="middle">2018</text>
+    <text x="267" y="350" text-anchor="middle">2020</text>
+    <text x="463" y="350" text-anchor="middle">2022</text>
+    <text x="660" y="350" text-anchor="middle">2024</text>
+  </g>
+  <polyline points="70,248 267,184 463,112 660,128" fill="none" stroke="#0058bc" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="70,272 267,208 463,156 660,164" fill="none" stroke="#4a6cf7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="70,288 267,140 463,176 660,196" fill="none" stroke="#ba1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="70,300 267,272 463,256 660,260" fill="none" stroke="#2f8f46" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <g font-family="Inter, Arial, sans-serif" font-size="13" fill="#181c23">
+    <circle cx="494" cy="62" r="5" fill="#0058bc"/><text x="506" y="67">Technology</text>
+    <circle cx="494" cy="86" r="5" fill="#4a6cf7"/><text x="506" y="91">Finance</text>
+    <circle cx="594" cy="62" r="5" fill="#ba1a1a"/><text x="606" y="67">Education</text>
+    <circle cx="594" cy="86" r="5" fill="#2f8f46"/><text x="606" y="91">Retail</text>
+  </g>
+</svg>

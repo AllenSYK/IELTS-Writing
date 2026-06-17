@@ -1,0 +1,10 @@
+project_id = "replace-with-your-project-ref"
+
+[functions.license]
+verify_jwt = false
+
+[functions.app-update]
+verify_jwt = false
+
+[functions.admin-license]
+verify_jwt = false

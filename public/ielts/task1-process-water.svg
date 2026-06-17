@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400" role="img" aria-labelledby="title desc">
+  <title id="title">Rainwater treatment process</title>
+  <desc id="desc">Process diagram showing how rainwater is collected and treated for household use.</desc>
+  <rect width="720" height="400" fill="#ffffff"/>
+  <text x="360" y="38" fill="#181c23" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" text-anchor="middle">Rainwater collection and treatment</text>
+  <defs>
+    <marker id="arrow" markerHeight="10" markerWidth="10" orient="auto" refX="8" refY="3">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0058bc"/>
+    </marker>
+  </defs>
+  <g font-family="Inter, Arial, sans-serif" font-size="14" text-anchor="middle">
+    <g fill="#f6f8ff" stroke="#0058bc" stroke-width="2">
+      <rect x="44" y="126" width="112" height="76" rx="10"/>
+      <rect x="184" y="126" width="112" height="76" rx="10"/>
+      <rect x="324" y="126" width="112" height="76" rx="10"/>
+      <rect x="464" y="126" width="112" height="76" rx="10"/>
+      <rect x="604" y="126" width="80" height="76" rx="10"/>
+    </g>
+    <g fill="#181c23">
+      <text x="100" y="158">Roof</text><text x="100" y="178">collection</text>
+      <text x="240" y="158">Gutter</text><text x="240" y="178">channel</text>
+      <text x="380" y="158">Filter</text><text x="380" y="178">unit</text>
+      <text x="520" y="158">Storage</text><text x="520" y="178">tank</text>
+      <text x="644" y="158">UV</text><text x="644" y="178">treat</text>
+    </g>
+    <g stroke="#0058bc" stroke-width="3" marker-end="url(#arrow)">
+      <line x1="156" y1="164" x2="180" y2="164"/>
+      <line x1="296" y1="164" x2="320" y2="164"/>
+      <line x1="436" y1="164" x2="460" y2="164"/>
+      <line x1="576" y1="164" x2="600" y2="164"/>
+      <path d="M644 202 C644 264 438 286 220 286" fill="none"/>
+    </g>
+    <g>
+      <rect x="138" y="252" width="164" height="70" rx="10" fill="#e8f5e9" stroke="#2f8f46" stroke-width="2"/>
+      <text x="220" y="281" fill="#181c23">Household taps</text>
+      <text x="220" y="301" fill="#414755">clean water supply</text>
+    </g>
+  </g>
+</svg>
