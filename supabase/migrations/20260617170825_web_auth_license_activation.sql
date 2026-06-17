@@ -316,7 +316,7 @@ revoke all on public.profiles from anon, authenticated;
 revoke all on public.license_codes from anon, authenticated;
 revoke all on public.license_activations from anon, authenticated;
 revoke all on public.usage_records from anon, authenticated;
-revoke all on public.activate_license_code(text, uuid, text) from public, anon, authenticated;
+revoke all on function public.activate_license_code(text, uuid, text) from public, anon, authenticated;
 
 grant select on public.profiles to authenticated;
 grant update (email) on public.profiles to authenticated;

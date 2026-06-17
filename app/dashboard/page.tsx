@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { CalendarDays, CheckCircle2, Clock3, PenLine } from 'lucide-react'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getCurrentSupabaseUser, requireActiveWebLicense } from '@/lib/web-license/auth'
+import { getCurrentSupabaseUser, getWebProfile, requireActiveWebLicense } from '@/lib/web-license/auth'
 import { LogoutButton } from './LogoutButton'
 
 function formatDate(value?: string | null) {
@@ -17,6 +17,9 @@ function daysLeft(value: string) {
 export default async function DashboardPage() {
   const user = await getCurrentSupabaseUser()
   if (!user) redirect('/login')
+
+  const profile = await getWebProfile(user.id)
+  if (profile?.role === 'admin') redirect('/admin/licenses')
 
   const check = await requireActiveWebLicense()
   if (!check.ok) redirect('/activate')

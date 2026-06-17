@@ -1,6 +1,5 @@
 import { json } from '@/lib/http'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getCurrentSupabaseUser, requireActiveWebLicense } from '@/lib/web-license/auth'
+import { getCurrentSupabaseUser, getWebProfile, requireActiveWebLicense } from '@/lib/web-license/auth'
 
 export async function GET() {
   const user = await getCurrentSupabaseUser()
@@ -8,11 +7,26 @@ export async function GET() {
     return json({ authenticated: false, active: false, redirectTo: '/login' }, { status: 401 })
   }
 
+  const profile = await getWebProfile(user.id)
+  if (profile?.role === 'admin') {
+    return json({
+      authenticated: true,
+      active: false,
+      licenseActive: false,
+      isAdmin: true,
+      redirectTo: '/admin/licenses',
+      email: user.email,
+      profile
+    })
+  }
+
   const check = await requireActiveWebLicense()
   if (check.ok) {
     return json({
       authenticated: true,
       active: true,
+      licenseActive: true,
+      isAdmin: false,
       redirectTo: '/dashboard',
       email: user.email,
       profile: check.profile,
@@ -21,16 +35,11 @@ export async function GET() {
     })
   }
 
-  const service = createSupabaseServiceRoleClient()
-  const { data: profile } = await service
-    .from('profiles')
-    .select('id, email, role, license_status, license_expires_at')
-    .eq('id', user.id)
-    .maybeSingle()
-
   return json({
     authenticated: true,
     active: false,
+    licenseActive: false,
+    isAdmin: false,
     redirectTo: '/activate',
     email: user.email,
     profile,

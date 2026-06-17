@@ -35,8 +35,22 @@ export default function LoginPage() {
       const timer = window.setTimeout(() => controller.abort(), 10000)
       try {
         const response = await fetch('/api/license/status', { signal: controller.signal, cache: 'no-store' })
-        const data = (await response.json().catch(() => ({}))) as { active?: boolean; redirectTo?: string }
-        router.replace(data.active ? '/dashboard' : '/activate')
+        const data = (await response.json().catch(() => ({}))) as {
+          active?: boolean
+          licenseActive?: boolean
+          redirectTo?: string
+          profile?: { role?: string | null } | null
+        }
+        const licenseActive = data.licenseActive ?? data.active
+        if (data.profile?.role === 'admin') {
+          router.replace('/admin/licenses')
+          return
+        }
+        if (licenseActive) {
+          router.replace('/dashboard')
+          return
+        }
+        router.replace('/activate')
       } finally {
         window.clearTimeout(timer)
       }

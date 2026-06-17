@@ -1,17 +1,19 @@
 import type { User } from '@supabase/supabase-js'
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 
+export type WebProfile = {
+  id: string
+  email: string | null
+  role: string
+  license_status: string
+  license_expires_at: string | null
+}
+
 export type WebLicenseCheck =
   | {
       ok: true
       user: User
-      profile: {
-        id: string
-        email: string | null
-        role: string
-        license_status: string
-        license_expires_at: string | null
-      }
+      profile: WebProfile
       activation: {
         id: string
         license_id: string
@@ -41,6 +43,18 @@ export async function getCurrentSupabaseUser() {
   const { data, error } = await supabase.auth.getUser()
   if (error || !data.user) return null
   return data.user
+}
+
+export async function getWebProfile(userId: string) {
+  const service = createSupabaseServiceRoleClient()
+  const { data: profile, error } = await service
+    .from('profiles')
+    .select('id, email, role, license_status, license_expires_at')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+  return profile as WebProfile | null
 }
 
 export async function requireWebAdmin() {
@@ -141,7 +155,7 @@ export async function requireActiveWebLicense(): Promise<WebLicenseCheck> {
   return {
     ok: true,
     user,
-    profile: profile as WebLicenseCheck extends { ok: true; profile: infer P } ? P : never,
+    profile: profile as WebProfile,
     activation: {
       id: activation.id,
       license_id: activation.license_id,

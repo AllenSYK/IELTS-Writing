@@ -228,7 +228,6 @@ export function AdminLicensesClient() {
           </div>
           <div className="admin-topbar-actions">
             <Link className="admin-secondary-button" href="/admin/users">用户管理</Link>
-            <Link className="admin-secondary-button" href="/dashboard">返回账号中心</Link>
           </div>
         </header>
 
