@@ -15,9 +15,13 @@ const SettingsSchema = z.object({
 export async function GET() {
   try {
     const { service } = await requireAdminService()
-    const { data, error } = await service.from('admin_settings').select('value, updated_at').eq('id', 'default').single()
+    const { data, error } = await service
+      .from('admin_settings')
+      .select('setting_value, updated_at')
+      .eq('id', 'default')
+      .single()
     if (error) throw error
-    return json({ success: true, settings: data.value, updatedAt: data.updated_at })
+    return json({ success: true, settings: data.setting_value, updatedAt: data.updated_at })
   } catch (error) {
     return adminApiError(error, '无法加载管理设置')
   }
@@ -27,16 +31,20 @@ export async function PATCH(request: Request) {
   try {
     const { service } = await requireAdminService()
     const patch = SettingsSchema.parse(await request.json())
-    const { data: current, error: loadError } = await service.from('admin_settings').select('value').eq('id', 'default').single()
+    const { data: current, error: loadError } = await service
+      .from('admin_settings')
+      .select('setting_value')
+      .eq('id', 'default')
+      .single()
     if (loadError) throw loadError
     const { data, error } = await service
       .from('admin_settings')
-      .update({ value: { ...(current.value || {}), ...patch } })
+      .update({ setting_value: { ...(current.setting_value || {}), ...patch } })
       .eq('id', 'default')
-      .select('value, updated_at')
+      .select('setting_value, updated_at')
       .single()
     if (error) throw error
-    return json({ success: true, settings: data.value, updatedAt: data.updated_at })
+    return json({ success: true, settings: data.setting_value, updatedAt: data.updated_at })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return json({ success: false, code: 'INVALID_INPUT', message: '设置参数无效' }, { status: 400 })

@@ -959,10 +959,30 @@ async function getAdminSettings() {
 
 async function saveAdminSettings(request: Request, payload: unknown) {
   const settings = AdminSettingsSchema.parse(payload || {})
-  const { data, error } = await getServiceClient()
+  const service = getServiceClient()
+  const { data: existing, error: loadError } = await service
     .from('admin_settings')
-    .upsert({ id: 'default', value: settings }, { onConflict: 'id' })
-    .select('value,updated_at')
+    .select('id')
+    .eq('id', 'default')
+    .maybeSingle()
+  if (loadError) throw loadError
+
+  const query = existing
+    ? service
+      .from('admin_settings')
+      .update({ setting_value: settings })
+      .eq('id', 'default')
+    : service
+      .from('admin_settings')
+      .insert({
+        id: 'default',
+        setting_key: 'default',
+        setting_value: settings,
+        description: 'Admin portal defaults'
+      })
+
+  const { data, error } = await query
+    .select('setting_value,updated_at')
     .single()
   if (error) throw error
 
@@ -970,7 +990,7 @@ async function saveAdminSettings(request: Request, payload: unknown) {
     fields: Object.keys(settings)
   })
   return {
-    settings: AdminSettingsSchema.parse(data?.value || settings),
+    settings: AdminSettingsSchema.parse(data?.setting_value || settings),
     updatedAt: data?.updated_at || null
   }
 }
@@ -979,14 +999,14 @@ async function loadAdminSettings() {
   const defaults = defaultAdminSettings()
   const { data, error } = await getServiceClient()
     .from('admin_settings')
-    .select('value')
+    .select('setting_value')
     .eq('id', 'default')
     .maybeSingle()
   if (isMissingTableError(error)) {
     return defaults
   }
   if (error) throw error
-  return AdminSettingsSchema.parse({ ...defaults, ...(data?.value || {}) })
+  return AdminSettingsSchema.parse({ ...defaults, ...(data?.setting_value || {}) })
 }
 
 function defaultAdminSettings() {
