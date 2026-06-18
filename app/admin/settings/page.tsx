@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 import { requireWebAdmin } from '@/lib/web-license/auth'
-import { AdminOverviewClient } from './AdminOverviewClient'
+import { AdminSettingsClient } from './AdminSettingsClient'
 
-export default async function AdminPage() {
+export default async function AdminSettingsPage() {
   try {
     await requireWebAdmin()
   } catch (error) {
@@ -10,5 +10,5 @@ export default async function AdminPage() {
     if (error instanceof Response && error.status === 403) redirect('/admin/login?reason=not_admin')
     throw error
   }
-  return <AdminOverviewClient />
+  return <AdminSettingsClient />
 }

@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const page = Math.max(1, toNumber(url.searchParams.get('page'), 1))
     const pageSize = Math.min(100, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
     const search = url.searchParams.get('search')?.trim().toLowerCase() || ''
+    const filter = url.searchParams.get('filter')?.trim().toLowerCase() || 'all'
 
     const { data: authData, error: authError } = await service.auth.admin.listUsers({
       page,
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
       service.from('profiles').select('id, email, role, license_status, license_expires_at, created_at').in('id', userIds),
       service
         .from('license_activations')
-        .select('id, user_id, email, activated_at, expires_at, status, last_used_at, license_codes(plan, status)')
+        .select('id, user_id, email, activated_at, expires_at, status, last_used_at, license_codes(id, code_value, code_prefix, plan, status)')
         .in('user_id', userIds)
         .order('expires_at', { ascending: false }),
       service.from('usage_records').select('user_id, created_at, success').in('user_id', userIds)
@@ -63,16 +64,32 @@ export async function GET(request: Request) {
           email: user.email,
           createdAt: user.created_at,
           lastSignInAt: user.last_sign_in_at,
+          emailConfirmedAt: user.email_confirmed_at,
+          bannedUntil: user.banned_until,
           role: profile?.role || 'user',
           licenseStatus: profile?.license_status || 'inactive',
           licenseExpiresAt: profile?.license_expires_at || null,
           plan: license?.plan || null,
           activation,
+          isBound: Boolean(activation),
+          licenseId: license?.id || null,
+          licenseCode: license?.code_value || null,
+          licensePrefix: license?.code_prefix || null,
           lastUsedAt: usageInfo.lastUsedAt,
           evaluationCount: usageInfo.count
         }
       })
       .filter((user) => !search || user.email?.toLowerCase().includes(search) || user.id.includes(search))
+      .filter((user) => {
+        const banned = Boolean(user.bannedUntil && new Date(user.bannedUntil).getTime() > Date.now())
+        if (filter === 'admin') return user.role === 'admin'
+        if (filter === 'active') return user.licenseStatus === 'active' && !banned
+        if (filter === 'inactive') return user.licenseStatus === 'inactive' && !banned
+        if (filter === 'expired') return user.licenseStatus === 'expired' && !banned
+        if (filter === 'disabled') return banned || user.licenseStatus === 'suspended'
+        if (filter === 'unbound') return !user.isBound
+        return true
+      })
 
     return json({ success: true, users, total: authData.total || users.length })
   } catch (error) {

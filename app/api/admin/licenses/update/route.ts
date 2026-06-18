@@ -4,11 +4,12 @@ import { adminApiError, refreshUsersLicenseStatus, requireAdminService } from '@
 
 const UpdateSchema = z.object({
   id: z.string().uuid(),
-  status: z.enum(['unused', 'active', 'exhausted', 'disabled', 'expired']).optional(),
+  status: z.enum(['unused', 'active', 'exhausted', 'disabled', 'expired', 'revoked']).optional(),
   plan: z.string().min(1).max(80).optional(),
   durationDays: z.number().int().min(1).max(3650).optional(),
   maxActivations: z.number().int().min(1).max(100).optional(),
-  expiresAt: z.string().datetime().nullable().optional()
+  expiresAt: z.string().datetime().nullable().optional(),
+  note: z.string().max(500).nullable().optional()
 })
 
 export async function POST(request: Request) {
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
     if (body.durationDays) patch.duration_days = body.durationDays
     if (body.maxActivations) patch.max_activations = body.maxActivations
     if ('expiresAt' in body) patch.expires_at = body.expiresAt || null
+    if ('note' in body) patch.note = body.note?.trim() || null
 
     const { data: activations, error: activationError } = await service
       .from('license_activations')
@@ -38,10 +40,12 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
-    if (body.status === 'disabled') {
+    if (body.status === 'disabled' || body.status === 'revoked') {
       await service
         .from('license_activations')
-        .update({ status: 'suspended' })
+        .update(body.status === 'revoked'
+          ? { status: 'revoked', revoked_at: new Date().toISOString(), revoked_reason: '激活码已被管理员撤销' }
+          : { status: 'suspended' })
         .eq('license_id', body.id)
         .eq('status', 'active')
     } else if (body.status === 'active' || body.status === 'unused') {

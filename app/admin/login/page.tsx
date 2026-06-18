@@ -16,7 +16,7 @@ export default async function AdminLoginPage({
 
   const profile = await getWebProfile(user.id)
   if (profile?.role === 'admin') {
-    redirect('/admin/licenses')
+    redirect('/admin')
   }
 
   return (

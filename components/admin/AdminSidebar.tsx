@@ -1,78 +1,88 @@
 'use client'
 
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   Activity,
   BookOpen,
-  FileClock,
   KeyRound,
   LayoutDashboard,
-  MessageSquareText,
-  MonitorSmartphone,
-  Rocket,
   Settings,
+  UsersRound,
   X
 } from 'lucide-react'
-
-export type AdminSection = 'overview' | 'licenses' | 'devices' | 'releases' | 'feedback' | 'logs' | 'settings'
+import { AdminLogoutButton } from './AdminLogoutButton'
 
 const navigation = [
-  { id: 'overview', label: '总览', icon: LayoutDashboard },
-  { id: 'licenses', label: '激活码管理', icon: KeyRound },
-  { id: 'devices', label: '设备管理', icon: MonitorSmartphone },
-  { id: 'releases', label: '版本发布', icon: Rocket },
-  { id: 'feedback', label: '用户反馈', icon: MessageSquareText },
-  { id: 'logs', label: '操作日志', icon: FileClock },
-  { id: 'settings', label: '系统设置', icon: Settings }
-] satisfies Array<{ id: AdminSection; label: string; icon: typeof LayoutDashboard }>
+  { href: '/admin', label: '总览', icon: LayoutDashboard, exact: true },
+  { href: '/admin/licenses', label: '激活码', icon: KeyRound },
+  { href: '/admin/activations', label: '激活记录', icon: Activity },
+  { href: '/admin/users', label: '用户管理', icon: UsersRound },
+  { href: '/admin/settings', label: '设置', icon: Settings }
+]
 
 export function AdminSidebar({
-  active,
-  collapsed,
-  onNavigate,
+  open,
+  adminEmail,
   onClose
 }: {
-  active: AdminSection
-  collapsed: boolean
-  onNavigate: (section: AdminSection) => void
+  open: boolean
+  adminEmail?: string
   onClose: () => void
 }) {
+  const pathname = usePathname()
+
   return (
-    <aside className={`admin-sidebar ${collapsed ? 'is-collapsed' : ''}`} aria-label="管理后台导航">
-      <div className="admin-sidebar-brand">
-        <span className="admin-sidebar-mark">
-          <BookOpen size={19} aria-hidden="true" />
-        </span>
-        <div>
-          <strong>管理后台</strong>
-          <span>IELTS Writing</span>
+    <>
+      <button
+        className={`admin-sidebar-backdrop ${open ? 'is-visible' : ''}`}
+        type="button"
+        aria-label="关闭导航"
+        onClick={onClose}
+      />
+      <aside className={`admin-sidebar ${open ? 'is-open' : ''}`} aria-label="管理后台导航">
+        <div className="admin-sidebar-brand">
+          <span className="sidebar-logo-mark" aria-hidden="true">空</span>
+          <div>
+            <strong>管理中心</strong>
+            <span>IELTS Writing</span>
+          </div>
+          <button className="admin-icon-button admin-sidebar-close" type="button" aria-label="关闭导航" onClick={onClose}>
+            <X size={18} aria-hidden="true" />
+          </button>
         </div>
-        <button className="admin-icon-button admin-sidebar-close" type="button" aria-label="收起菜单" onClick={onClose}>
-          <X size={18} aria-hidden="true" />
-        </button>
-      </div>
 
-      <nav className="admin-sidebar-nav">
-        {navigation.map((item) => {
-          const Icon = item.icon
-          return (
-            <button
-              key={item.id}
-              className={`admin-sidebar-item ${active === item.id ? 'is-active' : ''}`}
-              type="button"
-              aria-current={active === item.id ? 'page' : undefined}
-              onClick={() => onNavigate(item.id)}
-            >
-              <Icon size={18} aria-hidden="true" />
-              <span>{item.label}</span>
-            </button>
-          )
-        })}
-      </nav>
+        <nav className="admin-sidebar-nav">
+          {navigation.map((item) => {
+            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                className={`admin-sidebar-item ${active ? 'is-active' : ''}`}
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                onClick={onClose}
+              >
+                <Icon size={19} aria-hidden="true" />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
 
-      <div className="admin-sidebar-status">
-        <Activity size={16} aria-hidden="true" />
-        <span>所有写操作均通过服务端完成</span>
-      </div>
-    </aside>
+        <div className="admin-sidebar-bottom">
+          <Link className="admin-user-card" href="/">
+            <span className="admin-user-avatar">{(adminEmail || 'A').slice(0, 1).toUpperCase()}</span>
+            <span>
+              <strong>{adminEmail || '管理员账号'}</strong>
+              <small>返回用户端</small>
+            </span>
+            <BookOpen size={17} aria-hidden="true" />
+          </Link>
+          <AdminLogoutButton />
+        </div>
+      </aside>
+    </>
   )
 }

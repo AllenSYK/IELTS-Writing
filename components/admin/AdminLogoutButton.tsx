@@ -25,7 +25,7 @@ export function AdminLogoutButton() {
   }
 
   return (
-    <button className="admin-secondary-button admin-logout-button" type="button" onClick={logout} disabled={loading}>
+    <button className="admin-logout-button" type="button" onClick={logout} disabled={loading}>
       {loading ? <Loader2 className="admin-spin" size={16} /> : <LogOut size={16} />}
       {loading ? '正在退出' : '退出管理员账号'}
     </button>

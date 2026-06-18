@@ -8,7 +8,8 @@ const CreateSchema = z.object({
   plan: z.string().min(1).max(80).default('standard'),
   durationDays: z.number().int().min(1).max(3650).default(365),
   maxActivations: z.number().int().min(1).max(100).default(1),
-  expiresAt: z.string().datetime().optional().nullable()
+  expiresAt: z.string().datetime().optional().nullable(),
+  note: z.string().max(500).optional().nullable()
 })
 
 export async function POST(request: Request) {
@@ -21,12 +22,14 @@ export async function POST(request: Request) {
         code,
         row: {
           code_hash: hashWebLicenseCode(code),
+          code_value: code,
           code_prefix: getWebLicenseCodePrefix(code),
           plan: body.plan,
           duration_days: body.durationDays,
           max_activations: body.maxActivations,
           status: 'unused',
           expires_at: body.expiresAt || null,
+          note: body.note?.trim() || null,
           created_by: user.id
         }
       }
@@ -35,7 +38,7 @@ export async function POST(request: Request) {
     const { data, error } = await service
       .from('license_codes')
       .insert(generated.map((item) => item.row))
-      .select('id, code_prefix, plan, duration_days, max_activations, status, expires_at, created_at')
+      .select('id, code_prefix, plan, duration_days, max_activations, status, expires_at, note, created_at')
 
     if (error) throw error
 

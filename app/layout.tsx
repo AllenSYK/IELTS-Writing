@@ -3,6 +3,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { AppInteractionProvider } from '@/components/interaction-system'
 import { UserProfileProvider } from '@/stores/user-profile-store'
 import './globals.css'
+import './admin.css'
 
 export const metadata: Metadata = {
   title: '空与梦 IELTS Writing',

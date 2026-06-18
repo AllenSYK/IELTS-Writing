@@ -103,7 +103,7 @@ export function AdminLoginClient({
         return
       }
 
-      router.replace(data.redirectTo || '/admin/licenses')
+      router.replace(data.redirectTo || '/admin')
       router.refresh()
     } catch (caught) {
       setError(

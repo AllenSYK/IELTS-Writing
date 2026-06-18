@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       .from('license_codes')
       .select(`
         id,
+        code_value,
         code_prefix,
         plan,
         duration_days,
@@ -27,6 +28,8 @@ export async function GET(request: Request) {
         activation_count,
         status,
         expires_at,
+        note,
+        created_by,
         created_at,
         updated_at,
         license_activations (
@@ -48,7 +51,7 @@ export async function GET(request: Request) {
       query = query.eq('status', status)
     }
     if (search) {
-      query = query.or(`code_prefix.ilike.%${search}%,plan.ilike.%${search}%`)
+      query = query.or(`code_prefix.ilike.%${search}%,code_value.ilike.%${search}%,plan.ilike.%${search}%,note.ilike.%${search}%`)
     }
 
     const { data, error, count } = await query
