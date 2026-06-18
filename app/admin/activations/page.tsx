@@ -1,14 +1,15 @@
 import { redirect } from 'next/navigation'
-import { requireWebAdmin } from '@/lib/web-license/auth'
-import { AdminActivationsClient } from './AdminActivationsClient'
 
-export default async function AdminActivationsPage() {
-  try {
-    await requireWebAdmin()
-  } catch (error) {
-    if (error instanceof Response && error.status === 401) redirect('/admin/login')
-    if (error instanceof Response && error.status === 403) redirect('/admin/login?reason=not_admin')
-    throw error
+export default async function LegacyAdminActivationsPage({
+  searchParams
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const params = await searchParams
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === 'string') query.set(key, value)
+    else value?.forEach((item) => query.append(key, item))
   }
-  return <AdminActivationsClient />
+  redirect(`/admin/bindings${query.size ? `?${query.toString()}` : ''}`)
 }

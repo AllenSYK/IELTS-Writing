@@ -7,6 +7,11 @@ import { calculateWritingOverall, isExpiredAt, roundToHalfBand } from '../lib/ie
 import { isValidPublicKey } from '../lib/license/token'
 import { countWords, normalizeEvaluation } from '../lib/writing-records'
 import { resolveAuthRedirect } from '../lib/auth/route-access'
+import {
+  getEffectiveBindingStatus,
+  getEffectiveLicenseStatus,
+  UNBOUND_BINDING_REASON
+} from '../lib/web-license/admin-license-data'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -245,5 +250,45 @@ test('Admin and ordinary login redirects remain separate', () => {
       licenseActive: true
     }),
     '/dashboard'
+  )
+})
+
+test('Admin license status distinguishes unused, partial, exhausted, and expired', () => {
+  const now = new Date('2026-06-18T00:00:00.000Z').getTime()
+  assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 0, max_activations: 3 }, now), 'unused')
+  assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 1, max_activations: 3 }, now), 'partial')
+  assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 3, max_activations: 3 }, now), 'exhausted')
+  assert.equal(
+    getEffectiveLicenseStatus({
+      status: 'active',
+      activation_count: 0,
+      max_activations: 3,
+      expires_at: '2026-06-17T00:00:00.000Z'
+    }, now),
+    'expired'
+  )
+})
+
+test('Admin binding status distinguishes valid, expiring, expired, revoked, and unbound', () => {
+  const now = new Date('2026-06-18T00:00:00.000Z').getTime()
+  assert.equal(getEffectiveBindingStatus({ status: 'active', expires_at: '2026-08-18T00:00:00.000Z' }, now), 'active')
+  assert.equal(getEffectiveBindingStatus({ status: 'active', expires_at: '2026-06-25T00:00:00.000Z' }, now), 'expiring')
+  assert.equal(getEffectiveBindingStatus({ status: 'active', expires_at: '2026-06-17T00:00:00.000Z' }, now), 'expired')
+  assert.equal(getEffectiveBindingStatus({ status: 'revoked', expires_at: '2026-08-18T00:00:00.000Z' }, now), 'revoked')
+  assert.equal(
+    getEffectiveBindingStatus({
+      status: 'active',
+      expires_at: '2026-08-18T00:00:00.000Z',
+      license_status: 'disabled'
+    }, now),
+    'revoked'
+  )
+  assert.equal(
+    getEffectiveBindingStatus({
+      status: 'revoked',
+      expires_at: '2026-08-18T00:00:00.000Z',
+      revoked_reason: UNBOUND_BINDING_REASON
+    }, now),
+    'unbound'
   )
 })

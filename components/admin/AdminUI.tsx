@@ -4,12 +4,14 @@ import { Inbox, RefreshCw } from 'lucide-react'
 const labels: Record<string, string> = {
   unused: '未使用',
   active: '有效',
+  expiring: '即将到期',
   partial: '部分使用',
   exhausted: '已用完',
   expired: '已过期',
   revoked: '已撤销',
   disabled: '已禁用',
   suspended: '已暂停',
+  unbound: '已解绑',
   inactive: '未激活',
   admin: '管理员',
   user: '普通用户'
@@ -20,9 +22,9 @@ export function AdminBadge({ value }: { value: string }) {
   const tone =
     ['active', 'admin'].includes(normalized)
       ? 'good'
-      : ['expired', 'revoked', 'disabled', 'suspended'].includes(normalized)
+      : ['expired', 'revoked', 'disabled', 'suspended', 'unbound'].includes(normalized)
         ? 'bad'
-        : ['partial', 'exhausted'].includes(normalized)
+        : ['partial', 'exhausted', 'expiring'].includes(normalized)
           ? 'warning'
           : 'neutral'
   return <span className={`admin-status ${tone}`}>{labels[normalized] || value}</span>

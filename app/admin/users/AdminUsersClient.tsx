@@ -1,10 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   Ban,
-  CalendarPlus,
   CheckCircle2,
   Eye,
   KeyRound,
@@ -12,14 +12,12 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
-  ShieldX,
   Trash2,
-  Unlink,
   UserCog,
   LockKeyhole
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate, maskLicenseCode } from '@/components/admin/AdminUI'
+import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 
@@ -90,6 +88,7 @@ function isBanned(user: UserRow) {
 
 export function AdminUsersClient() {
   const searchParams = useSearchParams()
+  const focusedUserId = searchParams.get('userId') || ''
   const { pushToast } = useToast()
   const [users, setUsers] = useState<UserRow[]>([])
   const [search, setSearch] = useState(searchParams.get('search') || '')
@@ -109,29 +108,7 @@ export function AdminUsersClient() {
   const [batchDays, setBatchDays] = useState(365)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const params = new URLSearchParams({ pageSize: '100', search: debouncedSearch, filter })
-      const response = await fetch(`/api/admin/users?${params.toString()}`, { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '无法加载用户。')
-      setUsers(data.users || [])
-      setSelectedIds((current) => new Set([...current].filter((id) => (data.users || []).some((user: UserRow) => user.id === id))))
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法加载用户。')
-    } finally {
-      setLoading(false)
-    }
-  }, [debouncedSearch, filter])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
-  }, [load])
-
-  async function openDetail(user: UserRow) {
+  const openDetail = useCallback(async (user: UserRow) => {
     setSelected(user)
     setDetail(null)
     setBindCode('')
@@ -143,7 +120,35 @@ export function AdminUsersClient() {
     } catch (caught) {
       pushToast({ kind: 'error', title: '用户详情加载失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     }
-  }
+  }, [pushToast])
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const params = new URLSearchParams({ pageSize: '100', search: debouncedSearch, filter })
+      if (focusedUserId) params.set('userId', focusedUserId)
+      const response = await fetch(`/api/admin/users?${params.toString()}`, { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.success) throw new Error(data.message || '无法加载用户。')
+      const rows = (data.users || []) as UserRow[]
+      setUsers(rows)
+      setSelectedIds((current) => new Set([...current].filter((id) => rows.some((user) => user.id === id))))
+      if (focusedUserId) {
+        const focused = rows.find((user) => user.id === focusedUserId)
+        if (focused) void openDetail(focused)
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '无法加载用户。')
+    } finally {
+      setLoading(false)
+    }
+  }, [debouncedSearch, filter, focusedUserId, openDetail])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
 
   async function updateUser(userId: string, payload: Record<string, unknown>, success: string, keepOpen = false) {
     setSubmitting(true)
@@ -259,7 +264,7 @@ export function AdminUsersClient() {
       <AdminPageHeader
         eyebrow="USER MANAGEMENT"
         title="用户管理"
-        description="查看账号状态、激活码绑定关系、套餐与有效期。"
+        description="查看用户账号、角色、邮箱验证、激活状态、套餐与账号有效期。"
         actions={(
           <button className="admin-primary-button" type="button" onClick={() => setBatchOpen(true)} disabled={!selectedIds.size}>
             <KeyRound size={16} />批量绑定激活码{selectedIds.size ? `（${selectedIds.size}）` : ''}
@@ -295,14 +300,14 @@ export function AdminUsersClient() {
         ) : null}
 
         {error ? <AdminError message={error} onRetry={() => void load()} /> : null}
-        {loading ? <AdminTableSkeleton columns={10} rows={7} /> : users.length ? (
-          <div className="admin-table-wrap">
+        {loading ? <AdminTableSkeleton columns={9} rows={7} /> : users.length ? (
+          <div className="admin-table-wrap admin-responsive-table">
             <table className="admin-table">
               <thead>
                 <tr>
                   <th className="admin-checkbox-column"><span className="sr-only">选择</span></th>
-                  <th>邮箱</th><th>角色</th><th>账号状态</th><th>绑定激活码</th><th>套餐</th>
-                  <th>账号到期时间</th><th>注册时间</th><th>最近登录</th><th>操作</th>
+                  <th>邮箱</th><th>角色</th><th>注册时间</th><th>邮箱验证状态</th><th>激活状态</th>
+                  <th>当前套餐</th><th>账号到期时间</th><th>绑定情况</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -311,7 +316,7 @@ export function AdminUsersClient() {
                   const accountStatus = banned ? 'disabled' : user.role === 'admin' ? 'admin' : user.licenseStatus
                   return (
                     <tr key={user.id}>
-                      <td className="admin-checkbox-column">
+                      <td className="admin-checkbox-column" data-label="选择">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(user.id)}
@@ -324,15 +329,15 @@ export function AdminUsersClient() {
                           aria-label={`选择 ${user.email || user.id}`}
                         />
                       </td>
-                      <td><strong>{user.email || '暂无邮箱'}</strong><small className="admin-id-cell">{user.id}</small></td>
-                      <td><AdminBadge value={user.role} /></td>
-                      <td><AdminBadge value={accountStatus} /></td>
-                      <td>{user.isBound ? <code>{maskLicenseCode(user.licenseCode, user.licensePrefix || undefined)}</code> : <span className="admin-status neutral">未绑定</span>}</td>
-                      <td>{user.plan ? <span className="admin-plan-pill">{user.plan}</span> : '—'}</td>
-                      <td>{formatAdminDate(user.licenseExpiresAt)}</td>
-                      <td>{formatAdminDate(user.createdAt)}</td>
-                      <td>{formatAdminDate(user.lastSignInAt)}</td>
-                      <td>
+                      <td data-label="邮箱"><strong>{user.email || '暂无邮箱'}</strong><small className="admin-id-cell">{user.id}</small></td>
+                      <td data-label="角色"><AdminBadge value={user.role} /></td>
+                      <td data-label="注册时间">{formatAdminDate(user.createdAt)}</td>
+                      <td data-label="邮箱验证状态"><span className={`admin-status ${user.emailConfirmedAt ? 'good' : 'warning'}`}>{user.emailConfirmedAt ? '已验证' : '未验证'}</span></td>
+                      <td data-label="激活状态"><AdminBadge value={accountStatus} /></td>
+                      <td data-label="当前套餐">{user.plan ? <span className="admin-plan-pill">{user.plan}</span> : '—'}</td>
+                      <td data-label="账号到期时间">{formatAdminDate(user.licenseExpiresAt)}</td>
+                      <td data-label="绑定情况"><span className={`admin-status ${user.isBound ? 'good' : 'neutral'}`}>{user.isBound ? '已绑定激活码' : '未绑定激活码'}</span></td>
+                      <td data-label="操作">
                         <div className="admin-row-actions">
                           <button className="admin-icon-button" type="button" onClick={() => void openDetail(user)} aria-label="查看详情"><Eye size={15} /></button>
                           {banned ? (
@@ -361,7 +366,7 @@ export function AdminUsersClient() {
         )}
       </section>
 
-      <CenteredDialog open={Boolean(selected)} title="用户详情" description="管理账号角色、激活状态和绑定关系。" className="admin-detail-dialog" onClose={() => { setSelected(null); setDetail(null) }}>
+      <CenteredDialog open={Boolean(selected)} title="用户详情" description="查看用户账号本身；详细绑定历史在邮箱绑定页面管理。" className="admin-detail-dialog" onClose={() => { setSelected(null); setDetail(null) }}>
         {selected ? (
           <div className="admin-detail-stack">
             <section className="admin-user-detail-hero">
@@ -377,45 +382,30 @@ export function AdminUsersClient() {
                   <div><dt>注册时间</dt><dd>{formatAdminDate(detail.user.created_at)}</dd></div>
                   <div><dt>最近登录</dt><dd>{formatAdminDate(detail.user.last_sign_in_at)}</dd></div>
                   <div><dt>账号激活状态</dt><dd><AdminBadge value={detail.profile.license_status} /></dd></div>
-                  <div><dt>账号到期时间</dt><dd>{formatAdminDate(detail.profile.license_expires_at)}<small>由当前有效激活记录决定</small></dd></div>
+                  <div><dt>账号到期时间</dt><dd>{formatAdminDate(detail.profile.license_expires_at)}<small>由当前有效邮箱绑定决定</small></dd></div>
                 </dl>
                 <section>
-                  <div className="admin-panel-heading"><div><p className="admin-eyebrow">LICENSE ACCESS</p><h3>激活码绑定</h3></div></div>
-                  {detail.activations.length ? (
-                    <div className="admin-bound-list">
-                      {detail.activations.map((activation) => {
-                        const license = Array.isArray(activation.license_codes) ? activation.license_codes[0] : activation.license_codes
-                        return (
-                          <article key={activation.id}>
-                            <div><strong>{maskLicenseCode(license?.code_value, license?.code_prefix)}</strong><small>{license?.plan || '—'} · 激活于 {formatAdminDate(activation.activated_at)}</small></div>
-                            <div><span>账号有效期</span><strong>{formatAdminDate(activation.expires_at)}</strong></div>
-                            <AdminBadge value={activation.status} />
-                            <div className="admin-row-actions">
-                              <button className="admin-secondary-button compact" type="button" onClick={() => void updateUser(selected.id, { action: 'extend', activationId: activation.id, days: 30 }, '有效期已延长 30 天')}><CalendarPlus size={14} />延长</button>
-                              <button className="admin-secondary-button compact danger" type="button" onClick={() => setConfirm({
-                                title: '撤销该用户的激活权限？',
-                                message: '该记录会保留，但用户将立即失去使用权限。',
-                                label: '确认撤销',
-                                action: () => updateUser(selected.id, { action: 'revoke', activationId: activation.id }, '激活权限已撤销')
-                              })}><ShieldX size={14} />撤销</button>
-                              <button className="admin-secondary-button compact danger" type="button" onClick={() => setConfirm({
-                                title: '解绑激活码？',
-                                message: '绑定记录会永久删除，并释放激活码的一次名额。',
-                                label: '确认解绑',
-                                action: () => updateUser(selected.id, { action: 'unbind', activationId: activation.id }, '激活码已解绑')
-                              })}><Unlink size={14} />解绑</button>
-                            </div>
-                          </article>
-                        )
-                      })}
+                  <div className="admin-panel-heading">
+                    <div><p className="admin-eyebrow">EMAIL BINDINGS</p><h3>邮箱绑定记录</h3></div>
+                    <Link className="admin-text-button" href={`/admin/bindings?userId=${selected.id}`}>查看此邮箱的绑定记录</Link>
+                  </div>
+                  <section className="admin-binding-summary">
+                    <div>
+                      <span className="admin-list-icon"><KeyRound size={18} /></span>
+                      <div>
+                        <strong>{selected.isBound ? '已绑定激活码' : '未绑定激活码'}</strong>
+                        <p>{selected.isBound ? '套餐、账号到期时间和绑定状态请进入邮箱绑定页面查看。' : '当前账号尚无绑定关系。'}</p>
+                      </div>
                     </div>
-                  ) : (
+                    <Link className="admin-primary-button" href={`/admin/bindings?userId=${selected.id}`}>查看绑定历史</Link>
+                  </section>
+                  {!selected.isBound ? (
                     <form className="admin-inline-bind" onSubmit={bindUser}>
                       <div><strong>该用户尚未绑定激活码</strong><p>输入完整激活码后手动绑定。</p></div>
                       <label className="admin-field"><span>完整激活码</span><input value={bindCode} onChange={(event) => setBindCode(event.target.value)} placeholder="IELTS-XXXX-XXXX-XXXX" required /></label>
                       <button className="admin-primary-button" type="submit" disabled={submitting}>{submitting ? <Loader2 className="admin-spin" size={16} /> : <KeyRound size={16} />}绑定激活码</button>
                     </form>
-                  )}
+                  ) : null}
                 </section>
                 <section>
                   <div className="admin-panel-heading"><div><p className="admin-eyebrow">ACCOUNT CONTROL</p><h3>账号控制</h3></div></div>
@@ -438,7 +428,7 @@ export function AdminUsersClient() {
                     )}
                     <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
                       title: '永久删除这个用户？',
-                      message: '用户账号、激活记录和关联数据可能会被永久删除，且无法恢复。',
+                      message: '用户账号、邮箱绑定记录和关联数据可能会被永久删除，且无法恢复。',
                       label: '永久删除',
                       action: () => deleteUser(selected.id)
                     })}><Trash2 size={15} />删除用户</button>

@@ -3,10 +3,10 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Activity,
   BookOpen,
   KeyRound,
   LayoutDashboard,
+  Link2,
   Settings,
   UsersRound,
   X
@@ -15,8 +15,8 @@ import { AdminLogoutButton } from './AdminLogoutButton'
 
 const navigation = [
   { href: '/admin', label: '总览', icon: LayoutDashboard, exact: true },
-  { href: '/admin/licenses', label: '激活码', icon: KeyRound },
-  { href: '/admin/activations', label: '激活记录', icon: Activity },
+  { href: '/admin/licenses', label: '激活码管理', icon: KeyRound },
+  { href: '/admin/bindings', label: '邮箱绑定', icon: Link2 },
   { href: '/admin/users', label: '用户管理', icon: UsersRound },
   { href: '/admin/settings', label: '设置', icon: Settings }
 ]

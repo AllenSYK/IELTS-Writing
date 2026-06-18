@@ -8,7 +8,7 @@ import { Bell, Menu, Plus, Search } from 'lucide-react'
 const pageMeta = [
   { match: (path: string) => path === '/admin', eyebrow: 'Overview', title: '管理中心' },
   { match: (path: string) => path.startsWith('/admin/licenses'), eyebrow: 'Licenses', title: '激活码管理' },
-  { match: (path: string) => path.startsWith('/admin/activations'), eyebrow: 'Activations', title: '激活记录' },
+  { match: (path: string) => path.startsWith('/admin/bindings'), eyebrow: 'Bindings', title: '邮箱绑定' },
   { match: (path: string) => path.startsWith('/admin/users'), eyebrow: 'Users', title: '用户管理' },
   { match: (path: string) => path.startsWith('/admin/settings'), eyebrow: 'Settings', title: '管理设置' }
 ]
@@ -23,7 +23,7 @@ export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMen
     event.preventDefault()
     const query = search.trim()
     if (!query) return
-    const target = pathname.startsWith('/admin/users') || pathname.startsWith('/admin/activations')
+    const target = pathname.startsWith('/admin/users') || pathname.startsWith('/admin/bindings')
       ? pathname
       : '/admin/licenses'
     router.push(`${target}?search=${encodeURIComponent(query)}`)

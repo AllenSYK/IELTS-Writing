@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { adminApiError, refreshUsersLicenseStatus, requireAdminService } from '@/lib/web-license/admin-api'
+import {
+  getEffectiveLicenseStatus,
+  syncLicenseActivationCount,
+  UNBOUND_BINDING_REASON
+} from '@/lib/web-license/admin-license-data'
 
 const PatchSchema = z.object({
   status: z.enum(['unused', 'active', 'exhausted', 'disabled', 'expired', 'revoked']).optional(),
@@ -20,14 +25,25 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       .select(`
         id, code_value, code_prefix, plan, duration_days, max_activations, activation_count,
         status, expires_at, note, created_by, created_at, updated_at,
-        license_activations (
-          id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_at, revoked_reason
-        )
+        license_activations (id, revoked_reason)
       `)
       .eq('id', id)
       .single()
     if (error) throw error
-    return json({ success: true, license: data })
+    const activationCount = (data.license_activations || [])
+      .filter((binding) => binding.revoked_reason !== UNBOUND_BINDING_REASON)
+      .length
+    const { license_activations: _bindings, ...license } = data
+    void _bindings
+    return json({
+      success: true,
+      license: {
+        ...license,
+        activation_count: activationCount,
+        remaining_count: Math.max(0, license.max_activations - activationCount),
+        status: getEffectiveLicenseStatus({ ...license, activation_count: activationCount })
+      }
+    })
   } catch (error) {
     return adminApiError(error, '无法加载激活码详情')
   }
@@ -74,6 +90,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         .gt('expires_at', new Date().toISOString())
     }
 
+    await syncLicenseActivationCount(service, id)
     await refreshUsersLicenseStatus((activations || []).map((item) => item.user_id))
     return json({ success: true, license: data })
   } catch (error) {

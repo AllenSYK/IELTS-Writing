@@ -1,5 +1,7 @@
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
+import { UNBOUND_BINDING_REASON } from '@/lib/web-license/admin-license-data'
+import type { User } from '@supabase/supabase-js'
 
 function toNumber(value: string | null, fallback: number) {
   const parsed = Number(value)
@@ -14,19 +16,28 @@ export async function GET(request: Request) {
     const pageSize = Math.min(100, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
     const search = url.searchParams.get('search')?.trim().toLowerCase() || ''
     const filter = url.searchParams.get('filter')?.trim().toLowerCase() || 'all'
+    const userId = url.searchParams.get('userId')?.trim() || ''
 
-    const { data: authData, error: authError } = await service.auth.admin.listUsers({
-      page,
-      perPage: pageSize
-    })
-    if (authError) throw authError
+    let listedUsers: User[] = []
+    let totalUsers = 0
+    if (userId) {
+      const { data, error } = await service.auth.admin.getUserById(userId)
+      if (error) throw error
+      listedUsers = data.user ? [data.user] : []
+      totalUsers = listedUsers.length
+    } else {
+      const { data, error } = await service.auth.admin.listUsers({ page, perPage: pageSize })
+      if (error) throw error
+      listedUsers = data.users
+      totalUsers = data.total || data.users.length
+    }
 
-    const userIds = authData.users.map((user) => user.id)
+    const userIds = listedUsers.map((user) => user.id)
     const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, { data: usage, error: usageError }] = await Promise.all([
       service.from('profiles').select('id, email, role, license_status, license_expires_at, created_at').in('id', userIds),
       service
         .from('license_activations')
-        .select('id, user_id, email, activated_at, expires_at, status, last_used_at, license_codes(id, code_value, code_prefix, plan, status)')
+        .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_value, code_prefix, plan, status)')
         .in('user_id', userIds)
         .order('expires_at', { ascending: false }),
       service.from('usage_records').select('user_id, created_at, success').in('user_id', userIds)
@@ -39,6 +50,7 @@ export async function GET(request: Request) {
     const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]))
     const activationMap = new Map<string, (typeof activations)[number]>()
     for (const activation of activations || []) {
+      if (activation.revoked_reason === UNBOUND_BINDING_REASON) continue
       if (!activationMap.has(activation.user_id)) activationMap.set(activation.user_id, activation)
     }
     const usageMap = new Map<string, { count: number; lastUsedAt: string | null }>()
@@ -51,7 +63,7 @@ export async function GET(request: Request) {
       usageMap.set(item.user_id, current)
     }
 
-    const users = authData.users
+    const users = listedUsers
       .map((user) => {
         const profile = profileMap.get(user.id)
         const activation = activationMap.get(user.id)
@@ -91,7 +103,7 @@ export async function GET(request: Request) {
         return true
       })
 
-    return json({ success: true, users, total: authData.total || users.length })
+    return json({ success: true, users, total: userId ? users.length : totalUsers })
   } catch (error) {
     return adminApiError(error, '无法加载用户列表')
   }

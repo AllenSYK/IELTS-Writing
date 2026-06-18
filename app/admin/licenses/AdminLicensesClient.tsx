@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -17,25 +18,12 @@ import {
   Search,
   ShieldX,
   Trash2,
-  Unlink,
   UsersRound
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate, maskLicenseCode } from '@/components/admin/AdminUI'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
-
-type ActivationRow = {
-  id: string
-  user_id: string
-  email: string
-  activated_at: string
-  expires_at: string
-  status: string
-  last_used_at: string | null
-  revoked_at?: string | null
-  revoked_reason?: string | null
-}
 
 type LicenseRow = {
   id: string
@@ -45,13 +33,13 @@ type LicenseRow = {
   duration_days: number
   max_activations: number
   activation_count: number
+  remaining_count: number
   status: string
   expires_at: string | null
   note: string | null
   created_by: string | null
   created_at: string
   updated_at: string
-  license_activations?: ActivationRow[]
 }
 
 type GeneratedCode = LicenseRow & { code: string }
@@ -79,6 +67,7 @@ function downloadCsv(filename: string, rows: unknown[][]) {
 
 export function AdminLicensesClient() {
   const searchParams = useSearchParams()
+  const focusedId = searchParams.get('licenseId') || searchParams.get('focus') || ''
   const { pushToast } = useToast()
   const [licenses, setLicenses] = useState<LicenseRow[]>([])
   const [generated, setGenerated] = useState<GeneratedCode[]>([])
@@ -110,20 +99,25 @@ export function AdminLicensesClient() {
     setLoading(true)
     setError('')
     try {
-      const params = new URLSearchParams({ pageSize: '200', search: debouncedSearch, status })
-      const response = await fetch(`/api/admin/licenses/list?${params.toString()}`, { cache: 'no-store' })
+      const params = new URLSearchParams({
+        pageSize: '200',
+        search: debouncedSearch,
+        status,
+        plan
+      })
+      if (focusedId) params.set('licenseId', focusedId)
+      const response = await fetch(`/api/admin/licenses?${params.toString()}`, { cache: 'no-store' })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) throw new Error(data.message || '无法加载激活码。')
       const rows = (data.licenses || []) as LicenseRow[]
-      setLicenses(plan === 'all' ? rows : rows.filter((item) => item.plan.toLowerCase() === plan))
-      const focus = searchParams.get('focus')
-      if (focus) setSelected(rows.find((item) => item.id === focus) || null)
+      setLicenses(rows)
+      if (focusedId) setSelected(rows.find((item) => item.id === focusedId) || null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '无法加载激活码。')
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, plan, searchParams, status])
+  }, [debouncedSearch, focusedId, plan, status])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadLicenses(), 0)
@@ -144,7 +138,7 @@ export function AdminLicensesClient() {
     if (submitting) return
     setSubmitting(true)
     try {
-      const response = await fetch('/api/admin/licenses/create', {
+      const response = await fetch('/api/admin/licenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -210,42 +204,6 @@ export function AdminLicensesClient() {
     }
   }
 
-  async function activationAction(id: string, action: 'extend' | 'revoke' | 'restore', days?: number) {
-    setSubmitting(true)
-    try {
-      const response = await fetch(`/api/admin/activations/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, days })
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '操作失败。')
-      pushToast({ kind: 'success', title: action === 'extend' ? '用户有效期已延长' : action === 'revoke' ? '用户权限已撤销' : '用户权限已恢复' })
-      setSelected(null)
-      await loadLicenses()
-    } catch (caught) {
-      pushToast({ kind: 'error', title: '操作失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function unbindActivation(id: string) {
-    setSubmitting(true)
-    try {
-      const response = await fetch(`/api/admin/activations/${id}`, { method: 'DELETE' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '解绑失败。')
-      pushToast({ kind: 'success', title: '用户与激活码已解绑' })
-      setSelected(null)
-      await loadLicenses()
-    } catch (caught) {
-      pushToast({ kind: 'error', title: '解绑失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   async function copyText(value: string, title = '已复制') {
     await navigator.clipboard.writeText(value)
     pushToast({ kind: 'success', title })
@@ -253,15 +211,15 @@ export function AdminLicensesClient() {
 
   function exportAll() {
     downloadCsv(`license-codes-${new Date().toISOString().slice(0, 10)}.csv`, [
-      ['激活码', '套餐', '状态', '已激活次数', '最大次数', '绑定邮箱', '用户有效期', '激活码整体到期', '创建时间', '备注'],
+      ['激活码', '套餐', '状态', '已使用次数', '最大激活次数', '剩余次数', '用户有效天数', '激活码整体到期时间', '创建时间', '备注'],
       ...licenses.map((license) => [
         license.code_value || license.code_prefix,
         license.plan,
         license.status,
         license.activation_count,
         license.max_activations,
-        (license.license_activations || []).map((item) => item.email).join(' | '),
-        (license.license_activations || []).map((item) => item.expires_at).join(' | '),
+        license.remaining_count,
+        license.duration_days,
         license.expires_at || '',
         license.created_at,
         license.note || ''
@@ -276,12 +234,21 @@ export function AdminLicensesClient() {
     if (action) await action()
   }
 
+  function toggleReveal(id: string) {
+    setRevealed((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
   return (
     <main className="admin-section" data-main-content tabIndex={-1}>
       <AdminPageHeader
-        eyebrow="LICENSE MANAGEMENT"
+        eyebrow="LICENSE ASSETS"
         title="激活码管理"
-        description="生成、查看、绑定、撤销和管理所有激活码。"
+        description="生成、查看、禁用、撤销和管理所有激活码"
         actions={(
           <>
             <button className="admin-secondary-button" type="button" onClick={exportAll} disabled={!licenses.length}>
@@ -298,18 +265,18 @@ export function AdminLicensesClient() {
         <div className="admin-filter-bar">
           <label className="admin-search-field">
             <Search size={17} aria-hidden="true" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索完整激活码、前缀、套餐、备注或邮箱" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索完整激活码、前缀、套餐或备注" />
           </label>
           <label className="admin-select-field">
             <span>状态</span>
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="all">全部状态</option>
               <option value="unused">未使用</option>
-              <option value="active">部分使用</option>
+              <option value="partial">部分使用</option>
               <option value="exhausted">已用完</option>
               <option value="expired">已过期</option>
-              <option value="revoked">已撤销</option>
               <option value="disabled">已禁用</option>
+              <option value="revoked">已撤销</option>
             </select>
           </label>
           <label className="admin-select-field">
@@ -328,65 +295,45 @@ export function AdminLicensesClient() {
         </div>
 
         {error ? <AdminError message={error} onRetry={() => void loadLicenses()} /> : null}
-        {loading ? <AdminTableSkeleton columns={9} rows={7} /> : licenses.length ? (
-          <div className="admin-table-wrap">
+        {loading ? <AdminTableSkeleton columns={11} rows={7} /> : licenses.length ? (
+          <div className="admin-table-wrap admin-responsive-table">
             <table className="admin-table admin-license-table">
               <thead>
                 <tr>
-                  <th>激活码</th>
-                  <th>套餐</th>
-                  <th>状态</th>
-                  <th>激活次数</th>
-                  <th>绑定邮箱</th>
-                  <th>用户有效期</th>
-                  <th>激活码整体到期</th>
-                  <th>创建时间</th>
-                  <th>备注</th>
-                  <th>操作</th>
+                  <th>激活码</th><th>套餐</th><th>状态</th><th>已使用次数</th><th>最大激活次数</th>
+                  <th>剩余次数</th><th>用户有效天数</th><th>激活码整体到期时间</th><th>创建时间</th><th>备注</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
                 {licenses.map((license) => {
-                  const activations = license.license_activations || []
                   const visible = revealed.has(license.id)
-                  const displayStatus =
-                    license.status === 'active' && license.activation_count < license.max_activations ? 'partial' : license.status
                   return (
                     <tr key={license.id}>
-                      <td>
+                      <td data-label="激活码">
                         <div className="admin-code-cell">
                           <code>{visible && license.code_value ? license.code_value : maskLicenseCode(license.code_value, license.code_prefix)}</code>
-                          <button type="button" onClick={() => setRevealed((current) => {
-                            const next = new Set(current)
-                            if (next.has(license.id)) next.delete(license.id)
-                            else next.add(license.id)
-                            return next
-                          })} aria-label={visible ? '隐藏激活码' : '显示激活码'}>
+                          <button type="button" onClick={() => toggleReveal(license.id)} aria-label={visible ? '隐藏激活码' : '显示激活码'}>
                             {visible ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
                           {license.code_value ? <button type="button" onClick={() => void copyText(license.code_value || '')} aria-label="复制激活码"><Copy size={14} /></button> : null}
                         </div>
                       </td>
-                      <td><span className="admin-plan-pill">{license.plan}</span></td>
-                      <td><AdminBadge value={displayStatus} /></td>
-                      <td><strong>{license.activation_count}</strong> / {license.max_activations}</td>
-                      <td>
-                        {activations.length
-                          ? <button className="admin-email-stack" type="button" onClick={() => setSelected(license)}>
-                              <UsersRound size={14} />
-                              <span>{activations[0].email}{activations.length > 1 ? ` 等 ${activations.length} 人` : ''}</span>
-                            </button>
-                          : <span className="admin-muted">未绑定</span>}
-                      </td>
-                      <td>{activations.length ? formatAdminDate(activations[0].expires_at) : '—'}</td>
-                      <td>{formatAdminDate(license.expires_at, '永不过期')}</td>
-                      <td>{formatAdminDate(license.created_at)}</td>
-                      <td><span className="admin-note-cell" title={license.note || ''}>{license.note || '—'}</span></td>
-                      <td>
+                      <td data-label="套餐"><span className="admin-plan-pill">{license.plan}</span></td>
+                      <td data-label="状态"><AdminBadge value={license.status} /></td>
+                      <td data-label="已使用次数"><strong>{license.activation_count}</strong></td>
+                      <td data-label="最大激活次数">{license.max_activations}</td>
+                      <td data-label="剩余次数">{license.remaining_count}</td>
+                      <td data-label="用户有效天数">{license.duration_days} 天</td>
+                      <td data-label="激活码整体到期时间">{formatAdminDate(license.expires_at, '永不过期')}</td>
+                      <td data-label="创建时间">{formatAdminDate(license.created_at)}</td>
+                      <td data-label="备注"><span className="admin-note-cell" title={license.note || ''}>{license.note || '—'}</span></td>
+                      <td data-label="操作">
                         <div className="admin-row-actions">
-                          <button className="admin-icon-button" type="button" onClick={() => setSelected(license)} aria-label="查看详情"><FileText size={15} /></button>
-                          {license.status === 'disabled' ? (
-                            <button className="admin-icon-button success" type="button" onClick={() => void updateLicense(license.id, { status: license.activation_count ? 'active' : 'unused' }, '激活码已启用')} aria-label="启用">
+                          {license.code_value ? <button className="admin-icon-button" type="button" onClick={() => void copyText(license.code_value || '')} aria-label="复制" title="复制"><Copy size={15} /></button> : null}
+                          <button className="admin-icon-button" type="button" onClick={() => setSelected(license)} aria-label="查看详情" title="查看详情"><FileText size={15} /></button>
+                          <Link className="admin-icon-button" href={`/admin/bindings?licenseId=${license.id}`} aria-label="查看绑定记录" title="查看绑定记录"><UsersRound size={15} /></Link>
+                          {['disabled', 'revoked'].includes(license.status) ? (
+                            <button className="admin-icon-button success" type="button" onClick={() => void updateLicense(license.id, { status: license.activation_count ? 'active' : 'unused' }, '激活码已启用')} aria-label="启用" title="启用">
                               <CheckCircle2 size={15} />
                             </button>
                           ) : (
@@ -395,8 +342,20 @@ export function AdminLicensesClient() {
                               message: '已绑定用户将暂停使用权限，重新启用后可恢复。',
                               label: '确认禁用',
                               action: () => updateLicense(license.id, { status: 'disabled' }, '激活码已禁用')
-                            })} aria-label="禁用"><Ban size={15} /></button>
+                            })} aria-label="禁用" title="禁用"><Ban size={15} /></button>
                           )}
+                          <button className="admin-icon-button warning" type="button" onClick={() => setConfirm({
+                            title: '撤销这个激活码？',
+                            message: '该激活码会停止使用，相关邮箱权限也会被撤销。',
+                            label: '确认撤销',
+                            action: () => updateLicense(license.id, { status: 'revoked' }, '激活码已撤销')
+                          })} aria-label="撤销" title="撤销"><ShieldX size={15} /></button>
+                          <button className="admin-icon-button danger" type="button" onClick={() => setConfirm({
+                            title: '永久删除这个激活码？',
+                            message: '激活码及其绑定记录都会被永久删除，且无法恢复。',
+                            label: '永久删除',
+                            action: () => deleteLicense(license.id)
+                          })} aria-label="删除" title="删除"><Trash2 size={15} /></button>
                         </div>
                       </td>
                     </tr>
@@ -450,7 +409,7 @@ export function AdminLicensesClient() {
               </select>
             </label>
             <label className="admin-field">
-              <span>账号有效天数</span>
+              <span>用户激活后的有效天数</span>
               <select value={form.durationPreset} onChange={(event) => setForm({ ...form, durationPreset: event.target.value })}>
                 <option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option>
                 <option value="365">365 天</option><option value="custom">自定义</option>
@@ -466,7 +425,6 @@ export function AdminLicensesClient() {
                 <option value="1">1 个账号</option><option value="2">2 个账号</option><option value="3">3 个账号</option>
                 <option value="5">5 个账号</option><option value="unlimited">近似无限制（100）</option>
               </select>
-              <small>一个激活码最多可以绑定多少个账号。</small>
             </label>
             <label className="admin-field">
               <span>激活码整体到期时间</span>
@@ -484,7 +442,7 @@ export function AdminLicensesClient() {
           <div className="admin-confirm-summary">
             <strong>生成确认</strong>
             <p>将生成 {resolvedForm.count} 个 {form.plan} 激活码</p>
-            <p>每个账号激活后有效 {resolvedForm.durationDays} 天</p>
+            <p>每个用户激活后有效 {resolvedForm.durationDays} 天</p>
             <p>每个码最多激活 {form.maxActivations === 'unlimited' ? '100' : form.maxActivations} 次</p>
             <p>激活码本身{resolvedForm.expiryDays ? `将在 ${resolvedForm.expiryDays} 天后到期` : resolvedForm.expiresAt ? `于 ${formatAdminDate(resolvedForm.expiresAt)} 到期` : '永不过期'}</p>
           </div>
@@ -518,7 +476,7 @@ export function AdminLicensesClient() {
       <CenteredDialog
         open={Boolean(selected)}
         title="激活码详情"
-        description="查看激活码本身的规则，以及每个绑定账号的独立有效期。"
+        description="这里只展示激活码资产信息；邮箱关系在邮箱绑定页面管理。"
         className="admin-detail-dialog"
         onClose={() => setSelected(null)}
       >
@@ -533,51 +491,26 @@ export function AdminLicensesClient() {
               {selected.code_value ? <button className="admin-secondary-button" type="button" onClick={() => void copyText(selected.code_value || '')}><Copy size={15} />复制</button> : null}
             </section>
             <dl className="admin-definition-grid">
-              <div><dt>账号有效天数</dt><dd>{selected.duration_days} 天<small>从每个用户激活当天起算</small></dd></div>
+              <div><dt>用户有效天数</dt><dd>{selected.duration_days} 天</dd></div>
               <div><dt>最大激活次数</dt><dd>{selected.max_activations}</dd></div>
-              <div><dt>当前激活次数</dt><dd>{selected.activation_count}</dd></div>
-              <div><dt>激活码整体到期</dt><dd>{formatAdminDate(selected.expires_at, '永不过期')}<small>到期后不能再产生新激活</small></dd></div>
+              <div><dt>已使用次数</dt><dd>{selected.activation_count}</dd></div>
+              <div><dt>剩余次数</dt><dd>{selected.remaining_count}</dd></div>
+              <div><dt>激活码整体到期</dt><dd>{formatAdminDate(selected.expires_at, '永不过期')}</dd></div>
               <div><dt>创建时间</dt><dd>{formatAdminDate(selected.created_at)}</dd></div>
-              <div><dt>创建人</dt><dd className="admin-break">{selected.created_by || '系统'}</dd></div>
               <div className="full"><dt>备注</dt><dd>{selected.note || '无备注'}</dd></div>
             </dl>
-            <section>
-              <div className="admin-panel-heading"><div><p className="admin-eyebrow">BOUND ACCOUNTS</p><h3>绑定记录</h3></div></div>
-              {selected.license_activations?.length ? (
-                <div className="admin-bound-list">
-                  {selected.license_activations.map((activation) => (
-                    <article key={activation.id}>
-                      <div>
-                        <strong>{activation.email}</strong>
-                        <small>激活：{formatAdminDate(activation.activated_at)}</small>
-                      </div>
-                      <div><span>账号有效期</span><strong>{formatAdminDate(activation.expires_at)}</strong></div>
-                      <AdminBadge value={activation.status} />
-                      <div className="admin-row-actions">
-                        <button className="admin-secondary-button compact" type="button" onClick={() => void activationAction(activation.id, 'extend', 30)}>延长 30 天</button>
-                        <button className="admin-secondary-button compact danger" type="button" onClick={() => setConfirm({
-                          title: '撤销该用户权限？',
-                          message: `${activation.email} 将立即失去当前激活权限。`,
-                          label: '确认撤销',
-                          action: () => activationAction(activation.id, 'revoke')
-                        })}><ShieldX size={14} />撤销</button>
-                        <button className="admin-secondary-button compact danger" type="button" onClick={() => setConfirm({
-                          title: '解绑这个用户？',
-                          message: '绑定记录将被删除，同时释放一次激活名额。',
-                          label: '确认解绑',
-                          action: () => unbindActivation(activation.id)
-                        })}><Unlink size={14} />解绑</button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : <AdminEmpty title="暂无绑定账号" message="该激活码尚未被任何邮箱使用。" />}
+            <section className="admin-binding-summary">
+              <div>
+                <span className="admin-list-icon"><UsersRound size={18} /></span>
+                <div><strong>当前已绑定 {selected.activation_count} 个邮箱</strong><p>邮箱、账号到期时间和权限状态在独立页面中管理。</p></div>
+              </div>
+              <Link className="admin-primary-button" href={`/admin/bindings?licenseId=${selected.id}`}>查看全部绑定邮箱</Link>
             </section>
             <div className="admin-danger-zone">
-              <div><strong>危险操作</strong><p>撤销会保留记录但立即停用；删除会永久移除激活码及绑定记录。</p></div>
+              <div><strong>危险操作</strong><p>撤销会停止激活码使用；删除会永久移除激活码及其绑定记录。</p></div>
               <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
                 title: '撤销这个激活码？',
-                message: '所有已绑定用户都将立即失去权限，此操作需要手动恢复。',
+                message: '该激活码和相关邮箱权限都会被撤销。',
                 label: '确认撤销',
                 action: () => updateLicense(selected.id, { status: 'revoked' }, '激活码已撤销')
               })}><ShieldX size={15} />撤销激活码</button>

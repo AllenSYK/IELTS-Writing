@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { hashWebLicenseCode } from '@/lib/web-license/codes'
 import { adminApiError, refreshUserLicenseStatus, requireAdminService } from '@/lib/web-license/admin-api'
+import { syncLicenseActivationCount, UNBOUND_BINDING_REASON } from '@/lib/web-license/admin-license-data'
 
 const PatchSchema = z.object({
   action: z.enum(['role', 'disable', 'enable', 'bind', 'extend', 'revoke', 'unbind', 'reset-password']),
@@ -93,7 +94,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     } else {
       const activationId = body.activationId
       if (!activationId) {
-        return json({ success: false, code: 'INVALID_INPUT', message: '缺少激活记录 ID' }, { status: 400 })
+        return json({ success: false, code: 'INVALID_INPUT', message: '缺少邮箱绑定记录 ID' }, { status: 400 })
       }
       if (body.action === 'extend') {
         const { data: activation, error: loadError } = await service
@@ -124,19 +125,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
           .eq('user_id', id)
           .single()
         if (loadError) throw loadError
-        const { error } = await service.from('license_activations').delete().eq('id', activationId)
+        const { error } = await service
+          .from('license_activations')
+          .update({
+            status: 'revoked',
+            revoked_at: new Date().toISOString(),
+            revoked_reason: UNBOUND_BINDING_REASON
+          })
+          .eq('id', activationId)
         if (error) throw error
-        const { data: license, error: licenseError } = await service
-          .from('license_codes')
-          .select('activation_count, max_activations, status')
-          .eq('id', activation.license_id)
-          .single()
-        if (licenseError) throw licenseError
-        if (!['revoked', 'disabled'].includes(license.status)) {
-          const count = Math.max(0, (license.activation_count || 0) - 1)
-          const status = count === 0 ? 'unused' : count >= license.max_activations ? 'exhausted' : 'active'
-          await service.from('license_codes').update({ activation_count: count, status }).eq('id', activation.license_id)
-        }
+        await syncLicenseActivationCount(service, activation.license_id)
       }
     }
 
