@@ -1,9 +1,10 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
+import { createSingleFlight } from '@/lib/web-license/single-flight'
 
 type ActivateResponse = {
   success: boolean
@@ -21,6 +22,7 @@ export default function ActivatePage() {
   const [checking, setChecking] = useState(true)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const runActivation = useRef(createSingleFlight()).current
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient()
@@ -39,33 +41,36 @@ export default function ActivatePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (loading) return
-    setLoading(true)
-    setError('')
-    setMessage('')
+    if (checking) return
 
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), 12000)
-    try {
-      const response = await fetch('/api/license/activate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code }),
-        signal: controller.signal
-      })
-      const data = (await response.json().catch(() => ({}))) as ActivateResponse
-      if (!response.ok || !data.success) {
-        setError(data.message || '激活码无效。')
-        return
+    await runActivation(async () => {
+      setLoading(true)
+      setError('')
+      setMessage('')
+
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), 12000)
+      try {
+        const response = await fetch('/api/license/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+          signal: controller.signal
+        })
+        const data = (await response.json().catch(() => ({}))) as ActivateResponse
+        if (!response.ok || !data.success) {
+          setError(data.message || '激活码无效。')
+          return
+        }
+        setMessage(`激活成功，到期时间：${data.expiresAt ? new Date(data.expiresAt).toLocaleString('zh-CN') : '未知'}`)
+        window.setTimeout(() => router.replace('/dashboard'), 700)
+      } catch (caught) {
+        setError(caught instanceof DOMException && caught.name === 'AbortError' ? '激活请求超时，请重试。' : '激活失败，请稍后重试。')
+      } finally {
+        window.clearTimeout(timer)
+        setLoading(false)
       }
-      setMessage(`激活成功，到期时间：${data.expiresAt ? new Date(data.expiresAt).toLocaleString('zh-CN') : '未知'}`)
-      window.setTimeout(() => router.replace('/dashboard'), 700)
-    } catch (caught) {
-      setError(caught instanceof DOMException && caught.name === 'AbortError' ? '激活请求超时，请重试。' : '激活失败，请稍后重试。')
-    } finally {
-      window.clearTimeout(timer)
-      setLoading(false)
-    }
+    })
   }
 
   return (
@@ -79,7 +84,7 @@ export default function ActivatePage() {
           </div>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit} aria-busy={loading}>
           <label>
             <span>软件激活码</span>
             <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="IELTS-ABCD-EFGH-1234" autoCapitalize="characters" required disabled={checking} />

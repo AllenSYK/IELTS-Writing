@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "node --test --experimental-strip-types --loader ./tests/alias-loader.mjs tests/*.test.ts",
+    "test:license-e2e": "node scripts/verify-license-activation.mjs",
     "migration:check": "node scripts/check-admin-schema-migration.mjs",
     "electron:dev": "concurrently -k \"npm run dev\" \"wait-on http://127.0.0.1:3000 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:3000 electron .\"",
     "dist:win": "npm run build && electron-builder --win nsis",
