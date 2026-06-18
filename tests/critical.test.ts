@@ -6,6 +6,7 @@ import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts
 import { calculateWritingOverall, isExpiredAt, roundToHalfBand } from '../lib/ielts-scoring'
 import { isValidPublicKey } from '../lib/license/token'
 import { countWords, normalizeEvaluation } from '../lib/writing-records'
+import { resolveAuthRedirect } from '../lib/auth/route-access'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -153,4 +154,96 @@ test('Stored legacy evaluations normalize into the new result shape', () => {
   assert.equal(normalized?.summary, '旧记录评价。')
   assert.deepEqual(normalized?.nextSteps, [])
   assert.deepEqual(normalized?.suggestions, ['写清 overview'])
+})
+
+test('Admin routes use the dedicated admin login before license routing', () => {
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin/licenses',
+      isAuthenticated: false
+    }),
+    '/admin/login'
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin/licenses',
+      isAuthenticated: true,
+      role: 'user',
+      licenseActive: false
+    }),
+    '/admin/login?reason=not_admin'
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin/licenses',
+      isAuthenticated: true,
+      role: 'user',
+      licenseActive: true
+    }),
+    '/admin/login?reason=not_admin'
+  )
+})
+
+test('Admin login never sends ordinary users into the user activation flow', () => {
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin/login',
+      isAuthenticated: false
+    }),
+    null
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin/login',
+      isAuthenticated: true,
+      role: 'user',
+      licenseActive: false
+    }),
+    null
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin/login',
+      isAuthenticated: true,
+      role: 'admin'
+    }),
+    '/admin/licenses'
+  )
+})
+
+test('Admin and ordinary login redirects remain separate', () => {
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/admin',
+      isAuthenticated: true,
+      role: 'admin'
+    }),
+    '/admin/licenses'
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/dashboard',
+      isAuthenticated: true,
+      role: 'admin'
+    }),
+    '/admin/licenses'
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/login',
+      isAuthenticated: true,
+      role: 'user',
+      licenseActive: false
+    }),
+    '/activate'
+  )
+  assert.equal(
+    resolveAuthRedirect({
+      pathname: '/login',
+      isAuthenticated: true,
+      role: 'user',
+      licenseActive: true
+    }),
+    '/dashboard'
+  )
 })

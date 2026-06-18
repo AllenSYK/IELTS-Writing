@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getAuthRouteInfo, resolveAuthRedirect } from '@/lib/auth/route-access'
 import { getSupabaseAnonKey, getSupabaseServiceRoleKey, getSupabaseUrl } from './env'
 
 type LicenseGate = {
@@ -13,24 +14,8 @@ type MiddlewareProfile = {
   license_expires_at?: string | null
 }
 
-const authEntryRoutes = ['/login', '/register']
-const loginOnlyRoutes = ['/activate']
-const activeLicenseRoutes = ['/dashboard', '/practice', '/history', '/write', '/result', '/analytics']
-const userRoutes = [...loginOnlyRoutes, ...activeLicenseRoutes]
-
-function startsWithRoute(pathname: string, routes: string[]) {
-  return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
-}
-
-function redirectTo(request: NextRequest, pathname: string, includeNext = true) {
-  const url = request.nextUrl.clone()
-  url.pathname = pathname
-  if (includeNext) {
-    url.searchParams.set('next', request.nextUrl.pathname)
-  } else {
-    url.search = ''
-  }
-  return NextResponse.redirect(url)
+function redirectTo(request: NextRequest, target: string) {
+  return NextResponse.redirect(new URL(target, request.url))
 }
 
 function createMiddlewareServiceClient(url: string, serviceRoleKey: string) {
@@ -130,16 +115,16 @@ export async function updateSupabaseSession(request: NextRequest) {
   })
 
   const pathname = request.nextUrl.pathname
-  const isAdminRoute = pathname === '/admin' || pathname.startsWith('/admin/')
-  const isUserRoute = startsWithRoute(pathname, userRoutes)
-  const isAuthEntryRoute = startsWithRoute(pathname, authEntryRoutes)
-  const needsLogin = isAdminRoute || isUserRoute
+  const route = getAuthRouteInfo(pathname)
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!needsLogin && !isAuthEntryRoute) return response
 
   if (!user) {
-    return needsLogin ? redirectTo(request, '/login') : response
+    const target = resolveAuthRedirect({
+      pathname,
+      isAuthenticated: false
+    })
+    return target ? redirectTo(request, target) : response
   }
 
   const serviceRoleKey = getSupabaseServiceRoleKey()
@@ -154,14 +139,15 @@ export async function updateSupabaseSession(request: NextRequest) {
   }
 
   const isAdmin = profile?.role === 'admin'
-  if (isAdmin) {
-    if (pathname === '/admin') {
-      return redirectTo(request, '/admin/licenses', false)
-    }
-    if (isUserRoute || isAuthEntryRoute) {
-      return redirectTo(request, '/admin/licenses', false)
-    }
-    return response
+
+  // 管理员路由必须在普通用户激活状态之前处理，避免普通用户被送往 /activate。
+  if (route.isAdminRoute || route.isAdminLoginRoute || isAdmin) {
+    const target = resolveAuthRedirect({
+      pathname,
+      isAuthenticated: true,
+      role: profile?.role
+    })
+    return target ? redirectTo(request, target) : response
   }
 
   let licenseGate = hasActiveLicense(profile)
@@ -170,23 +156,11 @@ export async function updateSupabaseSession(request: NextRequest) {
     licenseGate = serviceGate
   }
 
-  if (isAdminRoute) {
-    return redirectTo(request, licenseGate.active ? '/dashboard' : '/activate', false)
-  }
-
-  if (isAuthEntryRoute) {
-    return redirectTo(request, licenseGate.active ? '/dashboard' : '/activate', false)
-  }
-
-  if (pathname === '/activate' && licenseGate.active) {
-    return redirectTo(request, '/dashboard', false)
-  }
-
-  if (startsWithRoute(pathname, activeLicenseRoutes)) {
-    if (!licenseGate.active) {
-      return redirectTo(request, '/activate')
-    }
-  }
-
-  return response
+  const target = resolveAuthRedirect({
+    pathname,
+    isAuthenticated: true,
+    role: profile?.role,
+    licenseActive: licenseGate.active
+  })
+  return target ? redirectTo(request, target) : response
 }

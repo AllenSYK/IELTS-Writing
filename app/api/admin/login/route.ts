@@ -1,28 +1,58 @@
 import { z } from 'zod'
-import { createAdminSession } from '@/lib/admin-auth'
-import { AdminEdgeError, callAdminFunction } from '@/lib/admin-edge'
-import { apiError, json } from '@/lib/http'
+import { normalizeEmail } from '@/lib/auth/email-verification'
+import { toChineseAuthError } from '@/lib/auth/error-messages'
+import { json } from '@/lib/http'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { getWebProfile } from '@/lib/web-license/auth'
 
 const LoginSchema = z.object({
+  email: z.string().email(),
   password: z.string().min(1)
 })
 
 export async function POST(request: Request) {
   try {
     const body = LoginSchema.parse(await request.json())
-    const result = await callAdminFunction<{ ok: boolean; error?: string }>('login', { password: body.password }, { request })
-    if (!result.ok) {
-      return json({ error: 'invalid_credentials' }, { status: 401 })
+    const supabase = await createSupabaseServerClient()
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizeEmail(body.email),
+      password: body.password
+    })
+
+    if (error || !data.user) {
+      return json(
+        {
+          success: false,
+          code: 'INVALID_CREDENTIALS',
+          message: toChineseAuthError(error?.message || '管理员邮箱或密码错误')
+        },
+        { status: 401 }
+      )
     }
-    await createAdminSession()
-    return json({ ok: true })
+
+    const profile = await getWebProfile(data.user.id)
+    if (profile?.role !== 'admin') {
+      await supabase.auth.signOut({ scope: 'local' })
+      return json(
+        {
+          success: false,
+          code: 'NOT_ADMIN',
+          message: '该账号不是管理员账号。'
+        },
+        { status: 403 }
+      )
+    }
+
+    return json({
+      success: true,
+      redirectTo: '/admin/licenses'
+    })
   } catch (error) {
-    if (error instanceof AdminEdgeError && (error.status === 401 || error.code === 'invalid_credentials')) {
-      return json({ error: 'invalid_credentials' }, { status: 401 })
+    if (error instanceof z.ZodError) {
+      return json({ success: false, message: '请输入有效的管理员邮箱和密码。' }, { status: 400 })
     }
-    if (error instanceof AdminEdgeError && error.code === 'rate_limited') {
-      return json({ error: 'rate_limited', message: '尝试次数过多，请稍后再试。' }, { status: 429 })
-    }
-    return apiError(error, '登录失败。')
+
+    console.error('[admin-login]', error instanceof Error ? error.message : error)
+    return json({ success: false, message: '管理员登录失败，请稍后重试。' }, { status: 500 })
   }
 }

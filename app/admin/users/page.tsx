@@ -1,16 +1,13 @@
 import { redirect } from 'next/navigation'
-import { requireActiveWebLicense, requireWebAdmin } from '@/lib/web-license/auth'
+import { requireWebAdmin } from '@/lib/web-license/auth'
 import { AdminUsersClient } from './AdminUsersClient'
 
 export default async function AdminUsersPage() {
   try {
     await requireWebAdmin()
   } catch (error) {
-    if (error instanceof Response && error.status === 401) redirect('/login')
-    if (error instanceof Response && error.status === 403) {
-      const check = await requireActiveWebLicense()
-      redirect(check.ok ? '/dashboard' : '/activate')
-    }
+    if (error instanceof Response && error.status === 401) redirect('/admin/login')
+    if (error instanceof Response && error.status === 403) redirect('/admin/login?reason=not_admin')
     return (
       <main className="auth-page" data-main-content tabIndex={-1}>
         <section className="auth-panel">

@@ -4451,6 +4451,68 @@ img {
   border: 1px solid rgba(34, 197, 94, 0.16);
 }
 
+.admin-auth-panel {
+  width: min(100%, 500px);
+}
+
+.admin-current-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(79, 94, 113, 0.14);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.72);
+  color: #64748b;
+  font-size: 13px;
+}
+
+.admin-current-account strong {
+  color: #1e293b;
+}
+
+.admin-account-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 14px;
+  background: rgba(255, 251, 235, 0.9);
+  color: #92400e;
+}
+
+.admin-account-warning strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.admin-account-warning p {
+  margin: 3px 0 0;
+  color: #78350f;
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.admin-login-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-login-actions > * {
+  width: 100%;
+  min-height: 46px;
+  justify-content: center;
+}
+
+.admin-logout-button {
+  color: #9f1239;
+  border-color: rgba(190, 24, 93, 0.2);
+}
+
 .password-strength {
   display: grid;
   gap: 8px;

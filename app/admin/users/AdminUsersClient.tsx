@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { RefreshCw, Search, UsersRound } from 'lucide-react'
+import { AdminLogoutButton } from '@/components/admin/AdminLogoutButton'
 
 type UserRow = {
   id: string
@@ -91,6 +92,7 @@ export function AdminUsersClient() {
           </div>
           <div className="admin-topbar-actions">
             <Link className="admin-secondary-button" href="/admin/licenses">激活码管理</Link>
+            <AdminLogoutButton />
           </div>
         </header>
 
