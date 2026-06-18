@@ -55,6 +55,15 @@ export async function GET(request: Request) {
     }
 
     const { data, error, count } = await query
+
+console.log("SUPABASE DATA:", data)
+console.log("SUPABASE ERROR:", error)
+console.log("SUPABASE COUNT:", count)
+
+if (error) {
+  console.error("FULL ERROR:", error)
+  throw error
+}
     if (error) throw error
 
     const filtered = search.includes('@')
