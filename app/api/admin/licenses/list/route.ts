@@ -56,6 +56,12 @@ export async function GET(request: Request) {
 
     const { data, error, count } = await query
 
+if (error) {
+  console.error("🔥 SUPABASE ERROR:", error)
+  console.error("🔥 ERROR DETAILS:", JSON.stringify(error, null, 2))
+  throw error
+}
+
 console.log("SUPABASE DATA:", data)
 console.log("SUPABASE ERROR:", error)
 console.log("SUPABASE COUNT:", count)
