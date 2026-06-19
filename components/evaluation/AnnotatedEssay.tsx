@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { compareAnnotationPriority, isResolvedAnnotation } from '@/lib/essay-annotations'
 import { EssayAnnotationLabels, type EssayAnnotation } from '@/lib/writing-records'
 
 type AnnotatedEssayProps = {
@@ -8,34 +9,6 @@ type AnnotatedEssayProps = {
   annotations: EssayAnnotation[]
   selectedId?: string | null
   onSelect: (annotationId: string) => void
-}
-
-const severityRank = {
-  high: 3,
-  medium: 2,
-  low: 1
-} as const
-
-function isRenderable(annotation: EssayAnnotation, essay: string) {
-  return (
-    !annotation.unresolved &&
-    annotation.start >= 0 &&
-    annotation.end > annotation.start &&
-    annotation.end <= essay.length &&
-    essay.slice(annotation.start, annotation.end) === annotation.originalText
-  )
-}
-
-function orderedAnnotations(annotations: EssayAnnotation[]) {
-  return annotations
-    .slice()
-    .sort((a, b) => {
-      const severity = severityRank[b.severity] - severityRank[a.severity]
-      if (severity !== 0) return severity
-      const length = (b.end - b.start) - (a.end - a.start)
-      if (length !== 0) return length
-      return a.start - b.start
-    })
 }
 
 export const AnnotatedEssay = memo(function AnnotatedEssay({
@@ -46,7 +19,7 @@ export const AnnotatedEssay = memo(function AnnotatedEssay({
 }: AnnotatedEssayProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const renderable = useMemo(
-    () => annotations.filter((annotation) => isRenderable(annotation, essay)),
+    () => annotations.filter((annotation) => isResolvedAnnotation(annotation, essay)),
     [annotations, essay]
   )
 
@@ -87,7 +60,7 @@ export const AnnotatedEssay = memo(function AnnotatedEssay({
         continue
       }
 
-      const ordered = orderedAnnotations(covering)
+      const ordered = covering.slice().sort(compareAnnotationPriority)
       const selectedIndex = ordered.findIndex((annotation) => annotation.id === selectedId)
       const active = selectedIndex >= 0 ? ordered[selectedIndex] : ordered[0]
       nextNodes.push(

@@ -1,6 +1,7 @@
 'use client'
 
 import { MaterialIcon } from '@/components/app-ui'
+import { isResolvedAnnotation } from '@/lib/essay-annotations'
 import {
   EssayAnnotationCriterionLabels,
   EssayAnnotationLabels,
@@ -54,11 +55,7 @@ export function AnnotationInspector({
   const sameLocationCount = annotation && annotation.start >= 0
     ? allAnnotations.filter((item) => item.start === annotation.start && item.end === annotation.end).length
     : 0
-  const unresolved = Boolean(annotation?.unresolved || (annotation && (
-    annotation.start < 0 ||
-    annotation.end <= annotation.start ||
-    originalEssay.slice(annotation.start, annotation.end) !== annotation.originalText
-  )))
+  const unresolved = Boolean(annotation && !isResolvedAnnotation(annotation, originalEssay))
 
   function move(delta: number) {
     if (annotations.length === 0) return

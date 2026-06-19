@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { AsyncButton, ConfirmDialog, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
@@ -9,44 +9,41 @@ import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { MaterialIcon } from '@/components/app-ui'
 import { Task1Visual } from '@/components/task1/Task1Visual'
 import {
-  buildLocalGeneratedQuestion,
   buildMockQuestionSetForSelection,
   buildPrompt,
   getQuestionById,
   questionLabel,
   randomQuestionForSelection,
-  type WritingQuestion,
-  type Task1QuestionType,
-  type Task1TrainingType,
-  type Task2QuestionType
+  type WritingQuestion
 } from '@/lib/ielts-questions'
-import {
-  prepareTask1ChartSpec,
-  type Task1ChartKind,
-  type Task1ProcessSpec,
-  type Task1MapSpec
-} from '@/lib/task1-chart-schema'
-import { calculateWritingOverall, formatBandNumber, parseBand, weightedCriterionScore } from '@/lib/ielts-scoring'
 import {
   countWords,
   createRecordId,
   getLocalDeviceId,
   getWritingRecord,
   saveWritingRecord,
-  type EssayAnnotation,
-  type CriterionKey,
-  type CriterionScore,
   type EssayEvaluation,
   type WritingRecord,
   type WritingTaskType
 } from '@/lib/writing-records'
 import {
-  buildExcludePromptSummaries,
-  currentPromptProfileId,
-  findDuplicatePrompt,
-  markGeneratedPromptCompleted,
-  recordGeneratedPrompt
-} from '@/lib/generated-prompt-history'
+  WritingEvaluationError,
+  combineMockEvaluation,
+  evaluationErrorMessage,
+  requestEssayEvaluation,
+  type EssayEvaluationRequest
+} from '@/lib/writing-evaluation'
+import {
+  mockDraftKey,
+  readDraft,
+  readTimerEnd,
+  restoreQuestionFromRecord,
+  singleDraftKey,
+  timerKeyFor,
+  writeDraft
+} from '@/lib/writing-session'
+import { markGeneratedPromptCompleted } from '@/lib/generated-prompt-history'
+import { generateQuestionForSelection } from '@/lib/writing-question-generation'
 import {
   DefaultPromptSelection,
   Task1ChartLabels,
@@ -56,31 +53,14 @@ import {
   selectionFromSearchParams,
   type PromptSelection
 } from '@/lib/writing-options'
-import { getFallbackQuestionsByType, getRandomFallbackQuestion } from '@/lib/task1-fallback-questions'
 import { userScopedStorageKey } from '@/lib/user-storage'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
 type MockQuestions = Record<MockTaskType, WritingQuestion>
 
-type DraftPayload = {
-  essay: string
-  updatedAt: string
-  wordCount: number
-  questionId?: string
-  chartSpec?: Record<string, unknown>
-  processSpec?: Record<string, unknown>
-  mapSpec?: Record<string, unknown>
-  imageUrl?: string
-  promptLead?: string
-  promptDetail?: string
-  questionType?: string
-  trainingType?: string
-  title?: string
-}
-
 type SaveStatus = 'restoring' | 'idle' | 'saving' | 'saved' | 'offline' | 'error'
-type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'analyzing' | 'organizing' | 'success' | 'error'
+type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'organizing' | 'success' | 'error'
 
 const mockTaskOrder: MockTaskType[] = ['task1', 'task2']
 const evaluationStages = [
@@ -92,11 +72,8 @@ const evaluationStages = [
   '详细批改已完成'
 ]
 const AI_EVALUATION_TIMEOUT_MS = 10 * 60 * 1000
-const QUESTION_CACHE_TTL_MS = 5 * 60 * 1000
 
 const pendingEvaluations = new Map<string, Promise<EssayEvaluation>>()
-const pendingQuestionRequests = new Map<string, Promise<WritingQuestion>>()
-const recentQuestionCache = new Map<string, { question: WritingQuestion; cachedAt: number }>()
 
 function normalizeMode(value: string | string[] | undefined): WritingTaskType {
   const mode = Array.isArray(value) ? value[0] : value
@@ -108,314 +85,6 @@ function formatTime(seconds: number) {
   const minutes = Math.floor(seconds / 60)
   const remainingSeconds = seconds % 60
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
-}
-
-function singleDraftKey(userId: string, mode: WritingTaskType) {
-  return userScopedStorageKey(`ielts-writing-draft-${mode}`, userId)
-}
-
-function mockDraftKey(userId: string, taskType: MockTaskType) {
-  return userScopedStorageKey(`ielts-writing-draft-mock-${taskType}`, userId)
-}
-
-function timerKeyFor(userId: string, mode: WritingTaskType) {
-  return userScopedStorageKey(`ielts-writing-timer-${mode}`, userId)
-}
-
-function questionCacheKey(userId: string, taskType: MockTaskType, selection: PromptSelection) {
-  return userScopedStorageKey(`ielts-writing-question-cache:${taskType}:${JSON.stringify(selection)}`, userId)
-}
-
-function readCachedQuestion(userId: string, taskType: MockTaskType, selection: PromptSelection) {
-  const key = questionCacheKey(userId, taskType, selection)
-  const memoryCached = recentQuestionCache.get(key)
-  if (memoryCached && Date.now() - memoryCached.cachedAt < QUESTION_CACHE_TTL_MS) {
-    return memoryCached.question
-  }
-
-  try {
-    const stored = JSON.parse(window.sessionStorage.getItem(key) || '{}') as {
-      question?: WritingQuestion
-      cachedAt?: number
-    }
-    if (stored.question && stored.cachedAt && Date.now() - stored.cachedAt < QUESTION_CACHE_TTL_MS) {
-      const question = normalizeGeneratedQuestion(stored.question)
-      recentQuestionCache.set(key, { question, cachedAt: stored.cachedAt })
-      return question
-    }
-  } catch {
-    window.sessionStorage.removeItem(key)
-  }
-
-  return null
-}
-
-function rememberQuestion(userId: string, taskType: MockTaskType, selection: PromptSelection, question: WritingQuestion) {
-  const key = questionCacheKey(userId, taskType, selection)
-  const cachedAt = Date.now()
-  recentQuestionCache.set(key, { question, cachedAt })
-  try {
-    window.sessionStorage.setItem(key, JSON.stringify({ question, cachedAt }))
-  } catch {
-  }
-  return question
-}
-
-function expectedChartKind(questionType: string | undefined): Task1ChartKind | undefined {
-  const map: Record<string, Task1ChartKind> = {
-    line_graph: 'line',
-    line_chart: 'line',
-    bar_chart: 'bar',
-    pie_chart: 'pie',
-    table: 'table',
-    mixed_charts: 'mixed'
-  }
-  return questionType ? map[questionType] : undefined
-}
-
-function validChartSpec(spec: unknown, questionType: string | undefined) {
-  const kind = expectedChartKind(questionType)
-  if (!kind || !spec) return undefined
-  const prepared = prepareTask1ChartSpec(spec, kind)
-  return prepared.success ? prepared.data : undefined
-}
-
-function mixedFallbackChartSpec() {
-  const fallback = getFallbackQuestionsByType('mixed_charts')[0]
-  const prepared = prepareTask1ChartSpec(fallback?.chartSpec, 'mixed')
-  return prepared.success ? prepared.data : undefined
-}
-
-function normalizeGeneratedQuestion(question: WritingQuestion): WritingQuestion {
-  if (question.taskType !== 'task1') return question
-  const kind = expectedChartKind(question.questionType)
-  if (!kind) return question
-  const prepared = prepareTask1ChartSpec(question.chartSpec, kind)
-  if (!prepared.success) {
-    throw new Error(`生成的图表数据未通过完整性校验：${prepared.errors.join('；')}`)
-  }
-  return { ...question, chartSpec: prepared.data }
-}
-
-function readDraft(draftKey: string): DraftPayload | null {
-  const raw = window.localStorage.getItem(draftKey)
-  if (!raw) return null
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && 'essay' in parsed && typeof parsed.essay === 'string') {
-      return parsed as DraftPayload
-    }
-  } catch {
-    return { essay: raw, updatedAt: new Date().toISOString(), wordCount: countWords(raw) }
-  }
-  return null
-}
-
-function writeDraft(draftKey: string, essay: string, questionId?: string, question?: WritingQuestion) {
-  const chartSpec = question ? validChartSpec(question.chartSpec, question.questionType) : undefined
-  const payload: DraftPayload = {
-    essay,
-    updatedAt: new Date().toISOString(),
-    wordCount: countWords(essay),
-    questionId,
-    chartSpec: chartSpec as Record<string, unknown> | undefined,
-    processSpec: question?.processSpec as Record<string, unknown> | undefined,
-    mapSpec: question?.mapSpec as Record<string, unknown> | undefined,
-    imageUrl: question?.image,
-    promptLead: question?.promptLead,
-    promptDetail: question?.promptDetail,
-    questionType: question?.questionType,
-    trainingType: question?.trainingType,
-    title: question?.title
-  }
-  window.localStorage.setItem(draftKey, JSON.stringify(payload))
-}
-
-function restoreQuestionFromRecord(source: {
-  id: string
-  questionId?: string
-  taskType: string
-  title: string
-  prompt: string
-  promptLead?: string
-  promptDetail?: string
-  questionType?: string
-  trainingType?: string
-  chartSpec?: Record<string, unknown>
-  processSpec?: Record<string, unknown>
-  mapSpec?: Record<string, unknown>
-  imageUrl?: string
-}): WritingQuestion {
-  const isTask1 = source.taskType === 'task1'
-
-  let promptLead = source.promptLead
-  let promptDetail = source.promptDetail
-
-  if (!promptLead && source.prompt) {
-    const firstNewline = source.prompt.indexOf('\n')
-    if (firstNewline > 0) {
-      promptLead = source.prompt.slice(0, firstNewline)
-      promptDetail = source.prompt.slice(firstNewline + 1)
-    } else {
-      promptLead = source.prompt
-      promptDetail = ''
-    }
-  }
-  if (!promptDetail) promptDetail = ''
-  const expectedKind = isTask1 ? expectedChartKind(source.questionType) : undefined
-  const restoredChartSpec = validChartSpec(source.chartSpec, source.questionType)
-    || (expectedKind === 'mixed' ? mixedFallbackChartSpec() : undefined)
-
-  return {
-    id: source.questionId || `restored-${source.id}`,
-    taskType: (isTask1 ? 'task1' : 'task2') as Exclude<WritingTaskType, 'mock'>,
-    title: source.title,
-    promptLead: promptLead || source.title,
-    promptDetail,
-    durationMinutes: isTask1 ? 20 : 40,
-    wordTarget: isTask1 ? 150 : 250,
-    questionType: (source.questionType || (isTask1 ? 'line_chart' : 'opinion')) as Task1QuestionType | Task2QuestionType,
-    trainingType: (source.trainingType as Task1TrainingType) || (isTask1 ? 'academic' : undefined),
-    generatedSource: 'static-bank',
-    chartSpec: restoredChartSpec,
-    processSpec: source.processSpec as unknown as Task1ProcessSpec | undefined,
-    mapSpec: source.mapSpec as unknown as Task1MapSpec | undefined,
-    image: source.imageUrl
-  }
-}
-
-function readTimerEnd(timerKey: string, durationMinutes: number) {
-  const durationMs = durationMinutes * 60 * 1000
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(timerKey) || '{}')
-    if (parsed && typeof parsed === 'object' && 'endAt' in parsed && typeof parsed.endAt === 'number') {
-      const endAt = parsed.endAt
-      if (endAt <= Date.now()) {
-        const newEndAt = Date.now() + durationMs
-        window.localStorage.setItem(timerKey, JSON.stringify({ endAt: newEndAt, durationMs, startedAt: Date.now() }))
-        return newEndAt
-      }
-      return endAt
-    }
-  } catch {
-  }
-  const endAt = Date.now() + durationMs
-  window.localStorage.setItem(timerKey, JSON.stringify({ endAt, durationMs, startedAt: Date.now() }))
-  return endAt
-}
-
-function timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, message: string) {
-  return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs)
-    promise.then(resolve, reject).finally(() => window.clearTimeout(timer))
-  })
-}
-
-type EvaluatePayload = {
-  essay: string
-  taskType: MockTaskType
-  prompt: string
-  questionType: string
-}
-
-type GeneratePromptPayload = {
-  taskType: MockTaskType
-  selection: PromptSelection
-  excludePromptSummaries: Array<Record<string, unknown>>
-}
-
-async function evaluateInBrowser(payload: EvaluatePayload) {
-  const response = await fetch('/api/ai/evaluate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-  const data = (await response.json().catch(() => ({}))) as Partial<EssayEvaluation> & { error?: string; message?: string }
-  if (!response.ok) {
-    return {
-      ok: false,
-      message:
-        response.status === 401
-          ? '请先登录后再使用批改功能。'
-          : response.status === 403
-            ? data.message || '请先激活账号后再使用批改功能。'
-            : data.message || data.error || '批改失败，请稍后重试。'
-    }
-  }
-  return { ok: true, data: data as EssayEvaluation }
-}
-
-function criterionFrom(evaluation: EssayEvaluation, key: CriterionKey) {
-  return evaluation.criteria?.[key] ?? evaluation[key]
-}
-
-function weightedCriterion(task1: EssayEvaluation, task2: EssayEvaluation, key: Extract<CriterionKey, 'coherenceCohesion' | 'lexicalResource' | 'grammaticalRangeAccuracy'>): CriterionScore {
-  const first = criterionFrom(task1, key)
-  const second = criterionFrom(task2, key)
-  return {
-    score: weightedCriterionScore(first?.score, second?.score) || second?.score || first?.score || '—',
-    feedback: [`Task 1: ${first?.feedback || '未返回'}`, `Task 2: ${second?.feedback || '未返回'}`].join('\n')
-  }
-}
-
-function offsetAnnotations(annotations: EssayAnnotation[] | undefined, offset: number) {
-  return (annotations ?? []).map((annotation) => ({
-    ...annotation,
-    start: annotation.unresolved ? annotation.start : annotation.start + offset,
-    end: annotation.unresolved ? annotation.end : annotation.end + offset
-  }))
-}
-
-function combineMockEvaluation(task1: EssayEvaluation, task2: EssayEvaluation, task1Essay = ''): EssayEvaluation {
-  const task1Band = parseBand(task1.overallBand || task1.bandEstimate)
-  const task2Band = parseBand(task2.overallBand || task2.bandEstimate)
-  if (task1Band === null || task2Band === null) {
-    throw new Error('模考评分结果无法计算，请重新批改。')
-  }
-  const overall = formatBandNumber(calculateWritingOverall(task1Band, task2Band))
-  const taskAchievement = criterionFrom(task1, 'taskAchievement')
-  const taskResponse = criterionFrom(task2, 'taskResponse')
-  const criteria: Partial<Record<CriterionKey, CriterionScore>> = {
-    taskAchievement,
-    taskResponse,
-    coherenceCohesion: weightedCriterion(task1, task2, 'coherenceCohesion'),
-    lexicalResource: weightedCriterion(task1, task2, 'lexicalResource'),
-    grammaticalRangeAccuracy: weightedCriterion(task1, task2, 'grammaticalRangeAccuracy')
-  }
-  const task1Offset = 'Task 1\n'.length
-  const task2Offset = `Task 1\n${task1Essay}\n\nTask 2\n`.length
-  const annotations = [
-    ...offsetAnnotations(task1.annotations, task1Offset),
-    ...offsetAnnotations(task2.annotations, task2Offset)
-  ]
-
-  return {
-    overallBand: overall,
-    bandEstimate: overall,
-    taskAchievement,
-    taskResponse,
-    coherenceCohesion: criteria.coherenceCohesion,
-    lexicalResource: criteria.lexicalResource,
-    grammaticalRangeAccuracy: criteria.grammaticalRangeAccuracy,
-    criteria,
-    summary: `完整模考预估分数为 ${overall}。Task 2 按约两倍权重计入总分。`,
-    overallFeedback: `完整模考预估分数为 ${overall}。Task 2 按约两倍权重计入总分。`,
-    strengths: [...(task1.strengths ?? []), ...(task2.strengths ?? [])].slice(0, 6),
-    weaknesses: [...(task1.weaknesses ?? []), ...(task2.weaknesses ?? [])].slice(0, 6),
-    annotations,
-    annotationVersion: Math.max(task1.annotationVersion ?? 1, task2.annotationVersion ?? 1),
-    sentenceAnnotations: [...(task1.sentenceAnnotations ?? task1.sentenceErrors ?? []), ...(task2.sentenceAnnotations ?? task2.sentenceErrors ?? [])],
-    sentenceErrors: [...(task1.sentenceErrors ?? []), ...(task2.sentenceErrors ?? [])],
-    suggestions: [...(task1.nextSteps ?? task1.suggestions ?? []), ...(task2.nextSteps ?? task2.suggestions ?? [])].slice(0, 6),
-    correctedEssay: `Task 1\n${task1.correctedEssay || task1.improvedEssay || ''}\n\nTask 2\n${task2.correctedEssay || task2.improvedEssay || ''}`,
-    improvedEssay: `Task 1\n${task1.improvedEssay || ''}\n\nTask 2\n${task2.improvedEssay || ''}`,
-    revisedEssay: `Task 1\n${task1.improvedEssay || ''}\n\nTask 2\n${task2.improvedEssay || ''}`,
-    modelEssay: `Task 1\n${task1.modelEssay || ''}\n\nTask 2\n${task2.modelEssay || ''}`,
-    nextSteps: [...(task1.nextSteps ?? []), ...(task2.nextSteps ?? [])].slice(0, 6),
-    feedback: [`Task 1: ${task1.summary || task1.overallFeedback || ''}`, `Task 2: ${task2.summary || task2.overallFeedback || ''}`].filter(Boolean),
-    provider: task2.provider || task1.provider,
-    model: task2.model || task1.model
-  }
 }
 
 function defaultQuestionFor(mode: WritingTaskType, selection = DefaultPromptSelection) {
@@ -431,7 +100,6 @@ export default function WritePage() {
   const mode = normalizeMode(params.mode)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const layoutRef = useRef<HTMLElement>(null)
-  const submitEssayRef = useRef<() => Promise<void>>(async () => undefined)
   const lastAutoSaveAtRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
@@ -514,10 +182,8 @@ export default function WritePage() {
     },
     [essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion, userId]
   )
-
-  useEffect(() => {
-    submitEssayRef.current = submitCurrent
-  })
+  const generateInitialQuestion = useEffectEvent(generateQuestionFor)
+  const notifyInitialRestore = useEffectEvent(pushToast)
 
   useEffect(() => {
     let timer: number | undefined
@@ -602,7 +268,7 @@ export default function WritePage() {
               })
             }
             return getQuestionById(task1Draft?.questionId)
-              || (restoredTask1 ? fallback.task1 : generateQuestionFor('task1', selection))
+              || (restoredTask1 ? fallback.task1 : generateInitialQuestion('task1', selection))
           })()
 
           const task2QuestionPromise = (async () => {
@@ -625,7 +291,7 @@ export default function WritePage() {
               })
             }
             return getQuestionById(task2Draft?.questionId)
-              || (restoredTask2 ? fallback.task2 : generateQuestionFor('task2', selection))
+              || (restoredTask2 ? fallback.task2 : generateInitialQuestion('task2', selection))
           })()
 
           const [task1Question, task2Question] = await Promise.all([
@@ -639,7 +305,7 @@ export default function WritePage() {
           if (restoredTask1 || restoredTask2) {
             setDraftRestored(true)
             setSaveStatus('saved')
-            pushToast({ kind: 'success', title: sourceRecord ? '已带回模考作文' : '已恢复模考草稿' })
+            notifyInitialRestore({ kind: 'success', title: sourceRecord ? '已带回模考作文' : '已恢复模考草稿' })
           } else {
             setSaveStatus('idle')
           }
@@ -686,7 +352,7 @@ export default function WritePage() {
             question = getQuestionById(draft.questionId)
           }
           if (!question) {
-            question = restoredEssay ? defaultQuestionFor(taskType, selection) : await generateQuestionFor(taskType, selection)
+            question = restoredEssay ? defaultQuestionFor(taskType, selection) : await generateInitialQuestion(taskType, selection)
           }
           if (cancelled) return
           setSingleQuestion(question)
@@ -694,12 +360,12 @@ export default function WritePage() {
             setEssay(sourceRecord.essay)
             setDraftRestored(true)
             setSaveStatus('saved')
-            pushToast({ kind: 'info', title: '已带回原文', message: '你可以继续修改，原批改结果仍保留在历史记录中。' })
+            notifyInitialRestore({ kind: 'info', title: '已带回原文', message: '你可以继续修改，原批改结果仍保留在历史记录中。' })
           } else if (draft?.essay) {
             setEssay(draft.essay)
             setDraftRestored(true)
             setSaveStatus('saved')
-            pushToast({ kind: 'success', title: '已恢复草稿', message: `上次保存于 ${new Date(draft.updatedAt).toLocaleTimeString()}` })
+            notifyInitialRestore({ kind: 'success', title: '已恢复草稿', message: `上次保存于 ${new Date(draft.updatedAt).toLocaleTimeString()}` })
           } else {
             setSaveStatus('idle')
           }
@@ -721,7 +387,6 @@ export default function WritePage() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, splitKey, timerKey, userId])
 
   useEffect(() => {
@@ -816,20 +481,21 @@ export default function WritePage() {
     )
   }, [positionKey])
 
-  async function evaluateEssay(payload: EvaluatePayload, dedupeKey?: string) {
+  async function evaluateEssay(
+    payload: EssayEvaluationRequest,
+    dedupeKey?: string,
+    signal?: AbortSignal
+  ) {
     if (dedupeKey && pendingEvaluations.has(dedupeKey)) {
       return pendingEvaluations.get(dedupeKey)!
     }
 
     const evaluationPromise = (async () => {
       try {
-        const result = await timeoutPromise(evaluateInBrowser(payload), AI_EVALUATION_TIMEOUT_MS, '批改服务响应超时，请检查网络后重试。')
-        if (!result.ok || !result.data) {
-          const message = 'message' in result && typeof result.message === 'string' ? result.message : undefined
-          const resultError = 'error' in result && typeof result.error === 'string' ? result.error : undefined
-          throw new Error(message || resultError || '批改失败，请稍后重试。')
-        }
-        return result.data
+        return await requestEssayEvaluation(payload, {
+          signal,
+          timeoutMs: AI_EVALUATION_TIMEOUT_MS
+        })
       } finally {
         if (dedupeKey) pendingEvaluations.delete(dedupeKey)
       }
@@ -839,103 +505,14 @@ export default function WritePage() {
     return evaluationPromise
   }
 
-  async function requestGeneratedQuestion(payload: GeneratePromptPayload) {
-    if (!userId) throw new Error('用户身份尚未确认。')
-    const requestKey = `${userId}:${JSON.stringify(payload)}`
-    const existing = pendingQuestionRequests.get(requestKey)
-    if (existing) return existing
-
-    const request = (async () => {
-      const response = await fetch('/api/ai/generate-prompt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-      const data = (await response.json().catch(() => ({}))) as { question?: WritingQuestion; error?: string; message?: string }
-      if (!response.ok || !data.question) {
-        throw new Error(data.message || data.error || '题目生成失败，请稍后重试。')
-      }
-      return normalizeGeneratedQuestion(data.question)
-    })().finally(() => {
-      pendingQuestionRequests.delete(requestKey)
-    })
-
-    pendingQuestionRequests.set(requestKey, request)
-    return request
-  }
-
   async function generateQuestionFor(taskType: MockTaskType, selection: PromptSelection) {
     if (!userId) throw new Error('用户身份尚未确认。')
-    const cachedQuestion = readCachedQuestion(userId, taskType, selection)
-    if (cachedQuestion) return cachedQuestion
-
-    const userProfileId = currentPromptProfileId(userId)
-    const duplicateContext = {
+    return generateQuestionForSelection({
       taskType,
+      selection,
       userId,
-      userProfileId,
-      chartType: taskType === 'task1' ? selection.task1ChartType : undefined,
-      essayType: taskType === 'task2' ? selection.task2EssayType : undefined,
-      topic: taskType === 'task2' ? selection.task2Topic : undefined
-    }
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const question = await requestGeneratedQuestion({
-          taskType,
-          selection,
-          excludePromptSummaries: buildExcludePromptSummaries(taskType, userId, userProfileId, 20)
-        })
-        const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
-        if (!duplicate.duplicate) {
-          recordGeneratedPrompt(question, selection, question.generatedSource === 'ai' ? 'ai' : 'local-template', userId, userProfileId)
-          return rememberQuestion(userId, taskType, selection, question)
-        }
-      } catch (caught) {
-        if (attempt === 0) {
-          setPromptGenerationNotice(caught instanceof Error ? caught.message : '题目生成失败，已改用本地题库。')
-        }
-      }
-    }
-
-    if (taskType === 'task1') {
-      const fbQuestion = getRandomFallbackQuestion(selection.task1ChartType)
-      const question: WritingQuestion = {
-        id: fbQuestion.id,
-        taskType: 'task1',
-        title: fbQuestion.title,
-        promptLead: fbQuestion.prompt,
-        promptDetail: fbQuestion.instructions,
-        durationMinutes: 20,
-        wordTarget: 150,
-        questionType: fbQuestion.chartType as Task1QuestionType,
-        trainingType: 'academic',
-        generatedSource: 'local-template',
-        chartSpec: fbQuestion.chartSpec,
-        processSpec: fbQuestion.processSpec,
-        mapSpec: fbQuestion.mapSpec
-      }
-      recordGeneratedPrompt(question, selection, 'local-template', userId, userProfileId)
-      setPromptGenerationNotice('已使用本地题库生成题目。')
-      return rememberQuestion(userId, taskType, selection, question)
-    }
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const question = buildLocalGeneratedQuestion(taskType, selection, attempt)
-      const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
-      if (!duplicate.duplicate) {
-        recordGeneratedPrompt(question, selection, 'local-template', userId, userProfileId)
-        return rememberQuestion(userId, taskType, selection, question)
-      }
-    }
-
-    const fallback = randomQuestionForSelection(taskType, selection)
-    const duplicate = findDuplicatePrompt(buildPrompt(fallback), duplicateContext)
-    if (duplicate.duplicate) {
-      setPromptGenerationNotice('最近已经生成过高度相似题目，已显示题库中最接近当前选择的备用题。')
-    }
-    recordGeneratedPrompt(fallback, selection, 'static-bank', userId, userProfileId)
-    return rememberQuestion(userId, taskType, selection, fallback)
+      onNotice: setPromptGenerationNotice
+    })
   }
 
   async function submitCurrent() {
@@ -982,7 +559,9 @@ export default function WritePage() {
     try {
       saveAllDrafts(false)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
-      if (abortController.signal.aborted) throw new Error('用户取消了批改。')
+      if (abortController.signal.aborted) {
+        throw new WritingEvaluationError('cancelled', '批改已取消。')
+      }
       setSubmitStatus('submitting')
       setStageIndex(1)
 
@@ -991,9 +570,11 @@ export default function WritePage() {
         taskType: activeQuestion.taskType,
         prompt: buildPrompt(activeQuestion),
         questionType: activeQuestion.questionType
-      }, essayHashKey)
+      }, essayHashKey, abortController.signal)
 
-      if (abortController.signal.aborted) throw new Error('用户取消了批改。')
+      if (abortController.signal.aborted) {
+        throw new WritingEvaluationError('cancelled', '批改已取消。')
+      }
       setStageIndex(2)
       await new Promise((resolve) => window.setTimeout(resolve, 100))
       setStageIndex(3)
@@ -1038,41 +619,13 @@ export default function WritePage() {
       pushToast({ kind: 'success', title: '批改完成', message: '正在打开结果页。' })
       router.push(`/result?id=${record.id}`)
     } catch (caught) {
-      const errorMessage = caught instanceof Error ? caught.message : '批改失败，请稍后重试。'
-      let userFriendlyError = errorMessage
-      let errorTitle = '批改失败'
-
-      if (errorMessage.includes('用户取消')) {
-        userFriendlyError = '批改已取消。'
-        errorTitle = '已取消'
-        pushToast({ kind: 'info', title: '已取消', message: '批改已取消。' })
-      } else if (errorMessage.includes('ai_json_parse_error') || errorMessage.includes('JSON')) {
-        userFriendlyError = '批改结果格式异常，作文已保存，请重新批改。'
-        errorTitle = '格式异常'
-      } else if (errorMessage.includes('timeout') || errorMessage.includes('超时')) {
-        userFriendlyError = '批改服务响应超时，请检查网络后重试。'
-        errorTitle = '响应超时'
-      } else if (errorMessage.includes('network') || errorMessage.includes('网络') || errorMessage.includes('fetch')) {
-        userFriendlyError = '网络连接失败，请检查网络后重试。作文已保存在本地。'
-        errorTitle = '网络错误'
-      } else if (errorMessage.includes('429') || errorMessage.includes('频率')) {
-        userFriendlyError = '请求过于频繁，请稍后重试。'
-        errorTitle = '请求限制'
-      } else if (errorMessage.includes('503') || errorMessage.includes('不可用')) {
-        userFriendlyError = '批改服务暂时不可用，请稍后重试。'
-        errorTitle = '服务不可用'
-      } else if (errorMessage.includes('license') || errorMessage.includes('激活')) {
-        userFriendlyError = '许可证验证失败，请检查激活状态。'
-        errorTitle = '许可证错误'
-      } else if (errorMessage.includes('length') || errorMessage.includes('截断')) {
-        userFriendlyError = '批改结果不完整，请减少作文长度后重试。'
-        errorTitle = '输出截断'
-      }
-
-      if (!errorMessage.includes('用户取消')) {
-        setError(userFriendlyError)
+      const presentation = evaluationErrorMessage(caught)
+      if (caught instanceof WritingEvaluationError && caught.kind === 'cancelled') {
+        pushToast({ kind: 'info', ...presentation })
+      } else {
+        setError(presentation.message)
         setSubmitStatus('error')
-        pushToast({ kind: 'error', title: errorTitle, message: userFriendlyError })
+        pushToast({ kind: 'error', ...presentation })
       }
     } finally {
       abortControllerRef.current = null
@@ -1110,9 +663,13 @@ export default function WritePage() {
     const dedupeKey1 = `${userId}:mock-task1:${mockEssays.task1.trim().toLowerCase().slice(0, 100)}`
     const dedupeKey2 = `${userId}:mock-task2:${mockEssays.task2.trim().toLowerCase().slice(0, 100)}`
 
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
     let succeeded = false
     setSubmitStatus('saving')
     setStageIndex(0)
+    setEvaluationStartTime(Date.now())
+    setElapsedTime(0)
     try {
       saveAllDrafts(false)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
@@ -1124,7 +681,7 @@ export default function WritePage() {
         taskType: 'task1',
         prompt: buildPrompt(mockQuestions.task1),
         questionType: mockQuestions.task1.questionType
-      }, dedupeKey1)
+      }, dedupeKey1, abortController.signal)
 
       setStageIndex(2)
       const task2Evaluation = await evaluateEssay({
@@ -1132,7 +689,7 @@ export default function WritePage() {
         taskType: 'task2',
         prompt: buildPrompt(mockQuestions.task2),
         questionType: mockQuestions.task2.questionType
-      }, dedupeKey2)
+      }, dedupeKey2, abortController.signal)
 
       setStageIndex(3)
       setSubmitStatus('organizing')
@@ -1219,10 +776,17 @@ export default function WritePage() {
       pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
       router.push(`/result?id=${record.id}`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '批改失败，请稍后重试。')
-      setSubmitStatus('error')
-      pushToast({ kind: 'error', title: '批改失败', message: caught instanceof Error ? caught.message : '两篇作文已保留，可重试。' })
+      const presentation = evaluationErrorMessage(caught)
+      if (caught instanceof WritingEvaluationError && caught.kind === 'cancelled') {
+        pushToast({ kind: 'info', ...presentation })
+      } else {
+        setError(presentation.message)
+        setSubmitStatus('error')
+        pushToast({ kind: 'error', ...presentation })
+      }
     } finally {
+      abortControllerRef.current = null
+      setEvaluationStartTime(null)
       if (!succeeded) {
         window.setTimeout(() => setSubmitStatus((current) => (current === 'success' ? current : 'idle')), 800)
       }

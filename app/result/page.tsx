@@ -12,6 +12,12 @@ import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { Task1Visual } from '@/components/task1/Task1Visual'
+import {
+  annotationsOverlap,
+  applyAcceptedAnnotationChanges,
+  isResolvedAnnotation,
+  selectCompatibleAnnotations
+} from '@/lib/essay-annotations'
 import { criterionKeysForTask } from '@/lib/ielts-scoring'
 import { getQuestionById } from '@/lib/ielts-questions'
 import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec } from '@/lib/task1-chart-schema'
@@ -53,65 +59,6 @@ function annotationMatchesFilter(annotation: EssayAnnotation, filter: Annotation
   if (filter === 'logic') return isLogicCategory(annotation.category)
   if (filter === 'task') return annotation.category === 'task-response'
   return annotation.severity === 'high'
-}
-
-function isResolvedAnnotation(annotation: EssayAnnotation, essay: string) {
-  return (
-    !annotation.unresolved &&
-    annotation.start >= 0 &&
-    annotation.end > annotation.start &&
-    annotation.end <= essay.length &&
-    essay.slice(annotation.start, annotation.end) === annotation.originalText
-  )
-}
-
-const AnnotationSeverityRank = { high: 3, medium: 2, low: 1 } as const
-
-function applyAcceptedChanges(
-  originalEssay: string,
-  changes: AcceptedAnnotationChange[],
-  annotations: EssayAnnotation[]
-) {
-  const annotationById = new Map(annotations.map((annotation) => [annotation.id, annotation]))
-  const selected: AcceptedAnnotationChange[] = []
-  const sorted = changes
-    .filter((change) => change.start >= 0 && change.end > change.start && originalEssay.slice(change.start, change.end) === change.originalText)
-    .slice()
-    .sort((a, b) => {
-      const firstSeverity = annotationById.get(a.annotationId)?.severity ?? 'medium'
-      const secondSeverity = annotationById.get(b.annotationId)?.severity ?? 'medium'
-      const severity = AnnotationSeverityRank[secondSeverity] - AnnotationSeverityRank[firstSeverity]
-      if (severity !== 0) return severity
-      return (b.end - b.start) - (a.end - a.start) || a.start - b.start
-    })
-  for (const change of sorted) {
-    if (!selected.some((current) => current.start < change.end && change.start < current.end)) {
-      selected.push(change)
-    }
-  }
-  return selected
-    .sort((a, b) => b.start - a.start)
-    .reduce((text, change) => `${text.slice(0, change.start)}${change.replacement}${text.slice(change.end)}`, originalEssay)
-}
-
-function annotationPriority(a: EssayAnnotation, b: EssayAnnotation) {
-  const severity = AnnotationSeverityRank[b.severity] - AnnotationSeverityRank[a.severity]
-  if (severity !== 0) return severity
-  const length = (b.end - b.start) - (a.end - a.start)
-  if (length !== 0) return length
-  return a.start - b.start
-}
-
-function annotationsOverlap(a: Pick<EssayAnnotation, 'start' | 'end'>, b: Pick<EssayAnnotation, 'start' | 'end'>) {
-  return a.start < b.end && b.start < a.end
-}
-
-function compatibleAnnotations(annotations: EssayAnnotation[]) {
-  const selected: EssayAnnotation[] = []
-  for (const annotation of annotations.slice().sort(annotationPriority)) {
-    if (!selected.some((current) => annotationsOverlap(current, annotation))) selected.push(annotation)
-  }
-  return selected
 }
 
 function countAnnotations(annotations: EssayAnnotation[]) {
@@ -236,7 +183,7 @@ export default function ResultPage() {
   const effectiveSelectedAnnotationId = visibleAnnotations.some((annotation) => annotation.id === selectedAnnotationId)
     ? selectedAnnotationId
     : visibleAnnotations[0]?.id ?? null
-  const modifiedEssay = applyAcceptedChanges(originalEssay, acceptedChanges, allAnnotations)
+  const modifiedEssay = applyAcceptedAnnotationChanges(originalEssay, acceptedChanges, allAnnotations)
   const criterionOrder = criterionKeysForTask(record.taskType)
   const topIssues =
     evaluation.weaknesses && evaluation.weaknesses.length > 0
@@ -303,7 +250,7 @@ export default function ResultPage() {
       .map((change) => allAnnotations.find((item) => item.id === change.annotationId))
       .filter((item): item is EssayAnnotation => Boolean(item))
     const conflicts = acceptedAnnotations.filter((item) => annotationsOverlap(item, annotation))
-    if (conflicts.length > 0 && compatibleAnnotations([...conflicts, annotation]).every((item) => item.id !== annotation.id)) {
+    if (conflicts.length > 0 && selectCompatibleAnnotations([...conflicts, annotation]).every((item) => item.id !== annotation.id)) {
       pushToast({ kind: 'info', title: '未接受此修改', message: '它与已接受的更高优先级修改重叠。' })
       return
     }
@@ -360,7 +307,7 @@ export default function ResultPage() {
         isResolvedAnnotation(annotation, originalEssay)
       )
     ]
-    const selected = compatibleAnnotations(candidates)
+    const selected = selectCompatibleAnnotations(candidates)
     const existingChanges = new Map(acceptedChanges.map((change) => [change.annotationId, change]))
     const nextChanges = selected.map((annotation) =>
       existingChanges.get(annotation.id) ?? {
