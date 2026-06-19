@@ -1,212 +1,59 @@
+import { z } from 'zod'
 import { prepareTask1ChartSpec, type Task1ChartKind } from '@/lib/task1-chart-schema'
 import { readStorageValue, userScopedStorageKey } from '@/lib/user-storage'
 import { calculateEssayOverallBand, formatBandNumber } from '@/lib/ielts-scoring'
+import {
+  CriterionKeys,
+  EssayAnnotationCategories,
+  EssayAnnotationSeverities,
+  EssayScoreCriteria,
+  LocalDeviceStorageKey,
+  MistakeBookStorageKey,
+  SentenceErrorLabels,
+  TaskTypeLabels,
+  WritingRecordsDedupeMigrationKey,
+  WritingRecordsStorageKey,
+  WritingRecordsUpdatedEvent,
+  type AcceptedAnnotationChange,
+  type CriterionKey,
+  type CriterionScore,
+  type EssayAnnotation,
+  type EssayAnnotationCategory,
+  type EssayAnnotationSeverity,
+  type EssayEvaluation,
+  type EssayScoreCriterion,
+  type SentenceError,
+  type WritingRecord
+} from '@/lib/writing-record-types'
 
-export type WritingTaskType = 'task1' | 'task2' | 'mock'
+export * from '@/lib/writing-record-types'
 
-export type CriterionKey =
-  | 'taskAchievement'
-  | 'taskResponse'
-  | 'coherenceCohesion'
-  | 'lexicalResource'
-  | 'grammaticalRangeAccuracy'
-
-export type CriterionScore = {
-  score: string
-  feedback: string
-  evidence?: string[]
-  whyNotHigher?: string
-}
-
-export type SentenceErrorCategory = 'grammar' | 'lexical' | 'cohesion' | 'task' | 'other'
-
-export const EssayAnnotationCategories = [
-  'grammar',
-  'spelling',
-  'vocabulary',
-  'collocation',
-  'coherence',
-  'cohesion',
-  'task-response',
-  'punctuation',
-  'sentence-structure',
-  'style',
-  'repetition',
-  'unclear-expression'
-] as const
-
-export type EssayAnnotationCategory = (typeof EssayAnnotationCategories)[number]
-
-export type EssayAnnotationSeverity = 'low' | 'medium' | 'high'
-
-export type EssayScoreCriterion =
-  | 'Task Achievement'
-  | 'Task Response'
-  | 'Coherence and Cohesion'
-  | 'Lexical Resource'
-  | 'Grammatical Range and Accuracy'
-
-export type EssayAnnotation = {
-  id: string
-  start: number
-  end: number
-  originalText: string
-  replacement?: string
-  category: EssayAnnotationCategory
-  severity: EssayAnnotationSeverity
-  scoreCriterion: EssayScoreCriterion
-  explanationZh: string
-  explanationEn?: string
-  impactOnScore: string
-  suggestion: string
-  unresolved?: boolean
-  blockIndex?: number
-}
-
-export type AcceptedAnnotationChange = {
-  annotationId: string
-  start: number
-  end: number
-  originalText: string
-  replacement: string
-  acceptedAt: string
-}
-
-export type SentenceError = {
-  original: string
-  correction: string
-  explanation: string
-  category: SentenceErrorCategory
-  errorType?: string
-  sentence?: string
-  chineseExplanation?: string
-}
-
-export type EssayEvaluation = {
-  overallBand: string
-  bandEstimate: string
-  taskAchievement?: CriterionScore
-  taskResponse?: CriterionScore
-  coherenceCohesion?: CriterionScore
-  lexicalResource?: CriterionScore
-  grammaticalRangeAccuracy?: CriterionScore
-  summary?: string
-  strengths?: string[]
-  weaknesses?: string[]
-  annotations?: EssayAnnotation[]
-  annotationVersion?: number
-  sentenceAnnotations?: SentenceError[]
-  correctedEssay?: string
-  improvedEssay?: string
-  nextSteps?: string[]
-  criteria?: Partial<Record<CriterionKey, CriterionScore>>
-  overallFeedback?: string
-  sentenceErrors?: SentenceError[]
-  suggestions?: string[]
-  revisedEssay?: string
-  modelEssay?: string
-  annotationWarnings?: string[]
-  feedback: string[]
-  provider?: string
-  model?: string
-}
-
-export type WritingRecordComponent = {
-  taskType: Exclude<WritingTaskType, 'mock'>
-  title: string
-  prompt: string
-  essay: string
-  durationSeconds: number
-  wordCount: number
-  evaluation: EssayEvaluation
-  questionId?: string
-  questionType?: string
-  trainingType?: string
-  chartSpec?: Record<string, unknown>
-  processSpec?: Record<string, unknown>
-  mapSpec?: Record<string, unknown>
-  imageUrl?: string
-  promptLead?: string
-  promptDetail?: string
-}
-
-export type WritingRecord = {
-  id: string
-  ownerUserId?: string
-  deviceId: string
-  taskType: WritingTaskType
-  title: string
-  prompt: string
-  essay: string
-  originalEssay?: string
-  submittedAt: string
-  durationSeconds: number
-  wordCount: number
-  evaluation: EssayEvaluation
-  acceptedChanges?: AcceptedAnnotationChange[]
-  annotationVersion?: number
-  questionId?: string
-  questionType?: string
-  trainingType?: string
-  components?: Partial<Record<Exclude<WritingTaskType, 'mock'>, WritingRecordComponent>>
-  chartSpec?: Record<string, unknown>
-  processSpec?: Record<string, unknown>
-  mapSpec?: Record<string, unknown>
-  promptLead?: string
-  promptDetail?: string
-  imageUrl?: string
-}
-
-export const WritingRecordsStorageKey = 'ielts-writing-writing-records-v1'
-export const WritingRecordsDedupeMigrationKey = 'ielts-writing-writing-records-dedupe-v2'
-export const MistakeBookStorageKey = 'ielts-writing-mistake-book-v1'
-export const LocalDeviceStorageKey = 'ielts-writing-local-device-id-v1'
-export const WritingRecordsUpdatedEvent = 'ielts-writing:writing-records-updated'
-
-export const TaskTypeLabels: Record<WritingTaskType, string> = {
-  task1: 'IELTS Task 1',
-  task2: 'IELTS Task 2',
-  mock: '完整测试'
-}
-
-export const CriterionLabels: Record<CriterionKey, string> = {
-  taskAchievement: '写作任务完成度',
-  taskResponse: '任务回应',
-  coherenceCohesion: '连贯与衔接',
-  lexicalResource: '词汇丰富程度',
-  grammaticalRangeAccuracy: '语法多样性及准确性'
-}
-
-export const SentenceErrorLabels: Record<SentenceErrorCategory, string> = {
-  grammar: '语法错误',
-  lexical: '词汇问题',
-  cohesion: '衔接问题',
-  task: '任务回应',
-  other: '其他问题'
-}
-
-export const EssayAnnotationLabels: Record<EssayAnnotationCategory, string> = {
-  grammar: '语法',
-  spelling: '拼写',
-  vocabulary: '词汇',
-  collocation: '搭配',
-  coherence: '逻辑连贯',
-  cohesion: '衔接',
-  'task-response': '任务回应',
-  punctuation: '标点',
-  'sentence-structure': '句式',
-  style: '风格',
-  repetition: '重复',
-  'unclear-expression': '表达不清'
-}
-
-export const EssayAnnotationCriterionLabels: Record<EssayScoreCriterion, string> = {
-  'Task Achievement': 'Task Achievement',
-  'Task Response': 'Task Response',
-  'Coherence and Cohesion': 'Coherence and Cohesion',
-  'Lexical Resource': 'Lexical Resource',
-  'Grammatical Range and Accuracy': 'Grammatical Range and Accuracy'
-}
+const StoredWritingRecordSchema = z.object({
+  id: z.string(),
+  ownerUserId: z.string().optional(),
+  deviceId: z.string().optional(),
+  taskType: z.enum(['task1', 'task2', 'mock']),
+  title: z.string(),
+  prompt: z.string(),
+  essay: z.string(),
+  originalEssay: z.string().optional(),
+  submittedAt: z.string(),
+  durationSeconds: z.number(),
+  wordCount: z.number(),
+  evaluation: z.unknown(),
+  acceptedChanges: z.unknown().optional(),
+  annotationVersion: z.number().optional(),
+  questionId: z.string().optional(),
+  questionType: z.string().optional(),
+  trainingType: z.string().optional(),
+  components: z.unknown().optional(),
+  chartSpec: z.unknown().optional(),
+  processSpec: z.unknown().optional(),
+  mapSpec: z.unknown().optional(),
+  promptLead: z.string().optional(),
+  promptDetail: z.string().optional(),
+  imageUrl: z.string().optional()
+}).passthrough()
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -249,18 +96,14 @@ function normalizeLegacyAnnotationCategory(value: unknown): EssayAnnotationCateg
 }
 
 function normalizeSeverity(value: unknown): EssayAnnotationSeverity {
-  return value === 'low' || value === 'medium' || value === 'high' ? value : 'medium'
+  return typeof value === 'string' && EssayAnnotationSeverities.includes(value as EssayAnnotationSeverity)
+    ? value as EssayAnnotationSeverity
+    : 'medium'
 }
 
 function normalizeScoreCriterion(value: unknown, category: EssayAnnotationCategory): EssayScoreCriterion {
-  if (
-    value === 'Task Achievement' ||
-    value === 'Task Response' ||
-    value === 'Coherence and Cohesion' ||
-    value === 'Lexical Resource' ||
-    value === 'Grammatical Range and Accuracy'
-  ) {
-    return value
+  if (typeof value === 'string' && EssayScoreCriteria.includes(value as EssayScoreCriterion)) {
+    return value as EssayScoreCriterion
   }
   if (category === 'task-response') return 'Task Response'
   if (category === 'coherence' || category === 'cohesion' || category === 'unclear-expression' || category === 'repetition') {
@@ -272,6 +115,7 @@ function normalizeScoreCriterion(value: unknown, category: EssayAnnotationCatego
 
 function normalizeEssayAnnotation(value: unknown, index: number): EssayAnnotation | null {
   if (!isObject(value)) return null
+  // v1 records stored sentence errors as original/correction/suggested/errorType.
   const originalText = typeof value.originalText === 'string'
     ? value.originalText
     : typeof value.original === 'string'
@@ -392,16 +236,10 @@ function normalizeSentenceError(value: SentenceError): SentenceError {
 
 export function normalizeEvaluation(value: unknown): EssayEvaluation | null {
   if (!isObject(value)) return null
+  // v1 records used bandEstimate, overallFeedback, sentenceErrors, suggestions and revisedEssay.
   const criteria = isObject(value.criteria) ? { ...value.criteria } : {}
-  const criterionKeys: CriterionKey[] = [
-    'taskAchievement',
-    'taskResponse',
-    'coherenceCohesion',
-    'lexicalResource',
-    'grammaticalRangeAccuracy'
-  ]
 
-  for (const key of criterionKeys) {
+  for (const key of CriterionKeys) {
     if (!criteria[key] && isObject(value[key])) {
       criteria[key] = value[key]
     }
@@ -486,24 +324,9 @@ export function normalizeEvaluation(value: unknown): EssayEvaluation | null {
     nextSteps: Array.isArray(value.nextSteps) ? value.nextSteps.filter((item): item is string => typeof item === 'string') : [],
     feedback,
     provider: typeof value.provider === 'string' ? value.provider : undefined,
-    model: typeof value.model === 'string' ? value.model : undefined
+    model: typeof value.model === 'string' ? value.model : undefined,
+    _cacheHit: value._cacheHit === true
   }
-}
-
-function isWritingRecord(value: unknown): value is WritingRecord {
-  if (!isObject(value)) return false
-  const evaluation = normalizeEvaluation(value.evaluation)
-  return (
-    typeof value.id === 'string' &&
-    (value.taskType === 'task1' || value.taskType === 'task2' || value.taskType === 'mock') &&
-    typeof value.title === 'string' &&
-    typeof value.prompt === 'string' &&
-    typeof value.essay === 'string' &&
-    typeof value.submittedAt === 'string' &&
-    typeof value.durationSeconds === 'number' &&
-    typeof value.wordCount === 'number' &&
-    evaluation !== null
-  )
 }
 
 export function createRecordId() {
@@ -605,14 +428,18 @@ export function loadWritingRecords(userId: string): WritingRecord[] {
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
     const records = parsed
-      .filter(isWritingRecord)
-      .map(normalizeWritingRecord)
+      .map(parseStoredWritingRecord)
+      .filter((record): record is WritingRecord => record !== null)
       .filter((record) => record.ownerUserId === userId)
       .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
     const deduped = dedupeWritingRecords(records)
     persistDedupeMigration(userId, deduped, parsed.length)
     return deduped
-  } catch {
+  } catch (error) {
+    console.warn('[writing-records-read]', {
+      userId,
+      error: error instanceof Error ? error.name : 'unknown'
+    })
     return []
   }
 }
@@ -632,7 +459,7 @@ function normalizeWritingRecord(record: WritingRecord): WritingRecord {
     annotationVersion: typeof rawRecord.annotationVersion === 'number'
       ? rawRecord.annotationVersion
       : (normalizeEvaluation(record.evaluation)?.annotationVersion ?? (acceptedChanges.length > 0 ? 1 : undefined)),
-    evaluation: normalizeEvaluation(record.evaluation) as EssayEvaluation,
+    evaluation: normalizeEvaluation(record.evaluation) || record.evaluation,
     chartSpec: normalizeStoredChartSpec(rawRecord.chartSpec, rawRecord.questionType),
     components: normalizeComponents(record.components)
   }
@@ -666,6 +493,45 @@ function normalizeComponents(value: unknown): WritingRecord['components'] {
     }
   }
   return Object.keys(output).length > 0 ? output : undefined
+}
+
+function parseStoredWritingRecord(value: unknown): WritingRecord | null {
+  const parsed = StoredWritingRecordSchema.safeParse(value)
+  if (!parsed.success) return null
+  const stored = parsed.data
+  const evaluation = normalizeEvaluation(stored.evaluation)
+  if (!evaluation) return null
+
+  return normalizeWritingRecord({
+    id: stored.id,
+    ownerUserId: stored.ownerUserId,
+    deviceId: stored.deviceId || '',
+    taskType: stored.taskType,
+    title: stored.title,
+    prompt: stored.prompt,
+    essay: stored.essay,
+    originalEssay: stored.originalEssay,
+    submittedAt: stored.submittedAt,
+    durationSeconds: stored.durationSeconds,
+    wordCount: stored.wordCount,
+    evaluation,
+    acceptedChanges: Array.isArray(stored.acceptedChanges)
+      ? stored.acceptedChanges
+        .map(normalizeAcceptedChange)
+        .filter((change): change is AcceptedAnnotationChange => change !== null)
+      : [],
+    annotationVersion: stored.annotationVersion,
+    questionId: stored.questionId,
+    questionType: stored.questionType,
+    trainingType: stored.trainingType,
+    components: normalizeComponents(stored.components),
+    chartSpec: normalizeStoredChartSpec(stored.chartSpec, stored.questionType),
+    processSpec: isObject(stored.processSpec) ? stored.processSpec : undefined,
+    mapSpec: isObject(stored.mapSpec) ? stored.mapSpec : undefined,
+    promptLead: stored.promptLead,
+    promptDetail: stored.promptDetail,
+    imageUrl: stored.imageUrl
+  })
 }
 
 export function saveWritingRecord(userId: string, record: WritingRecord) {
@@ -731,7 +597,11 @@ export function saveMistakeRecord(userId: string, record: WritingRecord) {
   try {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(storageKey) || '[]')
     existing = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-  } catch {
+  } catch (error) {
+    console.warn('[mistake-book-read]', {
+      userId,
+      error: error instanceof Error ? error.name : 'unknown'
+    })
     existing = []
   }
   window.localStorage.setItem(storageKey, JSON.stringify([record.id, ...existing.filter((id) => id !== record.id)].slice(0, 100)))

@@ -1,8 +1,13 @@
 import { z } from 'zod'
-import { AiConfigurationError, AiProviderError, generateWritingPromptWithAi } from '@/lib/ai'
+import {
+  AiConfigurationError,
+  AiProviderError,
+  apiStatusForAiError,
+  generateWritingPromptWithAi
+} from '@/lib/ai'
+import { recordAiUsage } from '@/lib/ai-usage'
 import { apiError, json } from '@/lib/http'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { requireActiveWebLicense, type WebLicenseCheck } from '@/lib/web-license/auth'
+import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import {
   DefaultPromptSelection,
   normalizeTask1ChartType,
@@ -65,43 +70,30 @@ export async function POST(request: Request) {
       selection,
       excludePromptSummaries: body.excludePromptSummaries
     })
-    await recordPromptUsage(check, body, question)
+    await recordAiUsage({
+      check,
+      action: 'generate_prompt',
+      inputCharacters: JSON.stringify(body).length,
+      result: question
+    })
     return json({ ok: true, question })
   } catch (error) {
-    await recordPromptUsage(check, body, null, error)
+    await recordAiUsage({
+      check,
+      action: 'generate_prompt',
+      inputCharacters: JSON.stringify(body).length,
+      result: null,
+      error
+    })
     if (error instanceof AiConfigurationError) {
       return json({ error: 'ai_not_configured', missing: error.missing }, { status: 503 })
     }
     if (error instanceof AiProviderError) {
-      return json({ error: error.code, message: error.message, providerStatus: error.status }, { status: 502 })
+      return json(
+        { error: error.code, message: error.message, providerStatus: error.status },
+        { status: apiStatusForAiError(error) }
+      )
     }
     return apiError(error, 'AI prompt generation failed.')
   }
-}
-
-async function recordPromptUsage(
-  check: Extract<WebLicenseCheck, { ok: true }>,
-  body: z.infer<typeof GeneratePromptSchema>,
-  result: unknown,
-  error?: unknown
-) {
-  const service = createSupabaseServiceRoleClient()
-  await Promise.all([
-    service
-      .from('license_activations')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('id', check.activation.id),
-    service
-      .from('usage_records')
-      .insert({
-        user_id: check.user.id,
-        license_id: check.activation.license_id,
-        action: 'generate_prompt',
-        model: process.env.AI_MODEL || null,
-        input_tokens: Math.ceil(JSON.stringify(body).length / 4),
-        output_tokens: result ? Math.ceil(JSON.stringify(result).length / 4) : null,
-        success: !error,
-        error_message: error instanceof Error ? error.message.slice(0, 500) : null
-      })
-  ])
 }

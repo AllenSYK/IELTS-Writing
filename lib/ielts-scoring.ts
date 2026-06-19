@@ -1,4 +1,12 @@
-import type { CriterionKey, EssayEvaluation, WritingRecord, WritingTaskType } from '@/lib/writing-records'
+import {
+  CriterionKeys,
+  Task1CriterionKeys,
+  Task2CriterionKeys,
+  type CriterionKey,
+  type EssayEvaluation,
+  type WritingRecord,
+  type WritingTaskType
+} from '@/lib/writing-record-types'
 
 export function parseBand(score: string | number | null | undefined) {
   if (typeof score === 'number') {
@@ -59,13 +67,9 @@ export function weightedCriterionScore(task1Score: string | undefined, task2Scor
 }
 
 export function criterionKeysForTask(taskType: WritingTaskType): CriterionKey[] {
-  if (taskType === 'task1') {
-    return ['taskAchievement', 'coherenceCohesion', 'lexicalResource', 'grammaticalRangeAccuracy']
-  }
-  if (taskType === 'task2') {
-    return ['taskResponse', 'coherenceCohesion', 'lexicalResource', 'grammaticalRangeAccuracy']
-  }
-  return ['taskAchievement', 'taskResponse', 'coherenceCohesion', 'lexicalResource', 'grammaticalRangeAccuracy']
+  if (taskType === 'task1') return [...Task1CriterionKeys]
+  if (taskType === 'task2') return [...Task2CriterionKeys]
+  return [...CriterionKeys]
 }
 
 export function collectTaskScores(records: WritingRecord[], taskType: Exclude<WritingTaskType, 'mock'>) {
