@@ -1,11 +1,11 @@
 import type {
   AcceptedAnnotationChange,
   EssayAnnotation,
-  EssayAnnotationCategory,
   EssayAnnotationSeverity,
   EssayScoreCriterion,
   WritingTaskType
 } from '@/lib/writing-record-types'
+import type { BlockAnnotationDraft } from '@/lib/essay-annotation-schema'
 
 export const AnnotationVersion = 2
 
@@ -18,22 +18,10 @@ const AnnotationSeverityRank: Record<EssayAnnotationSeverity, number> = {
 }
 
 export type EssayTextBlock = {
+  id?: string
   index: number
   text: string
   baseOffset: number
-}
-
-export type BlockAnnotationDraft = {
-  originalText: string
-  occurrence: number
-  replacement?: string
-  category: EssayAnnotationCategory
-  severity: EssayAnnotationSeverity
-  scoreCriterion: EssayScoreCriterion
-  explanationZh: string
-  explanationEn?: string
-  impactOnScore: string
-  suggestion: string
 }
 
 function annotationHash(value: string) {
@@ -99,7 +87,11 @@ export function splitEssayIntoBlocks(essay: string): EssayTextBlock[] {
         ? splitLongBlock(paragraph.text, paragraph.baseOffset)
         : [paragraph]
     )
-    .map((block, index) => ({ ...block, index }))
+    .map((block, index) => ({
+      ...block,
+      id: `block-${block.baseOffset}-${annotationHash(block.text).toString(36)}`,
+      index
+    }))
 }
 
 function findOccurrence(text: string, originalText: string, occurrence: number) {
@@ -133,7 +125,7 @@ export function locateAnnotationInBlock(
   const end = start === -1 ? -1 : start + draft.originalText.length
   const unresolved = localStart === -1
   const stableKey = [
-    unresolved ? `block-${block.index}` : `${start}:${end}`,
+    unresolved ? block.id || `block-${block.index}` : `${start}:${end}`,
     draft.category,
     draft.originalText,
     draft.replacement || ''
@@ -153,7 +145,8 @@ export function locateAnnotationInBlock(
     impactOnScore: draft.impactOnScore,
     suggestion: draft.suggestion,
     unresolved,
-    blockIndex: block.index
+    blockIndex: block.index,
+    blockId: block.id || `block-${block.index}`
   }
 }
 

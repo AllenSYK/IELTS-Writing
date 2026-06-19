@@ -108,14 +108,18 @@ html,
 body {
   min-height: 100%;
   margin: 0;
+  background-color: #f0f4ff;
+  overscroll-behavior-x: none;
 }
 
 body {
+  min-height: 100dvh;
   color: var(--on-surface);
   background:
     radial-gradient(at 0% 0%, rgba(240, 244, 255, 0.92) 0, transparent 50%),
     radial-gradient(at 100% 0%, rgba(249, 240, 255, 0.9) 0, transparent 50%),
     linear-gradient(135deg, #f0f4ff 0%, #f9f0ff 100%);
+  background-color: #f0f4ff;
   background-attachment: fixed;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -189,7 +193,7 @@ img {
 }
 
 .ui-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   color: var(--on-surface);
   padding-bottom: var(--stack-lg);
 }
@@ -576,8 +580,8 @@ img {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 340px));
   justify-content: start;
-  align-items: start;
-  grid-auto-rows: auto;
+  align-items: stretch;
+  grid-auto-rows: 1fr;
   gap: var(--stack-md);
 }
 
@@ -588,7 +592,7 @@ img {
 }
 
 .mode-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -2345,7 +2349,8 @@ img {
 .history-card {
   width: 100%;
   max-width: 340px;
-  height: 286px;
+  height: 100%;
+  min-height: 312px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -2382,6 +2387,18 @@ img {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-height: 1.25;
+}
+
+.history-summary {
+  min-height: 40px;
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .history-date,
@@ -4492,6 +4509,39 @@ img {
   margin-bottom: 20px;
 }
 
+.activity-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.activity-range-control {
+  display: inline-flex;
+  gap: 3px;
+  border: 1px solid rgba(0, 88, 188, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.48);
+  padding: 3px;
+}
+
+.activity-range-control button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 800;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+
+.activity-range-control button.is-active {
+  background: rgba(216, 226, 255, 0.9);
+  color: var(--primary);
+}
+
 .activity-panel-header p,
 .activity-panel-header h2 {
   margin: 0;
@@ -4510,19 +4560,22 @@ img {
 .activity-scroll {
   max-width: 100%;
   overflow-x: auto;
-  padding: 4px 2px 10px;
+  padding: 4px 20px 10px 2px;
   scrollbar-width: thin;
 }
 
 .activity-chart {
+  --activity-week-count: 53;
   width: max-content;
-  min-width: 100%;
+  min-width: min(100%, calc(32px + (var(--activity-week-count) * 18px)));
+  margin: 0 auto;
+  padding-right: 8px;
 }
 
 .activity-months {
   height: 22px;
   display: grid;
-  grid-template-columns: repeat(53, 14px);
+  grid-template-columns: repeat(var(--activity-week-count), 14px);
   gap: 4px;
   margin-left: 32px;
   color: var(--on-surface-variant);
@@ -4547,16 +4600,18 @@ img {
 
 .activity-skeleton {
   overflow: hidden;
+  min-height: 158px;
 }
 
 .activity-skeleton-grid {
-  width: max-content;
+  width: min(100%, 960px);
   display: grid;
-  grid-template-columns: repeat(53, 14px);
+  grid-template-columns: repeat(14, 14px);
   grid-template-rows: repeat(7, 14px);
   grid-auto-flow: column;
   gap: 4px;
   margin-top: 24px;
+  margin-inline: auto;
 }
 
 .activity-skeleton-grid span {
@@ -4594,6 +4649,7 @@ img {
 .activity-weeks {
   display: flex;
   gap: 4px;
+  padding-right: 8px;
 }
 
 .activity-cell {
@@ -4670,7 +4726,10 @@ img {
 
 .app-route-root {
   min-height: 100dvh;
-  background: transparent;
+  background:
+    radial-gradient(at 0% 0%, rgba(240, 244, 255, 0.92) 0, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(249, 240, 255, 0.9) 0, transparent 50%),
+    linear-gradient(135deg, #f0f4ff 0%, #f9f0ff 100%);
 }
 
 .app-route-root.is-full-screen {
@@ -4840,6 +4899,9 @@ img {
 }
 
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   height: var(--app-header-height);
   flex: 0 0 var(--app-header-height);
   display: flex;
@@ -4847,6 +4909,17 @@ img {
   justify-content: space-between;
   gap: 20px;
   padding: 0 var(--container-padding);
+  background: rgba(244, 246, 255, 0.82);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(24px) saturate(170%);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+}
+
+.app-header-leading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
 .app-header-copy {
@@ -4865,6 +4938,21 @@ img {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.app-header-create {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(0, 88, 188, 0.16);
+  border-radius: 999px;
+  background: rgba(216, 226, 255, 0.58);
+  color: var(--primary);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .profile-avatar {
@@ -4932,7 +5020,8 @@ img {
 }
 
 .mode-header {
-  margin-top: 0;
+  margin: 0 auto var(--stack-lg);
+  text-align: center;
 }
 
 .page-section-header {

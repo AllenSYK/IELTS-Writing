@@ -49,11 +49,15 @@ export function buildWritingActivity(
   })
 }
 
-export async function loadWritingActivityForUser(userId: string, today = new Date()) {
+export async function loadWritingActivityForUser(
+  userId: string,
+  today = new Date(),
+  days = WritingActivityDays
+) {
   const { createSupabaseServiceRoleClient } = await import('@/lib/supabase/server')
   const service = createSupabaseServiceRoleClient()
   const todayKey = dateKeyInTimeZone(today)
-  const startKey = addUtcDays(todayKey, -(WritingActivityDays - 1))
+  const startKey = addUtcDays(todayKey, -(days - 1))
   const queryStart = `${startKey}T00:00:00+08:00`
   const queryEnd = `${addUtcDays(todayKey, 1)}T00:00:00+08:00`
 
@@ -78,5 +82,5 @@ export async function loadWritingActivityForUser(userId: string, today = new Dat
     if (page.length < pageSize) break
   }
 
-  return buildWritingActivity(rows, { today })
+  return buildWritingActivity(rows, { today, days })
 }

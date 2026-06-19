@@ -5,6 +5,7 @@ import { AppInteractionProvider } from '@/components/interaction-system'
 import { UserPerformanceProvider } from '@/components/performance/UserPerformanceProvider'
 import { UserProfileProvider } from '@/stores/user-profile-store'
 import './globals.css'
+import './styles/web-audit-refactor.css'
 import './admin.css'
 
 export const metadata: Metadata = {

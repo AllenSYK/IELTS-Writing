@@ -3,7 +3,7 @@
 import useSWR from 'swr'
 import {
   WritingRecordsUpdatedEvent,
-  loadWritingRecords,
+  loadWritingRecordsFromServer,
   type WritingRecord
 } from '@/lib/writing-records'
 
@@ -39,7 +39,7 @@ function loadRecordsOnce(userId: string) {
   let pending = pendingRecords.get(userId)
   if (!pending) {
     pending = Promise.resolve()
-      .then(() => loadWritingRecords(userId))
+      .then(() => loadWritingRecordsFromServer(userId))
       .then((records) => {
         cachedRecords.set(userId, records)
         return records

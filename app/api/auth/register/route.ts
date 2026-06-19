@@ -4,11 +4,20 @@ import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { sendWelcomeEmail } from '@/lib/email/send-register-code'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
 import { hashRegistrationToken, isValidEmail, normalizeEmail } from '@/lib/auth/email-verification'
+import {
+  CurrentAgreementVersions,
+  recordUserAgreements
+} from '@/lib/legal-agreements'
 
 const RegisterSchema = z.object({
   email: z.string().min(3).max(254),
   password: z.string().min(8).max(128),
-  registrationToken: z.string().min(32).max(256)
+  registrationToken: z.string().min(32).max(256),
+  agreementsAccepted: z.literal(true),
+  agreementVersions: z.object({
+    terms: z.literal(CurrentAgreementVersions.terms),
+    privacy: z.literal(CurrentAgreementVersions.privacy)
+  })
 })
 
 async function isEmailRegistered(email: string) {
@@ -86,6 +95,7 @@ export async function POST(request: Request) {
       })
 
     if (profileError) throw profileError
+    await recordUserAgreements(service, created.user.id, 'register')
 
     await service
       .from('email_verification_codes')

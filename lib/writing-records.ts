@@ -30,6 +30,7 @@ export * from '@/lib/writing-record-types'
 
 const StoredWritingRecordSchema = z.object({
   id: z.string(),
+  requestId: z.string().optional(),
   ownerUserId: z.string().optional(),
   deviceId: z.string().optional(),
   taskType: z.enum(['task1', 'task2', 'mock']),
@@ -170,6 +171,9 @@ function normalizeEssayAnnotation(value: unknown, index: number): EssayAnnotatio
     unresolved: Boolean(value.unresolved) || start < 0 || end <= start,
     blockIndex: typeof value.blockIndex === 'number' && Number.isFinite(value.blockIndex)
       ? Math.max(0, Math.trunc(value.blockIndex))
+      : undefined,
+    blockId: typeof value.blockId === 'string' && value.blockId.trim()
+      ? value.blockId
       : undefined
   }
 }
@@ -325,6 +329,7 @@ export function normalizeEvaluation(value: unknown): EssayEvaluation | null {
     feedback,
     provider: typeof value.provider === 'string' ? value.provider : undefined,
     model: typeof value.model === 'string' ? value.model : undefined,
+    requestId: typeof value.requestId === 'string' ? value.requestId : undefined,
     _cacheHit: value._cacheHit === true
   }
 }
@@ -444,7 +449,7 @@ export function loadWritingRecords(userId: string): WritingRecord[] {
   }
 }
 
-function normalizeWritingRecord(record: WritingRecord): WritingRecord {
+export function normalizeWritingRecord(record: WritingRecord): WritingRecord {
   const rawRecord = record as WritingRecord & Record<string, unknown>
   const acceptedChanges = Array.isArray(rawRecord.acceptedChanges)
     ? rawRecord.acceptedChanges
@@ -495,7 +500,7 @@ function normalizeComponents(value: unknown): WritingRecord['components'] {
   return Object.keys(output).length > 0 ? output : undefined
 }
 
-function parseStoredWritingRecord(value: unknown): WritingRecord | null {
+export function parseStoredWritingRecord(value: unknown): WritingRecord | null {
   const parsed = StoredWritingRecordSchema.safeParse(value)
   if (!parsed.success) return null
   const stored = parsed.data
@@ -504,6 +509,7 @@ function parseStoredWritingRecord(value: unknown): WritingRecord | null {
 
   return normalizeWritingRecord({
     id: stored.id,
+    requestId: stored.requestId,
     ownerUserId: stored.ownerUserId,
     deviceId: stored.deviceId || '',
     taskType: stored.taskType,
@@ -534,7 +540,74 @@ function parseStoredWritingRecord(value: unknown): WritingRecord | null {
   })
 }
 
-export function saveWritingRecord(userId: string, record: WritingRecord) {
+function canUseAccountApi() {
+  return typeof window !== 'undefined' && Boolean(window.location?.origin)
+}
+
+async function requestAccountApi<T>(url: string, init?: RequestInit) {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...init?.headers
+    },
+    cache: 'no-store'
+  })
+  const data = await response.json().catch(() => ({})) as T & { message?: string }
+  if (!response.ok) throw new Error(data.message || '账号数据请求失败')
+  return data
+}
+
+export async function loadWritingRecordsFromServer(userId: string) {
+  const localRecords = loadWritingRecords(userId)
+  if (!canUseAccountApi()) return localRecords
+
+  let data: { records?: WritingRecord[] }
+  try {
+    data = await requestAccountApi<{ records?: WritingRecord[] }>('/api/user/writing-records')
+  } catch {
+    return localRecords
+  }
+  const serverRecords = (data.records ?? [])
+    .map(parseStoredWritingRecord)
+    .filter((record): record is WritingRecord => Boolean(record))
+    .filter((record) => record.ownerUserId === userId)
+
+  if (serverRecords.length === 0 && localRecords.length > 0) {
+    const migrated = await Promise.allSettled(
+      localRecords.map((record) => saveWritingRecordToServer(userId, record))
+    )
+    const uploaded = migrated
+      .filter((result): result is PromiseFulfilledResult<WritingRecord> => result.status === 'fulfilled')
+      .map((result) => result.value)
+    if (uploaded.length > 0) {
+      replaceWritingRecords(userId, uploaded)
+      return dedupeWritingRecords(uploaded)
+    }
+  }
+
+  replaceWritingRecords(userId, serverRecords)
+  return dedupeWritingRecords(serverRecords)
+}
+
+async function saveWritingRecordToServer(userId: string, record: WritingRecord) {
+  const data = await requestAccountApi<{ record?: WritingRecord }>('/api/user/writing-records', {
+    method: 'POST',
+    body: JSON.stringify({
+      record: {
+        ...record,
+        ownerUserId: userId
+      }
+    })
+  })
+  const saved = data.record ? parseStoredWritingRecord(data.record) : null
+  if (!saved || saved.ownerUserId !== userId) {
+    throw new Error('服务端未返回有效的写作记录')
+  }
+  return saved
+}
+
+export async function saveWritingRecord(userId: string, record: WritingRecord) {
   if (typeof window === 'undefined') return
   const records = loadWritingRecords(userId).filter((item) => !sharesDedupKey(item, record))
   const evaluation = normalizeEvaluation(record.evaluation) || record.evaluation
@@ -557,6 +630,11 @@ export function saveWritingRecord(userId: string, record: WritingRecord) {
     ].slice(0, 100))
   )
   notifyWritingRecordsUpdated(userId)
+
+  if (!canUseAccountApi()) return
+  const saved = await saveWritingRecordToServer(userId, normalizedRecord)
+  const current = loadWritingRecords(userId).filter((item) => !sharesDedupKey(item, saved))
+  replaceWritingRecords(userId, [saved, ...current])
 }
 
 export function replaceWritingRecords(userId: string, records: WritingRecord[]) {
@@ -572,22 +650,43 @@ export function replaceWritingRecords(userId: string, records: WritingRecord[]) 
   notifyWritingRecordsUpdated(userId)
 }
 
-export function deleteWritingRecord(userId: string, id: string) {
+export async function deleteWritingRecord(userId: string, id: string) {
   const records = loadWritingRecords(userId)
   const deleted = records.find((record) => record.id === id) ?? null
   if (!deleted) return null
+  if (canUseAccountApi()) {
+    await requestAccountApi(`/api/user/writing-records/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    })
+  }
   replaceWritingRecords(userId, records.filter((record) => record.id !== id))
   return deleted
 }
 
-export function restoreWritingRecord(userId: string, record: WritingRecord) {
-  saveWritingRecord(userId, record)
+export async function restoreWritingRecord(userId: string, record: WritingRecord) {
+  await saveWritingRecord(userId, record)
 }
 
 export function getWritingRecord(userId: string, id: string | null) {
   const records = loadWritingRecords(userId)
   if (!id) return records[0] ?? null
   return records.find((record) => record.id === id) ?? null
+}
+
+export async function getWritingRecordFromServer(userId: string, id: string | null) {
+  if (!id || !canUseAccountApi()) return getWritingRecord(userId, id)
+  try {
+    const data = await requestAccountApi<{ record?: WritingRecord }>(
+      `/api/user/writing-records/${encodeURIComponent(id)}`
+    )
+    const record = data.record ? parseStoredWritingRecord(data.record) : null
+    if (!record || record.ownerUserId !== userId) return null
+    const current = loadWritingRecords(userId).filter((item) => item.id !== record.id)
+    replaceWritingRecords(userId, [record, ...current])
+    return record
+  } catch {
+    return getWritingRecord(userId, id)
+  }
 }
 
 export function saveMistakeRecord(userId: string, record: WritingRecord) {

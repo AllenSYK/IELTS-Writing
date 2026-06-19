@@ -5,6 +5,8 @@ import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 
 type LoginResponse = {
   success?: boolean
@@ -38,10 +40,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [agreementsAccepted, setAgreementsAccepted] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (loading) return
+    if (!agreementsAccepted) {
+      setError('请先阅读并同意《服务条款》和《隐私政策》')
+      return
+    }
 
     setLoading(true)
     setError('')
@@ -49,7 +56,9 @@ export default function LoginPage() {
     try {
       const { response, data } = await postWithTimeout<LoginResponse>('/api/auth/login', {
         email,
-        password
+        password,
+        agreementsAccepted,
+        agreementVersions: CurrentAgreementVersions
       })
 
       if (!response.ok || !data.success) {
@@ -122,9 +131,15 @@ export default function LoginPage() {
             <Link href="/forgot-password">忘记密码</Link>
           </div>
 
+          <AgreementConsent
+            checked={agreementsAccepted}
+            disabled={loading}
+            onChange={setAgreementsAccepted}
+          />
+
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-          <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
+          <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading || !agreementsAccepted}>
             {loading ? <Loader2 className="admin-spin" size={18} /> : <LogIn size={18} />}
             {loading ? '正在登录' : '登录'}
           </button>

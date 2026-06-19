@@ -1,8 +1,20 @@
+'use client'
+
+import useSWR from 'swr'
+import { useState, type CSSProperties } from 'react'
 import type { WritingActivityDay } from '@/lib/writing-activity'
+
+type ActivityRange = 365 | 183 | 30
 
 type HeatmapCell = WritingActivityDay & {
   level: 0 | 1 | 2 | 3 | 4
 }
+
+const rangeOptions: Array<{ days: ActivityRange; label: string }> = [
+  { days: 365, label: '一年' },
+  { days: 183, label: '半年' },
+  { days: 30, label: '一个月' }
+]
 
 function intensityLevel(count: number): HeatmapCell['level'] {
   if (count <= 0) return 0
@@ -39,25 +51,61 @@ function buildWeeks(activity: WritingActivityDay[]) {
 
 function monthLabels(weeks: Array<Array<HeatmapCell | null>>) {
   let previousMonth = ''
-  return weeks.map((week, index) => {
+  return weeks.map((week) => {
     const firstDay = week.find(Boolean)
-    if (!firstDay) return { index, label: '' }
+    if (!firstDay) return { key: `empty-${previousMonth}`, label: '' }
     const month = firstDay.date.slice(0, 7)
-    if (month === previousMonth) return { index, label: '' }
+    const label = month === previousMonth
+      ? ''
+      : new Intl.DateTimeFormat('zh-CN', { month: 'short', timeZone: 'UTC' }).format(
+          new Date(`${firstDay.date}T00:00:00.000Z`)
+        )
     previousMonth = month
-    return {
-      index,
-      label: new Intl.DateTimeFormat('zh-CN', { month: 'short', timeZone: 'UTC' }).format(
-        new Date(`${firstDay.date}T00:00:00.000Z`)
-      )
-    }
+    return { key: firstDay.date, label }
   })
 }
 
-export function WritingActivityHeatmap({ activity }: { activity: WritingActivityDay[] }) {
-  const weeks = buildWeeks(activity)
+async function fetchActivity(days: ActivityRange) {
+  const response = await fetch(`/api/user/writing-activity?days=${days}`, {
+    cache: 'no-store'
+  })
+  const data = await response.json() as {
+    success?: boolean
+    activity?: WritingActivityDay[]
+    message?: string
+  }
+  if (!response.ok || !data.success || !data.activity) {
+    throw new Error(data.message || '写作活动加载失败')
+  }
+  return data.activity
+}
+
+function HeatmapSkeleton() {
+  return (
+    <div className="activity-skeleton" aria-label="写作热力图加载中">
+      <div className="activity-skeleton-grid">
+        {Array.from({ length: 98 }, (_, index) => <span key={`activity-skeleton-${index}`} />)}
+      </div>
+    </div>
+  )
+}
+
+export function WritingActivityHeatmap({ userId }: { userId: string }) {
+  const [range, setRange] = useState<ActivityRange>(365)
+  const { data: activity, isLoading } = useSWR(
+    ['writing-activity', userId, range],
+    () => fetchActivity(range),
+    {
+      keepPreviousData: false,
+      revalidateOnFocus: false,
+      dedupingInterval: 30_000
+    }
+  )
+  const days = activity ?? []
+  const weeks = buildWeeks(days)
   const labels = monthLabels(weeks)
-  const total = activity.reduce((sum, day) => sum + day.count, 0)
+  const total = days.reduce((sum, day) => sum + day.count, 0)
+  const chartStyle = { '--activity-week-count': weeks.length } as CSSProperties
 
   return (
     <section className="dashboard-panel activity-panel" aria-labelledby="writing-activity-title">
@@ -66,46 +114,68 @@ export function WritingActivityHeatmap({ activity }: { activity: WritingActivity
           <p className="ui-label">Writing activity</p>
           <h2 id="writing-activity-title">写作热力图</h2>
         </div>
-        <strong>{total} 次</strong>
-      </header>
-
-      <div className="activity-scroll" tabIndex={0} aria-label="最近十二个月写作活动，可横向滚动">
-        <div className="activity-chart">
-          <div className="activity-months" aria-hidden="true">
-            {labels.map((label) => (
-              <span key={label.index}>{label.label}</span>
+        <div className="activity-header-actions">
+          <div className="activity-range-control" role="group" aria-label="热力图时间范围">
+            {rangeOptions.map((option) => (
+              <button
+                key={option.days}
+                type="button"
+                className={range === option.days ? 'is-active' : ''}
+                aria-pressed={range === option.days}
+                onClick={() => setRange(option.days)}
+              >
+                {option.label}
+              </button>
             ))}
           </div>
-          <div className="activity-body">
-            <div className="activity-weekdays" aria-hidden="true">
-              <span>一</span>
-              <span />
-              <span>三</span>
-              <span />
-              <span>五</span>
-              <span />
-              <span>日</span>
-            </div>
-            <div className="activity-weeks">
-              {weeks.map((week, weekIndex) => (
-                <div className="activity-week" key={weekIndex}>
-                  {week.map((day, dayIndex) => (
-                    day ? (
-                      <span
-                        className={`activity-cell level-${day.level}`}
-                        key={day.date}
-                        role="img"
-                        aria-label={formatTooltip(day.date, day.count)}
-                        title={formatTooltip(day.date, day.count)}
-                      />
-                    ) : <span className="activity-cell is-placeholder" key={`empty-${dayIndex}`} />
-                  ))}
-                </div>
+          <strong>{total} 次</strong>
+        </div>
+      </header>
+
+      {isLoading ? (
+        <HeatmapSkeleton />
+      ) : (
+        <div className="activity-scroll" tabIndex={0} aria-label={`最近 ${range} 天写作活动，可横向滚动`}>
+          <div className="activity-chart" style={chartStyle}>
+            <div className="activity-months" aria-hidden="true">
+              {labels.map((label) => (
+                <span key={label.key}>{label.label}</span>
               ))}
+            </div>
+            <div className="activity-body">
+              <div className="activity-weekdays" aria-hidden="true">
+                <span>一</span>
+                <span />
+                <span>三</span>
+                <span />
+                <span>五</span>
+                <span />
+                <span>日</span>
+              </div>
+              <div className="activity-weeks">
+                {weeks.map((week, weekIndex) => {
+                  const weekKey = week.find(Boolean)?.date || `empty-week-${weekIndex}`
+                  return (
+                    <div className="activity-week" key={weekKey}>
+                      {week.map((day, dayIndex) => (
+                        day ? (
+                          <span
+                            className={`activity-cell level-${day.level}`}
+                            key={day.date}
+                            role="img"
+                            aria-label={formatTooltip(day.date, day.count)}
+                            title={formatTooltip(day.date, day.count)}
+                          />
+                        ) : <span className="activity-cell is-placeholder" key={`${weekKey}-empty-${dayIndex}`} />
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       <footer className="activity-legend">
         <span>少</span>
@@ -115,4 +185,3 @@ export function WritingActivityHeatmap({ activity }: { activity: WritingActivity
     </section>
   )
 }
-

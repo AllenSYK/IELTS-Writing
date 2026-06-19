@@ -10,6 +10,8 @@ import {
   parseAiEvaluationText,
   splitEssayIntoBlocks
 } from '../lib/ai'
+import { getGradingAiConfig } from '../lib/ai-provider'
+import { validateBlockAnnotationResponse } from '../lib/essay-annotation-schema'
 import { applyAcceptedAnnotationChanges } from '../lib/essay-annotations'
 import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts-questions'
 import {
@@ -385,12 +387,70 @@ test('Evaluation cache separates phase, grading version, and model', () => {
   const letterTask = getEvaluationCacheKey({ ...base, questionType: 'letter', model: 'model-a', phase: 'full' })
   const oldRubric = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'full', gradingVersion: 'old' })
   const differentWhitespace = getEvaluationCacheKey({ ...base, essay: 'Essay  text', model: 'model-a', phase: 'full' })
+  const otherUser = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'full', cacheScope: 'user-b' })
   assert.notEqual(quick, full)
   assert.notEqual(full, otherModel)
   assert.notEqual(full, otherProvider)
   assert.notEqual(full, letterTask)
   assert.notEqual(full, oldRubric)
   assert.notEqual(full, differentWhitespace)
+  assert.notEqual(full, otherUser)
+})
+
+test('grading model uses the dedicated qwen3.5-plus configuration', () => {
+  const previousKey = process.env.AI_API_KEY
+  const previousBaseUrl = process.env.AI_BASE_URL
+  const previousGeneralModel = process.env.AI_MODEL
+  const previousGradingModel = process.env.QWEN_GRADING_MODEL
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  process.env.AI_MODEL = 'question-model'
+  delete process.env.QWEN_GRADING_MODEL
+
+  try {
+    const config = getGradingAiConfig()
+    assert.equal(config.model, 'qwen3.5-plus')
+  } finally {
+    if (previousKey === undefined) delete process.env.AI_API_KEY
+    else process.env.AI_API_KEY = previousKey
+    if (previousBaseUrl === undefined) delete process.env.AI_BASE_URL
+    else process.env.AI_BASE_URL = previousBaseUrl
+    if (previousGeneralModel === undefined) delete process.env.AI_MODEL
+    else process.env.AI_MODEL = previousGeneralModel
+    if (previousGradingModel === undefined) delete process.env.QWEN_GRADING_MODEL
+    else process.env.QWEN_GRADING_MODEL = previousGradingModel
+  }
+})
+
+test('annotation schema rejects invalid block ids, categories, and missing source text', () => {
+  const block = { id: 'block-2-test', text: 'People are increasingly working from home.' }
+  const valid = {
+    blockId: block.id,
+    checkedWholeBlock: true,
+    annotations: [{
+      blockId: block.id,
+      originalText: 'People are',
+      occurrence: 1,
+      replacement: 'Many people are',
+      category: 'grammar',
+      severity: 'medium',
+      scoreCriterion: 'Grammatical Range and Accuracy',
+      explanationZh: '说明',
+      impactOnScore: '影响语法准确性',
+      suggestion: '修改表达'
+    }]
+  }
+
+  assert.equal(validateBlockAnnotationResponse(valid, block).success, true)
+  assert.equal(validateBlockAnnotationResponse({ ...valid, blockId: 'wrong' }, block).success, false)
+  assert.equal(validateBlockAnnotationResponse({
+    ...valid,
+    annotations: [{ ...valid.annotations[0], originalText: 'not present' }]
+  }, block).success, false)
+  assert.equal(validateBlockAnnotationResponse({
+    ...valid,
+    annotations: [{ ...valid.annotations[0], category: 'invented-category' }]
+  }, block).success, false)
 })
 
 test('Task 1 letter rubric does not require an Academic overview', () => {

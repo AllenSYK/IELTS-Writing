@@ -1,13 +1,22 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
 import { normalizeEmail } from '@/lib/auth/email-verification'
 import { checkActiveWebLicenseForUser, getWebProfile } from '@/lib/web-license/auth'
+import {
+  CurrentAgreementVersions,
+  recordUserAgreements
+} from '@/lib/legal-agreements'
 
 const LoginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(1),
+  agreementsAccepted: z.literal(true),
+  agreementVersions: z.object({
+    terms: z.literal(CurrentAgreementVersions.terms),
+    privacy: z.literal(CurrentAgreementVersions.privacy)
+  })
 })
 
 export async function POST(request: Request) {
@@ -23,6 +32,12 @@ export async function POST(request: Request) {
     if (error || !data.user) {
       return json({ success: false, message: toChineseAuthError(error?.message || '邮箱或密码错误') }, { status: 401 })
     }
+
+    await recordUserAgreements(
+      createSupabaseServiceRoleClient(),
+      data.user.id,
+      'login'
+    )
 
     const profile = await getWebProfile(data.user.id)
     if (profile?.role === 'admin') {

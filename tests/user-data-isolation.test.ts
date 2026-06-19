@@ -168,17 +168,22 @@ test('writing heatmap aggregates successful evaluation timestamps in Asia/Shangh
 })
 
 test('user activity API and dashboard derive identity on the server and do not request recent records', async () => {
-  const [routeSource, dashboardSource, activitySource] = await Promise.all([
+  const [routeSource, dashboardSource, activitySource, heatmapSource] = await Promise.all([
     readFile(new URL('../app/api/user/writing-activity/route.ts', import.meta.url), 'utf8'),
     readFile(new URL('../app/dashboard/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../lib/writing-activity.ts', import.meta.url), 'utf8')
+    readFile(new URL('../lib/writing-activity.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/dashboard/WritingActivityHeatmap.tsx', import.meta.url), 'utf8')
   ])
 
   assert.match(routeSource, /getCurrentSupabaseUser\(\)/)
-  assert.doesNotMatch(routeSource, /searchParams|request\.json|userId\s*=/)
+  assert.match(routeSource, /AllowedRanges/)
   assert.match(activitySource, /\.eq\('user_id', userId\)/)
   assert.doesNotMatch(dashboardSource, /最近批改记录|recentUsage|dashboard-usage-list/)
-  assert.match(dashboardSource, /WritingActivityHeatmap/)
+  assert.match(dashboardSource, /WritingActivityHeatmap userId=\{user\.id\}/)
+  assert.match(heatmapSource, /\['writing-activity', userId, range\]/)
+  assert.match(heatmapSource, /\{ days: 365, label: '一年' \}/)
+  assert.match(heatmapSource, /\{ days: 183, label: '半年' \}/)
+  assert.match(heatmapSource, /\{ days: 30, label: '一个月' \}/)
 })
 
 test('history page keeps one title source and uses a non-stretching card grid', async () => {
@@ -189,5 +194,26 @@ test('history page keeps one title source and uses a non-stretching card grid', 
 
   assert.doesNotMatch(historySource, /className="history-header"/)
   assert.match(css, /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(280px,\s*340px\)\)/)
-  assert.match(css, /\.history-card\s*\{[\s\S]*?max-width:\s*340px;[\s\S]*?height:\s*286px;/)
+  assert.match(css, /\.history-card\s*\{[\s\S]*?max-width:\s*340px;[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*312px;/)
+})
+
+test('account records use authenticated server storage with user-scoped RLS', async () => {
+  const [recordsRoute, recordRoute, clientStore, migration] = await Promise.all([
+    readFile(new URL('../app/api/user/writing-records/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/user/writing-records/[id]/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/writing-records.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20260619232239_account_records_and_agreements.sql', import.meta.url), 'utf8')
+  ])
+
+  assert.match(recordsRoute, /getCurrentSupabaseUser\(\)/)
+  assert.match(recordsRoute, /\.eq\('user_id', user\.id\)/)
+  assert.match(recordsRoute, /\.eq\('request_id', prepared\.record\.requestId\)/)
+  assert.match(recordsRoute, /id:\s*existing\.id/)
+  assert.match(recordRoute, /\.eq\('user_id', user\.id\)/)
+  assert.match(clientStore, /loadWritingRecordsFromServer/)
+  assert.match(clientStore, /\/api\/user\/writing-records/)
+  assert.match(migration, /writing_records_select_own/i)
+  assert.match(migration, /writing_drafts_select_own/i)
+  assert.match(migration, /user_agreements_select_own/i)
+  assert.match(migration, /auth\.uid\(\)/i)
 })

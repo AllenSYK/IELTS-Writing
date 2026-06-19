@@ -9,7 +9,6 @@ export {
   getEvaluationCacheKey,
   officialTaskRubric,
   parseAiEvaluationText,
-  type AiRewriteResult,
   type AiScoringResult,
   type EssayEvaluationInput
 } from '@/lib/ielts-evaluation'

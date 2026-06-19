@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { measureGradingStage } from '@/lib/grading-performance'
 
 export type AiConfig = {
   provider: string
@@ -15,6 +16,7 @@ export type AiMessage = {
 type CompletionOptions = {
   maxTokens: number
   requestId: string
+  stage?: string
   responseFormat?: { type: 'json_object' }
 }
 
@@ -59,9 +61,12 @@ export class AiProviderError extends Error {
 }
 
 export class AiResponseError extends AiProviderError {
-  constructor(message: string, code: string) {
+  readonly details?: string
+
+  constructor(message: string, code: string, details?: string) {
     super(message, undefined, code)
     this.name = 'AiResponseError'
+    this.details = details
   }
 }
 
@@ -79,12 +84,18 @@ function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
 }
 
-export function getAiConfig(): AiConfig {
+export function getAiConfig({
+  modelEnv = 'AI_MODEL',
+  defaultModel
+}: {
+  modelEnv?: string
+  defaultModel?: string
+} = {}): AiConfig {
   const provider = env('AI_PROVIDER') || 'qwen'
   const defaults = ProviderDefaults[provider.toLowerCase()]
   const apiKey = env('AI_API_KEY')
   const baseUrl = env('AI_BASE_URL') || defaults?.baseUrl || ''
-  const model = env('AI_MODEL') || defaults?.model || ''
+  const model = env(modelEnv) || defaultModel || defaults?.model || ''
   const missing = [
     !apiKey ? 'AI_API_KEY' : '',
     !baseUrl ? 'AI_BASE_URL' : '',
@@ -101,6 +112,13 @@ export function getAiConfig(): AiConfig {
     baseUrl: normalizeBaseUrl(baseUrl),
     model
   }
+}
+
+export function getGradingAiConfig() {
+  return getAiConfig({
+    modelEnv: 'QWEN_GRADING_MODEL',
+    defaultModel: 'qwen3.5-plus'
+  })
 }
 
 export function createAiRequestId(prefix: 'eval' | 'gen') {
@@ -279,14 +297,18 @@ export async function requestValidatedJson<T>({
   messages,
   maxTokens,
   requestId,
+  stage = 'completion',
   validate
 }: {
   config: AiConfig
   messages: AiMessage[]
   maxTokens: number
   requestId: string
+  stage?: string
   validate: (value: unknown) => T
 }) {
+  let validationError: AiResponseError | null = null
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const requestMessages = attempt === 0
       ? messages
@@ -294,19 +316,31 @@ export async function requestValidatedJson<T>({
           ...messages,
           {
             role: 'user' as const,
-            content: 'The previous JSON did not pass server validation. Return one corrected JSON object only, without markdown or commentary.'
+            content: [
+              'The previous JSON did not pass server validation.',
+              validationError?.details ? `Validation errors: ${validationError.details}` : '',
+              'Return one corrected JSON object only, without markdown or commentary.'
+            ].filter(Boolean).join('\n')
           }
         ]
 
     try {
-      const text = await fetchAiCompletion(config, requestMessages, {
-        maxTokens,
+      const text = await measureGradingStage({
         requestId,
-        responseFormat: { type: 'json_object' }
+        model: config.model,
+        stage,
+        attempt: attempt + 1,
+        run: () => fetchAiCompletion(config, requestMessages, {
+          maxTokens,
+          requestId,
+          stage,
+          responseFormat: { type: 'json_object' }
+        })
       })
       return validate(parseAiJsonObject(text))
     } catch (error) {
       if (attempt === 1 || !(error instanceof AiResponseError)) throw error
+      validationError = error
     }
   }
 

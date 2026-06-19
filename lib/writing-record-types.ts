@@ -79,6 +79,7 @@ export type EssayAnnotation = {
   suggestion: string
   unresolved?: boolean
   blockIndex?: number
+  blockId?: string
 }
 
 export type AcceptedAnnotationChange = {
@@ -127,6 +128,7 @@ export type EssayEvaluation = {
   feedback: string[]
   provider?: string
   model?: string
+  requestId?: string
   _cacheHit?: boolean
 }
 
@@ -151,6 +153,7 @@ export type WritingRecordComponent = {
 
 export type WritingRecord = {
   id: string
+  requestId?: string
   ownerUserId?: string
   deviceId: string
   taskType: WritingTaskType

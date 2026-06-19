@@ -135,6 +135,75 @@ test('User Home navigation targets the account center without a client redirect 
   assert.doesNotMatch(appShell, /写作概览/)
 })
 
+test('shared app header keeps creation access and removes the top-right avatar', async () => {
+  const [header, shell, css] = await Promise.all([
+    readFile(new URL('../components/layout/AppHeader.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(header, /href="\/practice"[\s\S]*?开始创作/)
+  assert.match(header, /MaterialIcon name="share"/)
+  assert.match(header, /MaterialIcon name="settings"/)
+  assert.doesNotMatch(header, /ProfileAvatar|useUserProfile/)
+  assert.match(shell, /<AppHeader title=\{meta\.title\} subtitle=\{meta\.subtitle\}/)
+  assert.match(css, /\.app-header\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?z-index:\s*40;/)
+})
+
+test('auth forms require explicit agreement consent and record versions server-side', async () => {
+  const [loginPage, registerPage, loginRoute, registerRoute, migration] = await Promise.all([
+    readFile(new URL('../app/login/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/auth/login/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/auth/register/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20260619232239_account_records_and_agreements.sql', import.meta.url), 'utf8')
+  ])
+
+  for (const source of [loginPage, registerPage]) {
+    assert.match(source, /AgreementConsent/)
+    assert.match(source, /agreementsAccepted/)
+    assert.match(source, /disabled=\{[^}]*!agreementsAccepted/)
+  }
+  for (const source of [loginRoute, registerRoute]) {
+    assert.match(source, /agreementsAccepted:\s*z\.literal\(true\)/)
+    assert.match(source, /recordUserAgreements/)
+  }
+  assert.match(migration, /create table if not exists public\.user_agreements/i)
+  assert.match(migration, /unique \(user_id, agreement_type, agreement_version\)/i)
+})
+
+test('result annotations open in one centered dialog without scrollIntoView', async () => {
+  const [resultPage, annotatedEssay, dialog, layout] = await Promise.all([
+    readFile(new URL('../app/result/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/evaluation/AnnotatedEssay.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/evaluation/AnnotationDialog.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/evaluation/EvaluationLayout.tsx', import.meta.url), 'utf8')
+  ])
+
+  assert.match(resultPage, /<AnnotationDialog/)
+  assert.doesNotMatch(resultPage, /AnnotationInspector|inspector=/)
+  assert.doesNotMatch(annotatedEssay, /scrollIntoView/)
+  assert.match(dialog, /CenteredDialog/)
+  assert.match(dialog, /onClose/)
+  assert.doesNotMatch(layout, /evaluation-inspector-column/)
+})
+
+test('grading pipeline parallelizes annotation blocks and leaves essays on demand', async () => {
+  const [pipeline, provider, derivativeRoute] = await Promise.all([
+    readFile(new URL('../lib/ielts-evaluation.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/ai-provider.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/ai/essay-derivative/route.ts', import.meta.url), 'utf8')
+  ])
+
+  assert.match(pipeline, /Promise\.allSettled/)
+  assert.match(pipeline, /requestId:\s*`\$\{requestId\}-block-\$\{block\.index\}`/)
+  assert.match(pipeline, /blockId:\s*block\.id/)
+  assert.doesNotMatch(pipeline, /requestRewrite\(config/)
+  assert.match(provider, /enable_thinking:\s*false/)
+  assert.match(provider, /modelEnv:\s*'QWEN_GRADING_MODEL'/)
+  assert.match(derivativeRoute, /kind:\s*z\.enum\(\['revised', 'model'\]\)/)
+})
+
 test('Admin license status distinguishes unused, partial, exhausted, and expired', () => {
   const now = new Date('2026-06-18T00:00:00.000Z').getTime()
   assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 0, max_activations: 3 }, now), 'unused')

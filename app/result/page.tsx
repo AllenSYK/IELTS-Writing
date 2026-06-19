@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { AnnotatedEssay } from '@/components/evaluation/AnnotatedEssay'
-import { AnnotationInspector } from '@/components/evaluation/AnnotationInspector'
+import { AnnotationDialog } from '@/components/evaluation/AnnotationDialog'
 import { EvaluationLayout } from '@/components/evaluation/EvaluationLayout'
 import { ScoreSummary } from '@/components/evaluation/ScoreSummary'
 import { ConfirmDialog, useToast } from '@/components/interaction-system'
@@ -26,7 +26,7 @@ import {
   TaskTypeLabels,
   formatBand,
   formatDate,
-  getWritingRecord,
+  getWritingRecordFromServer,
   saveMistakeRecord,
   saveWritingRecord,
   type AcceptedAnnotationChange,
@@ -143,12 +143,14 @@ export default function ResultPage() {
   const [acceptedChanges, setAcceptedChanges] = useState<AcceptedAnnotationChange[]>([])
   const [ignoredIds, setIgnoredIds] = useState<Set<string>>(() => new Set())
   const [showAcceptAllConfirm, setShowAcceptAllConfirm] = useState(false)
+  const [generatingDerivative, setGeneratingDerivative] = useState<'revised' | 'model' | null>(null)
 
   useEffect(() => {
     if (!userId) return
     window.queueMicrotask(() => {
+      void (async () => {
       const id = new URLSearchParams(window.location.search).get('id')
-      const nextRecord = getWritingRecord(userId, id)
+      const nextRecord = await getWritingRecordFromServer(userId, id)
       setRecord(nextRecord)
       if (nextRecord) {
         setAcceptedChanges(nextRecord.acceptedChanges ?? [])
@@ -159,14 +161,13 @@ export default function ResultPage() {
         }
       }
       setLoaded(true)
+      })()
     })
   }, [userId])
 
   useEffect(() => {
     if (record && userId) window.localStorage.setItem(userScopedStorageKey(`ielts-writing-result-tab-${record.id}`, userId), tab)
   }, [record, tab, userId])
-
-  const sentenceErrors = useMemo(() => record?.evaluation.sentenceAnnotations ?? record?.evaluation.sentenceErrors ?? [], [record])
 
   if (!loaded) return <PageSkeleton variant="result" />
   if (!record) return <EmptyResult />
@@ -182,15 +183,12 @@ export default function ResultPage() {
   const visibleAnnotations = activeAnnotations.filter((annotation) => annotationMatchesFilter(annotation, annotationFilter))
   const effectiveSelectedAnnotationId = visibleAnnotations.some((annotation) => annotation.id === selectedAnnotationId)
     ? selectedAnnotationId
-    : visibleAnnotations[0]?.id ?? null
+    : null
+  const selectedAnnotation = effectiveSelectedAnnotationId
+    ? visibleAnnotations.find((annotation) => annotation.id === effectiveSelectedAnnotationId) ?? null
+    : null
   const modifiedEssay = applyAcceptedAnnotationChanges(originalEssay, acceptedChanges, allAnnotations)
   const criterionOrder = criterionKeysForTask(record.taskType)
-  const topIssues =
-    evaluation.weaknesses && evaluation.weaknesses.length > 0
-      ? evaluation.weaknesses.slice(0, 3)
-      : sentenceErrors.length > 0
-        ? sentenceErrors.slice(0, 3).map((error) => error.explanation)
-        : evaluation.feedback.slice(0, 3)
   const correctedEssay = evaluation.correctedEssay?.trim()
   const revisedEssay = evaluation.improvedEssay?.trim() || evaluation.revisedEssay?.trim()
   const modelEssay = evaluation.modelEssay?.trim()
@@ -198,11 +196,10 @@ export default function ResultPage() {
     const criterion = evaluation.criteria?.[key]
     return {
       key,
+      shortLabel: key === 'taskAchievement' ? 'TA' : key === 'taskResponse' ? 'TR' : key === 'coherenceCohesion' ? 'CC' : key === 'lexicalResource' ? 'LR' : 'GRA',
       label: resultCriterionLabel(key),
       score: criterion?.score ? formatBand(criterion.score) : '—',
-      feedback: criterion?.feedback,
-      evidence: criterion?.evidence,
-      whyNotHigher: criterion?.whyNotHigher
+      feedback: criterion?.feedback
     }
   })
 
@@ -241,7 +238,9 @@ export default function ResultPage() {
     }
     setAcceptedChanges(nextChanges)
     setRecord(updated)
-    saveWritingRecord(userId, updated)
+    void saveWritingRecord(userId, updated).catch(() => {
+      pushToast({ kind: 'error', title: '修改同步失败', message: '本次修改仍保留在当前设备，可稍后重试。' })
+    })
   }
 
   function acceptAnnotation(annotation: EssayAnnotation) {
@@ -324,6 +323,48 @@ export default function ResultPage() {
     pushToast({ kind: 'success', title: '已接受当前筛选下的可替换建议' })
   }
 
+  async function generateDerivative(kind: 'revised' | 'model') {
+    if (!record || generatingDerivative) return
+    setGeneratingDerivative(kind)
+    try {
+      const response = await fetch('/api/ai/essay-derivative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recordId: record.id, kind })
+      })
+      const data = await response.json() as {
+        success?: boolean
+        message?: string
+        text?: string
+        nextSteps?: string[]
+      }
+      if (!response.ok || !data.success || !data.text) {
+        throw new Error(data.message || '生成失败，请稍后重试。')
+      }
+      const updatedEvaluation = {
+        ...record.evaluation,
+        ...(kind === 'revised'
+          ? {
+              improvedEssay: data.text,
+              revisedEssay: data.text,
+              nextSteps: data.nextSteps || [],
+              suggestions: data.nextSteps || []
+            }
+          : { modelEssay: data.text })
+      }
+      setRecord({ ...record, evaluation: updatedEvaluation })
+      pushToast({ kind: 'success', title: kind === 'revised' ? '改写版本已生成' : '高分范文已生成' })
+    } catch (error) {
+      pushToast({
+        kind: 'error',
+        title: '生成失败',
+        message: error instanceof Error ? error.message : '请稍后重试。'
+      })
+    } finally {
+      setGeneratingDerivative(null)
+    }
+  }
+
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="result-main">
@@ -368,7 +409,6 @@ export default function ResultPage() {
               record={record}
               evaluation={evaluation}
               criteria={criteriaSummaries}
-              topIssues={topIssues}
             />
           }
           essayPanel={
@@ -487,39 +527,49 @@ export default function ResultPage() {
                     ) : null}
                   </div>
                 ) : tab === 'revised' ? (
-                  acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || '本次未返回修改版作文。您可以接受标注中的修改来生成修改版本。'
+                  acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || (
+                    <div className="derivative-empty-state">
+                      <h2>改写版本尚未生成</h2>
+                      <p>按需生成可以让首次批改更快完成。</p>
+                      <button className="ui-primary-button" type="button" disabled={Boolean(generatingDerivative)} onClick={() => generateDerivative('revised')}>
+                        <MaterialIcon name="auto_fix_high" size={18} />
+                        {generatingDerivative === 'revised' ? '正在生成' : '生成改写版本'}
+                      </button>
+                    </div>
+                  )
                 ) : (
-                  modelEssay || '本次未返回高分范文，并非每次批改都会生成范文。'
+                  modelEssay || (
+                    <div className="derivative-empty-state">
+                      <h2>高分范文尚未生成</h2>
+                      <p>需要时再生成，避免拖慢核心评分与批注。</p>
+                      <button className="ui-primary-button" type="button" disabled={Boolean(generatingDerivative)} onClick={() => generateDerivative('model')}>
+                        <MaterialIcon name="auto_awesome" size={18} />
+                        {generatingDerivative === 'model' ? '正在生成' : '生成高分范文'}
+                      </button>
+                    </div>
+                  )
                 )}
               </article>
             </GlassPanel>
           }
-          inspector={
-            <AnnotationInspector
-              annotations={visibleAnnotations}
-              allAnnotations={allAnnotations}
-              originalEssay={originalEssay}
-              selectedId={effectiveSelectedAnnotationId}
-              emptyMessage={
-                allAnnotations.length === 0
-                  ? sentenceErrors.length > 0
-                    ? '此记录没有逐词标注数据，仍可查看左侧重点问题和旧版逐句建议。'
-                    : '未发现可定位的具体语言错误。'
-                  : '当前筛选下没有可见标注。'
-              }
-              acceptedIds={acceptedIds}
-              ignoredIds={ignoredIds}
-              canUndo={acceptedChanges.length > 0}
-              onSelect={setSelectedAnnotationId}
-              onAccept={acceptAnnotation}
-              onIgnore={ignoreAnnotation}
-              onUndo={undoAcceptedChange}
-              onResetAll={resetAcceptedChanges}
-              onAcceptAllRequest={() => setShowAcceptAllConfirm(true)}
-            />
-          }
         />
       </section>
+
+      <AnnotationDialog
+        annotation={selectedAnnotation}
+        annotations={visibleAnnotations}
+        originalEssay={originalEssay}
+        acceptedIds={acceptedIds}
+        ignoredIds={ignoredIds}
+        canUndo={acceptedChanges.length > 0}
+        onClose={() => setSelectedAnnotationId(null)}
+        onSelect={setSelectedAnnotationId}
+        onAccept={acceptAnnotation}
+        onIgnore={ignoreAnnotation}
+        onUndo={undoAcceptedChange}
+        onResetAll={resetAcceptedChanges}
+        onAcceptAllRequest={() => setShowAcceptAllConfirm(true)}
+      />
 
       <ConfirmDialog
         open={showAcceptAllConfirm}

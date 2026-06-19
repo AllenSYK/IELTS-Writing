@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { memo, useMemo, type ReactNode } from 'react'
 import { compareAnnotationPriority, isResolvedAnnotation } from '@/lib/essay-annotations'
 import { EssayAnnotationLabels, type EssayAnnotation } from '@/lib/writing-records'
 
@@ -17,7 +17,6 @@ export const AnnotatedEssay = memo(function AnnotatedEssay({
   selectedId,
   onSelect
 }: AnnotatedEssayProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
   const renderable = useMemo(
     () => annotations.filter((annotation) => isResolvedAnnotation(annotation, essay)),
     [annotations, essay]
@@ -83,14 +82,8 @@ export const AnnotatedEssay = memo(function AnnotatedEssay({
     return nextNodes
   }, [essay, onSelect, renderable, selectedId])
 
-  useEffect(() => {
-    if (!selectedId) return
-    const target = containerRef.current?.querySelector<HTMLElement>(`[data-annotation-id="${CSS.escape(selectedId)}"]`)
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }, [selectedId])
-
   return (
-    <div ref={containerRef} className="annotated-essay" aria-label="带错误标注的作文原文">
+    <div className="annotated-essay" aria-label="带错误标注的作文原文">
       <span className="sr-only">
         {renderable.map((annotation) => (
           <span key={annotation.id} id={`annotation-desc-${annotation.id}`}>

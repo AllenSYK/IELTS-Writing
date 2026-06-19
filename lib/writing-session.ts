@@ -233,7 +233,11 @@ export function writeDraft(
   draftKey: string,
   essay: string,
   questionId?: string,
-  question?: WritingQuestion
+  question?: WritingQuestion,
+  account?: {
+    userId: string
+    taskType: WritingTaskType
+  }
 ) {
   const payload: DraftPayload = {
     essay,
@@ -251,6 +255,50 @@ export function writeDraft(
     title: question?.title
   }
   window.localStorage.setItem(draftKey, JSON.stringify(payload))
+  if (account && window.navigator.onLine) {
+    const id = draftKey.split(':user:')[0]
+    void fetch('/api/user/writing-drafts', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        taskType: account.taskType,
+        draft: payload
+      })
+    })
+  }
+}
+
+export async function readAccountDraft(draftKey: string) {
+  const local = readDraft(draftKey)
+  if (!window.navigator.onLine) return local
+  try {
+    const id = draftKey.split(':user:')[0]
+    const response = await fetch(`/api/user/writing-drafts?id=${encodeURIComponent(id)}`, {
+      cache: 'no-store'
+    })
+    if (!response.ok) return local
+    const data = await response.json() as { draft?: unknown }
+    const parsed = DraftSchema.safeParse(data.draft)
+    if (!parsed.success) return local
+    const remote = parsed.data
+    const selected = !local || new Date(remote.updatedAt).getTime() > new Date(local.updatedAt).getTime()
+      ? remote
+      : local
+    window.localStorage.setItem(draftKey, JSON.stringify(selected))
+    return selected
+  } catch {
+    return local
+  }
+}
+
+export function deleteAccountDraft(draftKey: string) {
+  window.localStorage.removeItem(draftKey)
+  if (!window.navigator.onLine) return
+  const id = draftKey.split(':user:')[0]
+  void fetch(`/api/user/writing-drafts?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  })
 }
 
 export function restoreQuestionFromRecord(source: QuestionSource): WritingQuestion {

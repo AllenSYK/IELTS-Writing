@@ -8,10 +8,14 @@ import { recordAiUsage } from '@/lib/ai-usage'
 import { apiError, json } from '@/lib/http'
 import { EssayEvaluationInputSchema, type EssayEvaluationInput } from '@/lib/ielts-evaluation'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { createAiRequestId } from '@/lib/ai-provider'
+import { logGradingStage, measureGradingStage } from '@/lib/grading-performance'
 
 export const maxDuration = 300
 
 export async function POST(request: Request) {
+  const routeStartedAt = performance.now()
+  const requestId = createAiRequestId('eval')
   const check = await requireActiveWebLicense()
   if (!check.ok) {
     return json(
@@ -32,24 +36,53 @@ export async function POST(request: Request) {
   }
 
   try {
-    const evaluation = await evaluateEssayWithAi(body)
-    await recordAiUsage({
-      check,
-      action: 'evaluate',
-      inputCharacters: `${body.prompt || ''}\n${body.essay}`.length,
-      result: evaluation
+    const evaluation = await evaluateEssayWithAi(body, {
+      requestId,
+      cacheScope: check.user.id
+    })
+    await measureGradingStage({
+      requestId,
+      model: evaluation.model || 'unknown',
+      stage: 'usage-record-storage',
+      run: () => recordAiUsage({
+        check,
+        action: 'evaluate',
+        inputCharacters: `${body.prompt || ''}\n${body.essay}`.length,
+        result: evaluation
+      })
+    })
+    logGradingStage({
+      requestId,
+      model: evaluation.model || 'unknown',
+      stage: 'request-total',
+      durationMs: Math.round(performance.now() - routeStartedAt),
+      attempt: 1,
+      success: true
     })
     return json({
       ...evaluation,
       protected: true
     })
   } catch (error) {
-    await recordAiUsage({
-      check,
-      action: 'evaluate',
-      inputCharacters: `${body.prompt || ''}\n${body.essay}`.length,
-      result: null,
-      error
+    await measureGradingStage({
+      requestId,
+      model: 'unknown',
+      stage: 'usage-record-storage',
+      run: () => recordAiUsage({
+        check,
+        action: 'evaluate',
+        inputCharacters: `${body.prompt || ''}\n${body.essay}`.length,
+        result: null,
+        error
+      })
+    })
+    logGradingStage({
+      requestId,
+      model: 'unknown',
+      stage: 'request-total',
+      durationMs: Math.round(performance.now() - routeStartedAt),
+      attempt: 1,
+      success: false
     })
     if (error instanceof AiConfigurationError) {
       return json(

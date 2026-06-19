@@ -20,7 +20,7 @@ import {
   countWords,
   createRecordId,
   getLocalDeviceId,
-  getWritingRecord,
+  getWritingRecordFromServer,
   saveWritingRecord,
   type EssayEvaluation,
   type WritingRecord,
@@ -35,7 +35,8 @@ import {
 } from '@/lib/writing-evaluation'
 import {
   mockDraftKey,
-  readDraft,
+  deleteAccountDraft,
+  readAccountDraft,
   readTimerEnd,
   restoreQuestionFromRecord,
   singleDraftKey,
@@ -160,11 +161,11 @@ export default function WritePage() {
       try {
         if (mode === 'mock') {
           if (mockQuestions) {
-            writeDraft(mockDraftKey(userId, 'task1'), mockEssays.task1, mockQuestions.task1.id, mockQuestions.task1)
-            writeDraft(mockDraftKey(userId, 'task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2)
+            writeDraft(mockDraftKey(userId, 'task1'), mockEssays.task1, mockQuestions.task1.id, mockQuestions.task1, { userId, taskType: 'task1' })
+            writeDraft(mockDraftKey(userId, 'task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2, { userId, taskType: 'task2' })
           }
         } else if (singleQuestion) {
-          writeDraft(singleDraftKey(userId, mode), essay, singleQuestion.id, singleQuestion)
+          writeDraft(singleDraftKey(userId, mode), essay, singleQuestion.id, singleQuestion, { userId, taskType: mode })
         }
         lastAutoSaveAtRef.current = Date.now()
         setSaveStatus(online ? 'saved' : 'offline')
@@ -206,14 +207,16 @@ export default function WritePage() {
         const params = new URLSearchParams(window.location.search)
         const selection = selectionFromSearchParams(params)
         const recordId = params.get('record')
-        const sourceRecord = recordId ? getWritingRecord(userId, recordId) : null
+        const sourceRecord = recordId ? await getWritingRecordFromServer(userId, recordId) : null
         if (cancelled) return
         setPromptSelection(selection)
 
         if (mode === 'mock') {
           const fallback = buildMockQuestionSetForSelection(selection)
-          const task1Draft = readDraft(mockDraftKey(userId, 'task1'))
-          const task2Draft = readDraft(mockDraftKey(userId, 'task2'))
+          const [task1Draft, task2Draft] = await Promise.all([
+            readAccountDraft(mockDraftKey(userId, 'task1')),
+            readAccountDraft(mockDraftKey(userId, 'task2'))
+          ])
           const restoredTask1 = sourceRecord?.components?.task1?.essay || task1Draft?.essay || ''
           const restoredTask2 = sourceRecord?.components?.task2?.essay || task2Draft?.essay || ''
 
@@ -311,7 +314,7 @@ export default function WritePage() {
           }
         } else {
           const taskType = mode === 'task1' ? 'task1' : 'task2'
-          const draft = readDraft(singleDraftKey(userId, mode))
+          const draft = await readAccountDraft(singleDraftKey(userId, mode))
           const restoredEssay = sourceRecord?.essay || draft?.essay || ''
           let question: WritingQuestion | null = null
 
@@ -586,6 +589,7 @@ export default function WritePage() {
       const now = new Date().toISOString()
       const record: WritingRecord = {
         id: createRecordId(),
+        requestId: evaluation.requestId,
         deviceId: getLocalDeviceId(),
         taskType: activeQuestion.taskType,
         title: activeQuestion.title,
@@ -609,9 +613,9 @@ export default function WritePage() {
         imageUrl: activeQuestion.image
       }
 
-      saveWritingRecord(userId, record)
+      await saveWritingRecord(userId, record)
       markGeneratedPromptCompleted(activeQuestion.id, userId)
-      window.localStorage.removeItem(singleDraftKey(userId, mode))
+      deleteAccountDraft(singleDraftKey(userId, mode))
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')
@@ -705,6 +709,7 @@ export default function WritePage() {
       const originalEssay = `Task 1\n${mockEssays.task1}\n\nTask 2\n${mockEssays.task2}`
       const record: WritingRecord = {
         id: createRecordId(),
+        requestId: evaluation.requestId,
         deviceId: getLocalDeviceId(),
         taskType: 'mock',
         title: 'Full IELTS Writing Test',
@@ -764,11 +769,11 @@ export default function WritePage() {
         }
       }
 
-      saveWritingRecord(userId, record)
+      await saveWritingRecord(userId, record)
       markGeneratedPromptCompleted(mockQuestions.task1.id, userId)
       markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
-      window.localStorage.removeItem(mockDraftKey(userId, 'task1'))
-      window.localStorage.removeItem(mockDraftKey(userId, 'task2'))
+      deleteAccountDraft(mockDraftKey(userId, 'task1'))
+      deleteAccountDraft(mockDraftKey(userId, 'task2'))
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')

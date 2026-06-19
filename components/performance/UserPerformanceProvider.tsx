@@ -11,7 +11,7 @@ import {
   userWritingRecordsCacheKey,
   warmAllUserRouteCaches
 } from '@/lib/user-route-cache'
-import { loadWritingRecords } from '@/lib/writing-records'
+import { loadWritingRecordsFromServer } from '@/lib/writing-records'
 
 function UserCacheSynchronizer({ userId }: { userId: string | null }) {
   const { mutate } = useSWRConfig()
@@ -22,12 +22,13 @@ function UserCacheSynchronizer({ userId }: { userId: string | null }) {
 
     return subscribeToWritingRecordChanges((changedUserId) => {
       if (changedUserId !== userId) return
-      const records = loadWritingRecords(userId)
-      replaceCachedUserWritingRecords(userId, records)
-      void Promise.all([
-        mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.history, userId), records, { revalidate: false }),
-        mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.analytics, userId), records, { revalidate: false })
-      ])
+      void loadWritingRecordsFromServer(userId).then((records) => {
+        replaceCachedUserWritingRecords(userId, records)
+        return Promise.all([
+          mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.history, userId), records, { revalidate: false }),
+          mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.analytics, userId), records, { revalidate: false })
+        ])
+      })
     })
   }, [mutate, userId])
 

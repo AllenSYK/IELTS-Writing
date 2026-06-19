@@ -2,7 +2,9 @@ import { json } from '@/lib/http'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import { loadWritingActivityForUser } from '@/lib/writing-activity'
 
-export async function GET() {
+const AllowedRanges = new Set([30, 183, 365])
+
+export async function GET(request: Request) {
   const user = await getCurrentSupabaseUser()
   if (!user) {
     return json(
@@ -12,7 +14,9 @@ export async function GET() {
   }
 
   try {
-    const activity = await loadWritingActivityForUser(user.id)
+    const requestedDays = Number(new URL(request.url).searchParams.get('days') || 365)
+    const days = AllowedRanges.has(requestedDays) ? requestedDays : 365
+    const activity = await loadWritingActivityForUser(user.id, new Date(), days)
     return json(
       { success: true, activity },
       { headers: { 'Cache-Control': 'private, no-store' } }

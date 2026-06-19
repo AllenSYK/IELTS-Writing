@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Loader2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
+import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 
 type SendCodeResponse = {
   success?: boolean
@@ -76,6 +78,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState<LoadingState>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [agreementsAccepted, setAgreementsAccepted] = useState(false)
 
   const passwordChecks = useMemo(() => [
     { label: '至少 8 位', ok: password.length >= 8 },
@@ -105,6 +108,7 @@ export default function RegisterPage() {
     if (!isEmail(normalized)) return '请输入有效的邮箱地址'
     if (password.length < 8) return '密码至少需要 8 位'
     if (password !== confirmPassword) return '两次输入的密码不一致'
+    if (!agreementsAccepted) return '请先阅读并同意《服务条款》和《隐私政策》'
     return ''
   }
 
@@ -214,7 +218,9 @@ export default function RegisterPage() {
       const { response: registerResponse, data: registerData } = await postWithTimeout<RegisterResponse>('/api/auth/register', {
         email: codeEmail,
         password,
-        registrationToken: verifyData.registrationToken
+        registrationToken: verifyData.registrationToken,
+        agreementsAccepted,
+        agreementVersions: CurrentAgreementVersions
       })
 
       if (!registerResponse.ok || !registerData.success) {
@@ -332,7 +338,13 @@ export default function RegisterPage() {
 
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading)}>
+              <AgreementConsent
+                checked={agreementsAccepted}
+                disabled={Boolean(loading)}
+                onChange={setAgreementsAccepted}
+              />
+
+              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || !agreementsAccepted}>
                 {loading === 'send' ? <Loader2 className="admin-spin" size={18} /> : <UserPlus size={18} />}
                 {loading === 'send' ? '正在发送' : '发送邮箱验证码'}
               </button>
@@ -383,7 +395,7 @@ export default function RegisterPage() {
               {message ? <p className="auth-success" role="status">{message}</p> : null}
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0}>
+              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0 || !agreementsAccepted}>
                 {loading === 'verify' ? <Loader2 className="admin-spin" size={18} /> : <ShieldCheck size={18} />}
                 {loading === 'verify' ? '正在创建账号' : '验证并创建账号'}
               </button>

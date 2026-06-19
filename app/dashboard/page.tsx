@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { CalendarDays, CheckCircle2, Clock3, PenLine } from 'lucide-react'
 import { WritingActivityHeatmap } from '@/components/dashboard/WritingActivityHeatmap'
 import { checkActiveWebLicenseForUser, getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
-import { loadWritingActivityForUser } from '@/lib/writing-activity'
 import { LogoutButton } from './LogoutButton'
 
 function formatDate(value?: string | null) {
@@ -19,10 +18,9 @@ export default async function DashboardPage() {
   const user = await getCurrentSupabaseUser()
   if (!user) redirect('/login')
 
-  const [profile, check, activity] = await Promise.all([
+  const [profile, check] = await Promise.all([
     getWebProfile(user.id),
-    checkActiveWebLicenseForUser(user),
-    loadWritingActivityForUser(user.id)
+    checkActiveWebLicenseForUser(user)
   ])
   if (profile?.role === 'admin') redirect('/admin/licenses')
 
@@ -34,7 +32,7 @@ export default async function DashboardPage() {
         <header className="dashboard-header">
           <div>
             <p className="ui-label">练习概览</p>
-            <h1>账号中心</h1>
+            <h2>账号信息</h2>
             <p className="ui-body-md">{user.email}</p>
           </div>
           <div className="dashboard-actions">
@@ -74,7 +72,7 @@ export default async function DashboardPage() {
           </dl>
         </section>
 
-        <WritingActivityHeatmap activity={activity} />
+        <WritingActivityHeatmap userId={user.id} />
       </section>
     </main>
   )

@@ -76,6 +76,9 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
           </span>
         </div>
         <h2 className="ui-title-md">{record.title}</h2>
+        <p className="history-summary">
+          {record.evaluation.summary || record.evaluation.overallFeedback || '本次批改已完成，可查看四项评分和原文批注。'}
+        </p>
         <div className="history-card-stats">
           <span className="ui-body-md">
             <MaterialIcon name="notes" size={20} />
@@ -186,24 +189,33 @@ export default function HistoryPage() {
 
   function confirmDelete() {
     if (!pendingDelete || !userId) return
+    const recordToDelete = pendingDelete
     setRemovingId(pendingDelete.id)
     window.setTimeout(() => {
-      const deleted = deleteWritingRecord(userId, pendingDelete.id)
-      setRemovingId(null)
-      setPendingDelete(null)
-      if (deleted) {
+      void deleteWritingRecord(userId, recordToDelete.id).then((deleted) => {
+        setRemovingId(null)
+        setPendingDelete(null)
+        if (!deleted) return
         pushToast({
           kind: 'warning',
           title: '记录已删除',
           message: '短时间内可以撤销。',
           actionLabel: 'Undo',
           onAction: () => {
-            restoreWritingRecord(userId, deleted)
-            pushToast({ kind: 'success', title: '已恢复记录' })
+            void restoreWritingRecord(userId, deleted).then(() => {
+              pushToast({ kind: 'success', title: '已恢复记录' })
+            })
           },
           durationMs: 8000
         })
-      }
+      }).catch((error) => {
+        setRemovingId(null)
+        pushToast({
+          kind: 'error',
+          title: '删除失败',
+          message: error instanceof Error ? error.message : '请稍后重试。'
+        })
+      })
     }, 220)
   }
 
