@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { CalendarDays, CheckCircle2, Clock3, PenLine } from 'lucide-react'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getCurrentSupabaseUser, getWebProfile, requireActiveWebLicense } from '@/lib/web-license/auth'
+import { checkActiveWebLicenseForUser, getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
 import { LogoutButton } from './LogoutButton'
 
 function formatDate(value?: string | null) {
@@ -18,19 +18,22 @@ export default async function DashboardPage() {
   const user = await getCurrentSupabaseUser()
   if (!user) redirect('/login')
 
-  const profile = await getWebProfile(user.id)
+  const service = createSupabaseServiceRoleClient()
+  const [profile, check, recentUsageResult] = await Promise.all([
+    getWebProfile(user.id),
+    checkActiveWebLicenseForUser(user),
+    service
+      .from('usage_records')
+      .select('id, action, model, success, error_message, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+  ])
   if (profile?.role === 'admin') redirect('/admin/licenses')
 
-  const check = await requireActiveWebLicense()
   if (!check.ok) redirect('/activate')
 
-  const service = createSupabaseServiceRoleClient()
-  const { data: recentUsage } = await service
-    .from('usage_records')
-    .select('id, action, model, success, error_message, created_at')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-    .limit(5)
+  const recentUsage = recentUsageResult.data
 
   return (
     <main className="stitch-page dashboard-page" data-main-content tabIndex={-1}>

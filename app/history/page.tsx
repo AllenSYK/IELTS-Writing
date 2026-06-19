@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ConfirmDialog, EmptyState, PageSkeleton, useDebouncedValue, useToast } from '@/components/interaction-system'
+import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
+import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
 import {
   TaskTypeLabels,
@@ -10,12 +11,12 @@ import {
   formatBand,
   formatDate,
   formatDuration,
-  loadWritingRecords,
   restoreWritingRecord,
   scoreValue,
   type WritingRecord,
   type WritingTaskType
 } from '@/lib/writing-records'
+import { UserRouteCacheKeys, useUserWritingRecords } from '@/lib/user-route-cache'
 
 type TaskFilter = 'all' | WritingTaskType
 type RangeFilter = '7' | '30' | 'year' | 'all'
@@ -107,8 +108,8 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
 
 export default function HistoryPage() {
   const { pushToast } = useToast()
-  const [records, setRecords] = useState<WritingRecord[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.history)
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('all')
   const [sortFilter, setSortFilter] = useState<SortFilter>('newest')
@@ -136,15 +137,14 @@ export default function HistoryPage() {
       } catch {
         setQuery(new URLSearchParams(window.location.search).get('q') || '')
       }
-      setRecords(loadWritingRecords())
-      setLoaded(true)
+      setPreferencesLoaded(true)
     })
   }, [])
 
   useEffect(() => {
-    if (!loaded) return
+    if (!preferencesLoaded) return
     window.localStorage.setItem(HistoryFilterStorageKey, JSON.stringify({ taskFilter, rangeFilter, sortFilter, scoreFilter, query }))
-  }, [loaded, query, rangeFilter, scoreFilter, sortFilter, taskFilter])
+  }, [preferencesLoaded, query, rangeFilter, scoreFilter, sortFilter, taskFilter])
 
   const visibleRecords = useMemo(
     () => {
@@ -185,7 +185,6 @@ export default function HistoryPage() {
     setRemovingId(pendingDelete.id)
     window.setTimeout(() => {
       const deleted = deleteWritingRecord(pendingDelete.id)
-      setRecords(loadWritingRecords())
       setRemovingId(null)
       setPendingDelete(null)
       if (deleted) {
@@ -196,7 +195,6 @@ export default function HistoryPage() {
           actionLabel: 'Undo',
           onAction: () => {
             restoreWritingRecord(deleted)
-            setRecords(loadWritingRecords())
             pushToast({ kind: 'success', title: '已恢复记录' })
           },
           durationMs: 8000
@@ -205,7 +203,7 @@ export default function HistoryPage() {
     }, 220)
   }
 
-  if (!loaded) return <PageSkeleton />
+  if (!preferencesLoaded || isLoading) return <PageSkeleton />
 
   return (
     <main className="stitch-page" data-main-content tabIndex={-1}>

@@ -1,4 +1,5 @@
 import type { User } from '@supabase/supabase-js'
+import { cache } from 'react'
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 
 export type WebProfile = {
@@ -38,14 +39,14 @@ export type WebLicenseCheck =
       user?: User
     }
 
-export async function getCurrentSupabaseUser() {
+export const getCurrentSupabaseUser = cache(async function getCurrentSupabaseUser() {
   const supabase = await createSupabaseServerClient()
   const { data, error } = await supabase.auth.getUser()
   if (error || !data.user) return null
   return data.user
-}
+})
 
-export async function getWebProfile(userId: string) {
+export const getWebProfile = cache(async function getWebProfile(userId: string) {
   const service = createSupabaseServiceRoleClient()
   const { data: profile, error } = await service
     .from('profiles')
@@ -55,7 +56,7 @@ export async function getWebProfile(userId: string) {
 
   if (error) throw error
   return profile as WebProfile | null
-}
+})
 
 export async function requireWebAdmin() {
   const user = await getCurrentSupabaseUser()
@@ -63,18 +64,12 @@ export async function requireWebAdmin() {
     throw new Response('Unauthorized', { status: 401 })
   }
 
-  const service = createSupabaseServiceRoleClient()
-  const { data: profile, error } = await service
-    .from('profiles')
-    .select('id, role, email')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (error) throw error
+  const profile = await getWebProfile(user.id)
   if (profile?.role !== 'admin') {
     throw new Response('Forbidden', { status: 403 })
   }
 
+  const service = createSupabaseServiceRoleClient()
   return { user, service, profile }
 }
 
@@ -92,24 +87,28 @@ export async function requireActiveWebLicense(): Promise<WebLicenseCheck> {
   return checkActiveWebLicenseForUser(user)
 }
 
-export async function checkActiveWebLicenseForUser(user: User): Promise<WebLicenseCheck> {
+export const checkActiveWebLicenseForUser = cache(async function checkActiveWebLicenseForUser(user: User): Promise<WebLicenseCheck> {
   const service = createSupabaseServiceRoleClient()
   const nowIso = new Date().toISOString()
 
-  await service
-    .from('license_activations')
-    .update({ status: 'expired' })
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .lte('expires_at', nowIso)
-
-  const { data: profile, error: profileError } = await service
-    .from('profiles')
-    .select('id, email, role, license_status, license_expires_at')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (profileError) throw profileError
+  const [, profile, activationResult] = await Promise.all([
+    service
+      .from('license_activations')
+      .update({ status: 'expired' })
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .lte('expires_at', nowIso),
+    getWebProfile(user.id),
+    service
+      .from('license_activations')
+      .select('id, license_id, user_id, email, activated_at, expires_at, status, last_used_at, license_codes(id, plan, status)')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .gt('expires_at', nowIso)
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+  ])
 
   const profileActive =
     profile?.license_status === 'active' &&
@@ -126,16 +125,7 @@ export async function checkActiveWebLicenseForUser(user: User): Promise<WebLicen
     }
   }
 
-  const { data: activation, error: activationError } = await service
-    .from('license_activations')
-    .select('id, license_id, user_id, email, activated_at, expires_at, status, last_used_at, license_codes(id, plan, status)')
-    .eq('user_id', user.id)
-    .eq('status', 'active')
-    .gt('expires_at', nowIso)
-    .order('expires_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
+  const { data: activation, error: activationError } = activationResult
   if (activationError) throw activationError
   const license = Array.isArray(activation?.license_codes)
     ? activation?.license_codes[0]
@@ -176,4 +166,4 @@ export async function checkActiveWebLicenseForUser(user: User): Promise<WebLicen
       status: license.status
     }
   }
-}
+})

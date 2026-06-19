@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
 import {
   Ban,
   CheckCircle2,
@@ -24,6 +25,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate, maskLicenseCode } from '@/components/admin/AdminUI'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
+import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type LicenseRow = {
   id: string
@@ -43,6 +45,12 @@ type LicenseRow = {
 }
 
 type GeneratedCode = LicenseRow & { code: string }
+
+type LicensesResponse = {
+  success: true
+  licenses: LicenseRow[]
+  total: number
+}
 
 type ConfirmState = {
   title: string
@@ -69,18 +77,18 @@ export function AdminLicensesClient() {
   const searchParams = useSearchParams()
   const focusedId = searchParams.get('licenseId') || searchParams.get('focus') || ''
   const { pushToast } = useToast()
-  const [licenses, setLicenses] = useState<LicenseRow[]>([])
   const [generated, setGenerated] = useState<GeneratedCode[]>([])
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [status, setStatus] = useState('all')
   const [plan, setPlan] = useState('all')
-  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
   const [createOpen, setCreateOpen] = useState(searchParams.get('create') === '1')
   const [resultOpen, setResultOpen] = useState(false)
-  const [selected, setSelected] = useState<LicenseRow | null>(null)
+  const [selection, setSelection] = useState<{ routeFocus: string; id: string | null }>({
+    routeFocus: focusedId,
+    id: focusedId || null
+  })
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set())
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [form, setForm] = useState({
@@ -95,34 +103,32 @@ export function AdminLicensesClient() {
     note: ''
   })
 
-  const loadLicenses = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const params = new URLSearchParams({
-        pageSize: '200',
-        search: debouncedSearch,
-        status,
-        plan
-      })
-      if (focusedId) params.set('licenseId', focusedId)
-      const response = await fetch(`/api/admin/licenses?${params.toString()}`, { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '无法加载激活码。')
-      const rows = (data.licenses || []) as LicenseRow[]
-      setLicenses(rows)
-      if (focusedId) setSelected(rows.find((item) => item.id === focusedId) || null)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法加载激活码。')
-    } finally {
-      setLoading(false)
-    }
+  const licensesKey = useMemo(() => {
+    const params = new URLSearchParams({
+      pageSize: '200',
+      search: debouncedSearch,
+      status,
+      plan
+    })
+    if (focusedId) params.set('licenseId', focusedId)
+    return `/api/admin/licenses/list?${params.toString()}`
   }, [debouncedSearch, focusedId, plan, status])
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadLicenses(), 0)
-    return () => window.clearTimeout(timer)
-  }, [loadLicenses])
+  const {
+    data,
+    error,
+    isLoading,
+    isValidating,
+    mutate
+  } = useSWR<LicensesResponse>(licensesKey, adminJsonFetcher, { keepPreviousData: true })
+  const licenses = data?.licenses || []
+  const loading = !data && isLoading
+  const selectedId = selection.routeFocus === focusedId ? selection.id : focusedId || null
+  const selected = licenses.find((item) => item.id === selectedId) || null
+
+  function setSelected(license: LicenseRow | null) {
+    setSelection({ routeFocus: focusedId, id: license?.id || null })
+  }
 
   const resolvedForm = useMemo(() => {
     const count = form.countPreset === 'custom' ? form.customCount : Number(form.countPreset)
@@ -160,7 +166,7 @@ export function AdminLicensesClient() {
       setCreateOpen(false)
       setResultOpen(true)
       pushToast({ kind: 'success', title: `已生成 ${data.codes?.length || 0} 个激活码`, message: '请妥善保存完整明文。' })
-      await loadLicenses()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '生成激活码失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -180,7 +186,7 @@ export function AdminLicensesClient() {
       if (!response.ok || !data.success) throw new Error(data.message || '更新失败。')
       pushToast({ kind: 'success', title: success })
       setSelected(null)
-      await loadLicenses()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '操作失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -196,7 +202,7 @@ export function AdminLicensesClient() {
       if (!response.ok || !data.success) throw new Error(data.message || '删除失败。')
       pushToast({ kind: 'success', title: '激活码已删除' })
       setSelected(null)
-      await loadLicenses()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '删除失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -289,12 +295,12 @@ export function AdminLicensesClient() {
               <option value="admin">Admin</option>
             </select>
           </label>
-          <button className="admin-icon-button" type="button" onClick={() => void loadLicenses()} disabled={loading} aria-label="刷新">
-            <RefreshCw className={loading ? 'admin-spin' : ''} size={17} />
+          <button className="admin-icon-button" type="button" onClick={() => void mutate()} disabled={isValidating} aria-label="刷新">
+            <RefreshCw className={isValidating ? 'admin-spin' : ''} size={17} />
           </button>
         </div>
 
-        {error ? <AdminError message={error} onRetry={() => void loadLicenses()} /> : null}
+        {error ? <AdminError message={error.message || '无法加载激活码。'} onRetry={() => void mutate()} /> : null}
         {loading ? <AdminTableSkeleton columns={11} rows={7} /> : licenses.length ? (
           <div className="admin-table-wrap admin-responsive-table">
             <table className="admin-table admin-license-table">

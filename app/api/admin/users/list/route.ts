@@ -40,7 +40,7 @@ export async function GET(request: Request) {
         .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_value, code_prefix, plan, status)')
         .in('user_id', userIds)
         .order('expires_at', { ascending: false }),
-      service.from('usage_records').select('user_id, created_at, success').in('user_id', userIds)
+      service.from('usage_records').select('user_id, created_at').in('user_id', userIds)
     ])
 
     if (profilesError) throw profilesError

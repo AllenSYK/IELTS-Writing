@@ -47,8 +47,7 @@ export async function GET(request: Request) {
         note,
         created_by,
         created_at,
-        updated_at,
-        license_activations (id, revoked_reason)
+        updated_at
       `)
       .order('created_at', { ascending: false })
       .limit(1000)
@@ -59,21 +58,31 @@ export async function GET(request: Request) {
       query = query.or(`code_prefix.ilike.%${search}%,code_value.ilike.%${search}%,plan.ilike.%${search}%,note.ilike.%${search}%`)
     }
 
-    const { data, error } = await query
-    if (error) throw error
+    const [licensesResult, activationsResult] = await Promise.all([
+      query,
+      service
+        .from('license_activations')
+        .select('license_id, revoked_reason')
+        .limit(1000)
+    ])
 
-    const normalized = (data || []).map((license) => {
-      const activationCount = (license.license_activations || [])
-        .filter((binding) => binding.revoked_reason !== UNBOUND_BINDING_REASON)
-        .length
+    if (licensesResult.error) throw licensesResult.error
+    if (activationsResult.error) throw activationsResult.error
+
+    const usageByLicense = new Map<string, number>()
+    for (const binding of activationsResult.data || []) {
+      if (binding.revoked_reason === UNBOUND_BINDING_REASON) continue
+      usageByLicense.set(binding.license_id, (usageByLicense.get(binding.license_id) || 0) + 1)
+    }
+
+    const normalized = (licensesResult.data || []).map((license) => {
+      const activationCount = usageByLicense.get(license.id) || 0
       const effectiveStatus = getEffectiveLicenseStatus({
         ...license,
         activation_count: activationCount
       })
-      const { license_activations: _bindings, ...summary } = license
-      void _bindings
       return {
-        ...summary,
+        ...license,
         activation_count: activationCount,
         remaining_count: Math.max(0, license.max_activations - activationCount),
         status: effectiveStatus

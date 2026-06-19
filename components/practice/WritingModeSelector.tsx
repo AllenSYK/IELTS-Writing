@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
 import {
@@ -89,6 +90,7 @@ function Chip({
 }
 
 export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
+  const router = useRouter()
   const [selection, setSelection] = useState<PromptSelection>(() => {
     if (typeof window === 'undefined') return DefaultPromptSelection
     try {
@@ -113,11 +115,22 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
     })
   }
 
+  function prefetchMode(mode: WritingTaskType) {
+    router.prefetch(buildHref(mode, selection))
+  }
+
   return (
     <>
       <div className="mode-grid">
         {modes.map((mode) => (
-          <Link key={mode.mode} href={buildHref(mode.mode, selection)} aria-label={`Start ${mode.title}`}>
+          <Link
+            key={mode.mode}
+            href={buildHref(mode.mode, selection)}
+            prefetch
+            aria-label={`Start ${mode.title}`}
+            onPointerEnter={() => prefetchMode(mode.mode)}
+            onFocus={() => prefetchMode(mode.mode)}
+          >
             <GlassPanel className={`mode-card stitch-hover-glow stitch-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}>
               <header>
                 <span className="mode-icon">
@@ -175,7 +188,14 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
             <h3 className="stitch-label">练习模式</h3>
             <div className="choice-chip-row">
               {modes.map((mode) => (
-                <Link key={mode.mode} className="choice-chip choice-link" href={buildHref(mode.mode, selection)}>
+                <Link
+                  key={mode.mode}
+                  className="choice-chip choice-link"
+                  href={buildHref(mode.mode, selection)}
+                  prefetch
+                  onPointerEnter={() => prefetchMode(mode.mode)}
+                  onFocus={() => prefetchMode(mode.mode)}
+                >
                   {mode.title}
                 </Link>
               ))}

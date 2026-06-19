@@ -18,6 +18,14 @@ import {
   Task2TopicLabels,
   type PromptSelection
 } from '@/lib/writing-options'
+import {
+  Task1ChartSpecSchema,
+  createChartSpecLog,
+  normalizeTask1ChartSpec,
+  prepareTask1ChartSpec,
+  type Task1ChartKind
+} from '@/lib/task1-chart-schema'
+import { getFallbackQuestionsByType } from '@/lib/task1-fallback-questions'
 
 type AiConfig = {
   provider: string
@@ -271,37 +279,7 @@ const AiPromptSchema = z.object({
   promptDetail: z.string().min(8).max(1000),
   questionType: z.string().min(2).max(80),
   topic: z.string().max(80).optional(),
-  chartSpec: z.object({
-    kind: z.enum(['line', 'bar', 'pie', 'table', 'mixed']),
-    title: z.string(),
-    subtitle: z.string().optional(),
-    xAxis: z.object({
-      label: z.string().optional(),
-      categories: z.array(z.string()).min(1)
-    }).optional(),
-    yAxis: z.object({
-      label: z.string().optional(),
-      unit: z.string().optional(),
-      min: z.number().optional(),
-      max: z.number().optional()
-    }).optional(),
-    series: z.array(z.object({
-      id: z.string(),
-      name: z.string(),
-      type: z.enum(['line', 'bar']).optional(),
-      values: z.array(z.number())
-    })).optional(),
-    pieData: z.array(z.object({
-      label: z.string(),
-      value: z.number()
-    })).optional(),
-    tableData: z.object({
-      columns: z.array(z.string()),
-      rows: z.array(z.array(z.union([z.string(), z.number()])))
-    }).optional(),
-    legend: z.boolean().optional(),
-    source: z.string().optional()
-  }).optional(),
+  chartSpec: Task1ChartSpecSchema.optional(),
   processSpec: z.object({
     title: z.string(),
     stages: z.array(z.object({
@@ -510,6 +488,8 @@ function buildPromptGenerationPrompt(input: PromptGenerationInput) {
       '',
       'CRITICAL: You MUST include structured visual data in your response.',
       isChartType ? '- For chart types (line_chart, bar_chart, pie_chart, table, mixed_charts), include "chartSpec" with complete data.' : '',
+      chartType === 'mixed_charts' ? '- A mixed chart MUST contain chartSpec.charts with exactly two independently renderable chart objects. Each object must include chartType, title, units, legend, and all data required by that chart type.' : '',
+      chartType === 'mixed_charts' ? '- Use canonical fields only: xAxis.categories, series[].values, pieData, and tableData. Do not use barData, pieChart, labels, datasets, or series[].data.' : '',
       isProcessType ? '- For process diagrams, include "processSpec" with stages.' : '',
       isMapType ? '- For maps and floor plans, include "mapSpec" with features and positions.' : '',
       '',
@@ -596,19 +576,100 @@ function buildPromptGenerationPrompt(input: PromptGenerationInput) {
           }
         }
       } else {
+        const mixedCharts = task1Subtype === 'line_table'
+          ? [
+              {
+                chartType: 'line',
+                title: 'Total University Enrolment',
+                xAxis: { label: 'Year', categories: ['2018', '2020', '2022', '2024'] },
+                yAxis: { label: 'Students', unit: 'thousands' },
+                series: [
+                  { id: 'enrolment', name: 'Total enrolment', type: 'line', values: [1280, 1360, 1490, 1580] }
+                ],
+                units: 'thousands',
+                legend: true
+              },
+              {
+                chartType: 'table',
+                title: 'International Students by Faculty (2024)',
+                tableData: {
+                  columns: ['Faculty', 'International students'],
+                  rows: [['Business', '31%'], ['Engineering', '27%'], ['Arts', '19%']]
+                },
+                units: '%',
+                legend: false
+              }
+            ]
+          : task1Subtype === 'bar_pie' || task1Subtype === 'two_pies'
+            ? [
+                {
+                  chartType: task1Subtype === 'two_pies' ? 'pie' : 'bar',
+                  title: task1Subtype === 'two_pies' ? 'Energy Sources in 2015' : 'Revenue by Region',
+                  ...(task1Subtype === 'two_pies'
+                    ? {
+                        pieData: [
+                          { label: 'Gas', value: 40 },
+                          { label: 'Renewables', value: 25 },
+                          { label: 'Coal', value: 20 },
+                          { label: 'Other', value: 15 }
+                        ]
+                      }
+                    : {
+                        xAxis: { label: 'Region', categories: ['North America', 'Europe', 'Asia'] },
+                        yAxis: { label: 'Revenue', unit: '$ million' },
+                        series: [
+                          { id: 'revenue', name: 'Revenue', type: 'bar', values: [128, 96, 112] }
+                        ]
+                      }),
+                  units: task1Subtype === 'two_pies' ? '%' : '$ million',
+                  legend: true
+                },
+                {
+                  chartType: 'pie',
+                  title: task1Subtype === 'two_pies' ? 'Energy Sources in 2025' : 'Operating Costs',
+                  pieData: [
+                    { label: 'Staff', value: 38 },
+                    { label: 'Property', value: 24 },
+                    { label: 'Marketing', value: 18 },
+                    { label: 'Other', value: 20 }
+                  ],
+                  units: '%',
+                  legend: true
+                }
+              ]
+            : [
+                {
+                  chartType: 'bar',
+                  title: 'Annual Revenue',
+                  xAxis: { label: 'Year', categories: ['2018', '2020', '2022', '2024'] },
+                  yAxis: { label: 'Revenue', unit: '$ million' },
+                  series: [
+                    { id: 'revenue', name: 'Revenue', type: 'bar', values: [45, 48, 78, 105] }
+                  ],
+                  units: '$ million',
+                  legend: true
+                },
+                {
+                  chartType: 'line',
+                  title: 'Annual Growth Rate',
+                  xAxis: { label: 'Year', categories: ['2018', '2020', '2022', '2024'] },
+                  yAxis: { label: 'Growth rate', unit: '%' },
+                  series: [
+                    { id: 'growth', name: 'Growth rate', type: 'line', values: [8, -8, 20, 14] }
+                  ],
+                  units: '%',
+                  legend: true
+                }
+              ]
         exampleJson = {
           title: 'Academic Task 1 - Mixed Chart',
-          promptLead: 'The charts below show the revenue and growth rate of a retail company from 2018 to 2024.',
+          promptLead: 'The charts below show two related sets of data for the same topic.',
           promptDetail: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
           questionType: 'mixed_charts',
           chartSpec: {
             kind: 'mixed',
-            title: 'Retail Company Performance (2018-2024)',
-            xAxis: { label: 'Year', categories: ['2018', '2019', '2020', '2021', '2022', '2023', '2024'] },
-            series: [
-              { id: 'revenue', name: 'Revenue ($M)', type: 'bar', values: [45, 52, 48, 65, 78, 92, 105] },
-              { id: 'growth', name: 'Growth Rate (%)', type: 'line', values: [8, 15, -8, 35, 20, 18, 14] }
-            ],
+            title: 'Two Related Data Sets',
+            charts: mixedCharts,
             legend: true
           }
         }
@@ -1361,7 +1422,7 @@ Required JSON structure:
 
       logPerf(perfLog, 'detailed-phase-start')
       const detailedPerfLog = { ...perfLog, phase: 'detailed' as const }
-      let detailedText = await fetchCompletion(config, detailedMessages, MAX_COMPLETION_TOKENS_DETAILED, detailedPerfLog, {
+      const detailedText = await fetchCompletion(config, detailedMessages, MAX_COMPLETION_TOKENS_DETAILED, detailedPerfLog, {
         responseFormat: { type: 'json_object' }
       })
 
@@ -1427,83 +1488,139 @@ function normalizeAiPromptResponse(raw: any, taskType: string): any {
   if (!raw || typeof raw !== 'object' || taskType !== 'task1') return raw
 
   const result = { ...raw }
+  const kindMap: Record<string, Task1ChartKind> = {
+    line_graph: 'line',
+    line_chart: 'line',
+    bar_chart: 'bar',
+    pie_chart: 'pie',
+    table: 'table',
+    mixed_charts: 'mixed'
+  }
+  const expectedKind = kindMap[result.questionType]
 
-  // Handle chartData -> chartSpec rename
   if (!result.chartSpec && result.chartData && typeof result.chartData === 'object') {
     result.chartSpec = result.chartData
     delete result.chartData
   }
 
+  if (!result.chartSpec && expectedKind === 'mixed') {
+    const mixedAliases = ['charts', 'barChart', 'barData', 'pieChart', 'pieData', 'lineChart', 'lineData', 'tableChart', 'tableData']
+    const hasMixedData = mixedAliases.some((key) => result[key] !== undefined)
+    if (hasMixedData) {
+      result.chartSpec = {
+        kind: 'mixed',
+        title: result.chartTitle || result.title || 'Mixed charts',
+        ...Object.fromEntries(mixedAliases.filter((key) => result[key] !== undefined).map((key) => [key, result[key]]))
+      }
+    }
+  }
+
   if (result.chartSpec && typeof result.chartSpec === 'object') {
     const spec = { ...result.chartSpec }
-
-    // Infer kind from questionType if missing
-    if (!spec.kind && result.questionType) {
-      const kindMap: Record<string, string> = {
-        line_chart: 'line',
-        bar_chart: 'bar',
-        pie_chart: 'pie',
-        table: 'table',
-        mixed_charts: 'mixed'
-      }
-      spec.kind = kindMap[result.questionType]
-    }
-
-    // Move top-level categories to xAxis.categories
-    if (spec.categories && !spec.xAxis) {
-      spec.xAxis = { categories: spec.categories }
-      delete spec.categories
-    }
-
-    // Normalize series: rename data -> values, generate id from name
-    if (Array.isArray(spec.series)) {
-      spec.series = spec.series.map((s: Record<string, unknown>, index: number) => {
-        const series = { ...s }
-        // Handle label -> name rename
-        if (!series.name && series.label) {
-          series.name = series.label
-          delete series.label
-        }
-        if (!series.id && series.name) {
-          series.id = String(series.name).toLowerCase().replace(/[^a-z0-9]+/g, '_') || `series_${index}`
-        }
-        if (!series.values && Array.isArray(series.data)) {
-          series.values = series.data
-          delete series.data
-        }
-        return series
-      })
-    }
-
-    // Convert series to pieData for pie charts
-    if (spec.kind === 'pie' && Array.isArray(spec.series) && !spec.pieData) {
-      const categories = spec.xAxis?.categories ?? []
-      const firstSeries = spec.series[0]
-      if (firstSeries && Array.isArray(firstSeries.values)) {
-        spec.pieData = firstSeries.values.map((value: number, i: number) => ({
-          label: categories[i] || `Category ${i + 1}`,
-          value
-        }))
-        // Merge additional series values if multiple pie series
-        if (spec.series.length > 1) {
-          for (let s = 1; s < spec.series.length; s++) {
-            const series = spec.series[s]
-            if (Array.isArray(series.values)) {
-              series.values.forEach((value: number, i: number) => {
-                const label = series.name || `Series ${s + 1}`
-                spec.pieData.push({ label: `${label} - ${categories[i] || i + 1}`, value })
-              })
-            }
-          }
-        }
-        delete spec.series
-      }
-    }
-
-    result.chartSpec = spec
+    if (!spec.kind && expectedKind) spec.kind = expectedKind
+    const normalized = normalizeTask1ChartSpec(spec, expectedKind)
+    result.chartSpec = normalized || spec
   }
 
   return result
+}
+
+function chartKindForQuestionType(questionType: string): Task1ChartKind | undefined {
+  const map: Record<string, Task1ChartKind> = {
+    line_graph: 'line',
+    line_chart: 'line',
+    bar_chart: 'bar',
+    pie_chart: 'pie',
+    table: 'table',
+    mixed_charts: 'mixed'
+  }
+  return map[questionType]
+}
+
+function parseAndValidateGeneratedPrompt(text: string, input: PromptGenerationInput, requestId: string) {
+  const rawParsed = parseJsonObject(text)
+  const normalizedRaw = normalizeAiPromptResponse(rawParsed, input.taskType)
+  const parsed = AiPromptSchema.safeParse(normalizedRaw)
+
+  if (!parsed.success) {
+    const details = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+    console.warn(`[task1-gen] requestId=${requestId} schemaErrors=${details}`)
+    throw new AiProviderError(`AI provider response did not match the expected prompt format: ${details}`, undefined, 'ai_prompt_schema_error')
+  }
+
+  const data = parsed.data
+  const expectedTask1 = input.selection.task1ChartType
+  const expectedTask2 = input.selection.task2EssayType
+
+  if (input.taskType === 'task1' && expectedTask1 !== 'random' && data.questionType !== expectedTask1) {
+    throw new AiProviderError('AI生成的 Task 1 题型与用户选择不一致。', undefined, 'ai_prompt_type_mismatch')
+  }
+  if (input.taskType === 'task2' && expectedTask2 !== 'random' && data.questionType !== expectedTask2) {
+    throw new AiProviderError('AI生成的 Task 2 题型与用户选择不一致。', undefined, 'ai_prompt_type_mismatch')
+  }
+
+  if (input.taskType === 'task1') {
+    const expectedKind = chartKindForQuestionType(data.questionType)
+    const isProcessType = data.questionType === 'process'
+    const isMapType = ['map', 'floor_plan', 'before_after'].includes(data.questionType)
+
+    if (expectedKind) {
+      if (!data.chartSpec) {
+        throw new AiProviderError('AI返回缺少图表数据。', undefined, 'ai_missing_chart_spec')
+      }
+      const prepared = prepareTask1ChartSpec(data.chartSpec, expectedKind)
+      if (!prepared.success) {
+        throw new AiProviderError(
+          `AI返回的图表数据不完整：${prepared.errors.join('; ')}`,
+          undefined,
+          'ai_prompt_visual_schema_error'
+        )
+      }
+      data.chartSpec = prepared.data
+    }
+    if (isProcessType && !data.processSpec) {
+      throw new AiProviderError('AI返回缺少流程图数据。', undefined, 'ai_missing_process_spec')
+    }
+    if (isMapType && !data.mapSpec) {
+      throw new AiProviderError('AI返回缺少地图数据。', undefined, 'ai_missing_map_spec')
+    }
+  }
+
+  return data
+}
+
+function mixedFallbackQuestion(input: PromptGenerationInput, requestId: string): WritingQuestion {
+  const fallbackIdBySubtype: Record<string, string> = {
+    bar_pie: 'fb-mixed-bar-pie-retail',
+    line_table: 'fb-mixed-line-table-enrollment',
+    two_pies: 'fb-mixed-bar-pie-retail',
+    multi_year: 'fb-mixed-bar-line-exports',
+    multi_category: 'fb-mixed-bar-pie-retail',
+    random: 'fb-mixed-bar-line-exports'
+  }
+  const candidates = getFallbackQuestionsByType('mixed_charts')
+  const preferredId = fallbackIdBySubtype[input.selection.task1Subtype] || fallbackIdBySubtype.random
+  const fallback = candidates.find((item) => item.id === preferredId) || candidates[0]
+  const prepared = prepareTask1ChartSpec(fallback?.chartSpec, 'mixed')
+
+  if (!fallback || !prepared.success) {
+    throw new AiProviderError('内置 Mixed Chart 备用数据校验失败。', undefined, 'mixed_chart_fallback_invalid')
+  }
+
+  console.warn(`[task1-gen] requestId=${requestId} fallbackUsed=true rendererSelected=mixed_charts fallbackId=${fallback.id}`)
+  return {
+    id: `fallback-${fallback.id}-${Date.now().toString(36)}`,
+    taskType: 'task1',
+    title: fallback.title,
+    promptLead: fallback.prompt,
+    promptDetail: fallback.instructions,
+    durationMinutes: 20,
+    wordTarget: 150,
+    questionType: 'mixed_charts',
+    trainingType: 'academic',
+    generatedSource: 'local-template',
+    chartSpec: prepared.data
+  }
 }
 
 export async function generateWritingPromptWithAi(input: PromptGenerationInput): Promise<WritingQuestion> {
@@ -1522,60 +1639,58 @@ export async function generateWritingPromptWithAi(input: PromptGenerationInput):
 
   console.info(`[task1-gen] requestId=${requestId} taskType=${input.taskType} selectedTask1Type=${input.selection.task1ChartType} resolvedTask1Type=${input.selection.task1ChartType === 'random' ? 'random' : input.selection.task1ChartType}`)
 
-  const text = await fetchCompletion(config, messages, MAX_COMPLETION_TOKENS_DETAILED, undefined, {
-    responseFormat: { type: 'json_object' }
-  })
-  console.info(`[task1-gen] requestId=${requestId} rawResponse length=${text.length} preview=${text.substring(0, 500)}`)
+  let text = ''
+  let data: z.infer<typeof AiPromptSchema> | null = null
+  let lastValidationError: unknown
 
-  const rawParsed = parseJsonObject(text)
-  const normalizedRaw = normalizeAiPromptResponse(rawParsed, input.taskType)
-  const parsed = AiPromptSchema.safeParse(normalizedRaw)
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt === 0) {
+      text = await fetchCompletion(config, messages, MAX_COMPLETION_TOKENS_DETAILED, undefined, {
+        responseFormat: { type: 'json_object' }
+      })
+    } else {
+      const reason = lastValidationError instanceof Error ? lastValidationError.message : 'incomplete visual data'
+      text = await fetchCompletion(config, [
+        ...messages,
+        {
+          role: 'user',
+          content: [
+            'Your previous JSON failed server validation.',
+            `Validation error: ${reason}`,
+            'Regenerate the complete question once. Return JSON only.',
+            'For mixed_charts, chartSpec.charts must contain exactly two complete, independently renderable chart objects.',
+            `Previous response: ${text.slice(0, 1800)}`
+          ].join('\n')
+        }
+      ], MAX_COMPLETION_TOKENS_DETAILED, undefined, {
+        responseFormat: { type: 'json_object' }
+      })
+    }
 
-  if (!parsed.success) {
-    console.warn(`[task1-gen] requestId=${requestId} schemaErrors=${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-    console.warn(`[task1-gen] requestId=${requestId} parsed object:`, JSON.stringify(parseJsonObject(text), null, 2).substring(0, 1000))
-    throw new AiProviderError('AI provider response did not match the expected prompt format.', undefined, 'ai_prompt_schema_error')
+    console.info(`[task1-gen] requestId=${requestId} attempt=${attempt + 1} rawResponse length=${text.length} preview=${text.substring(0, 500)}`)
+    try {
+      data = parseAndValidateGeneratedPrompt(text, input, requestId)
+      break
+    } catch (error) {
+      lastValidationError = error
+      console.warn(`[task1-gen] requestId=${requestId} attempt=${attempt + 1} validationFailed=${error instanceof Error ? error.message : 'unknown'}`)
+    }
   }
 
-  const data = parsed.data
+  if (!data) {
+    const isMixedRequest = input.taskType === 'task1' && (
+      input.selection.task1ChartType === 'mixed_charts' ||
+      /"questionType"\s*:\s*"mixed_charts"/.test(text)
+    )
+    if (isMixedRequest) return mixedFallbackQuestion(input, requestId)
+    throw lastValidationError instanceof Error
+      ? lastValidationError
+      : new AiProviderError('AI题目生成失败。', undefined, 'ai_prompt_schema_error')
+  }
+
   const questionType = data.questionType
-  const expectedTask1 = input.selection.task1ChartType
-  const expectedTask2 = input.selection.task2EssayType
-
-  if (input.taskType === 'task1' && expectedTask1 !== 'random' && questionType !== expectedTask1) {
-    console.warn(`[task1-gen] requestId=${requestId} typeMismatch expected=${expectedTask1} got=${questionType}`)
-    throw new AiProviderError('AI生成的 Task 1 题型与用户选择不一致。', undefined, 'ai_prompt_type_mismatch')
-  }
-  if (input.taskType === 'task2' && expectedTask2 !== 'random' && questionType !== expectedTask2) {
-    throw new AiProviderError('AI生成的 Task 2 题型与用户选择不一致。', undefined, 'ai_prompt_type_mismatch')
-  }
-
-  const rawResponseHasChartSpec = Boolean(data.chartSpec)
-  const chartKind = data.chartSpec?.kind ?? 'none'
-  const categoryCount = data.chartSpec?.xAxis?.categories?.length ?? 0
-  const seriesCount = data.chartSpec?.series?.length ?? 0
-  const dataPointCount = data.chartSpec?.series?.reduce((sum, s) => sum + s.values.length, 0) ?? 0
-
-  console.info(`[task1-gen] requestId=${requestId} rawResponseHasChartSpec=${rawResponseHasChartSpec} chartKind=${chartKind} categoryCount=${categoryCount} seriesCount=${seriesCount} dataPointCount=${dataPointCount}`)
-
-  if (input.taskType === 'task1') {
-    const isChartType = ['line_graph', 'bar_chart', 'pie_chart', 'table', 'mixed_charts'].includes(questionType)
-    const isProcessType = questionType === 'process'
-    const isMapType = ['map', 'floor_plan', 'before_after'].includes(questionType)
-
-    if (isChartType && !data.chartSpec) {
-      console.warn(`[task1-gen] requestId=${requestId} missingChartSpec for ${questionType}`)
-      throw new AiProviderError('AI返回缺少图表数据。', undefined, 'ai_missing_chart_spec')
-    }
-    if (isProcessType && !data.processSpec) {
-      console.warn(`[task1-gen] requestId=${requestId} missingProcessSpec`)
-      throw new AiProviderError('AI返回缺少流程图数据。', undefined, 'ai_missing_process_spec')
-    }
-    if (isMapType && !data.mapSpec) {
-      console.warn(`[task1-gen] requestId=${requestId} missingMapSpec`)
-      throw new AiProviderError('AI返回缺少地图数据。', undefined, 'ai_missing_map_spec')
-    }
-  }
+  const chartLog = createChartSpecLog(data.chartSpec)
+  console.info(`[task1-gen] requestId=${requestId} rawResponseHasChartSpec=${Boolean(data.chartSpec)} chartKind=${chartLog.chartKind} categoryCount=${chartLog.categoryCount} seriesCount=${chartLog.seriesCount} dataPointCount=${chartLog.dataPointCount}`)
 
   const now = Date.now().toString(36)
   const question: WritingQuestion = {

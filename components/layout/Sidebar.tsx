@@ -1,24 +1,31 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
+import { useSWRConfig } from 'swr'
 import { MaterialIcon } from '@/components/stitch-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
+import {
+  UserRouteCacheKeys,
+  warmUserRouteCache,
+  type UserRouteCacheKey
+} from '@/lib/user-route-cache'
 
 type SidebarItem = {
   id: string
   href: string
   label: string
   icon: string
+  cacheKey?: UserRouteCacheKey
   match: (pathname: string) => boolean
 }
 
 const mainItems: SidebarItem[] = [
-  { id: 'home', href: '/', label: 'Home', icon: 'home', match: (pathname) => pathname === '/' },
+  { id: 'home', href: '/dashboard', label: 'Home', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
   { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') },
-  { id: 'history', href: '/history', label: 'History', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
-  { id: 'analytics', href: '/analytics', label: 'Analytics', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
+  { id: 'history', href: '/history', label: 'History', icon: 'history', cacheKey: UserRouteCacheKeys.history, match: (pathname) => pathname.startsWith('/history') },
+  { id: 'analytics', href: '/analytics', label: 'Analytics', icon: 'analytics', cacheKey: UserRouteCacheKeys.level0, match: (pathname) => pathname.startsWith('/analytics') || pathname.startsWith('/level0') },
   { id: 'settings', href: '/settings', label: 'Settings', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
 ]
 
@@ -47,15 +54,22 @@ function useOnlineLabel() {
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { mutate } = useSWRConfig()
   const online = useOnlineLabel()
   const activeId = useMemo(
     () => [...mainItems, ...supportItems].find((item) => item.match(pathname))?.id ?? 'home',
     [pathname]
   )
 
+  function prefetchItem(item: SidebarItem) {
+    router.prefetch(item.href)
+    if (item.cacheKey) void warmUserRouteCache(item.cacheKey, mutate)
+  }
+
   return (
     <aside className="sidebar" aria-label="应用导航">
-      <Link className="sidebar-logo" href="/" aria-label="回到首页">
+      <Link className="sidebar-logo" href="/dashboard" aria-label="回到首页" onPointerEnter={() => prefetchItem(mainItems[0])} onFocus={() => prefetchItem(mainItems[0])}>
         <span className="sidebar-logo-mark">空</span>
         <span>
           <strong>空与梦</strong>
@@ -69,7 +83,10 @@ export function Sidebar() {
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
+            prefetch
             aria-current={activeId === item.id ? 'page' : undefined}
+            onPointerEnter={() => prefetchItem(item)}
+            onFocus={() => prefetchItem(item)}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>

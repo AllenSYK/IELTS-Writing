@@ -1,98 +1,59 @@
 'use client'
 
-import { useMemo } from 'react'
-import {
-  ComposedChart,
-  Line,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Label
-} from 'recharts'
-import type { Task1ChartSpec } from '@/lib/task1-chart-schema'
-
-const COLORS = ['#2563eb', '#dc2626', '#16a34a', '#9333ea', '#ea580c', '#0891b2', '#be185d', '#4f46e5']
+import type { Task1ChartSpec, Task1StandaloneChartSpec } from '@/lib/task1-chart-schema'
+import { BarChartQuestion } from './BarChartQuestion'
+import { LineChartQuestion } from './LineChartQuestion'
+import { PieChartQuestion } from './PieChartQuestion'
+import { TableQuestion } from './TableQuestion'
 
 type Props = {
   spec: Task1ChartSpec
   containerWidth: number
 }
 
-export function MixedChartQuestion({ spec, containerWidth }: Props) {
-  const data = useMemo(() => {
-    if (!spec.xAxis || !spec.series) return []
-    return spec.xAxis.categories.map((cat, i) => {
-      const row: Record<string, string | number> = { name: cat }
-      for (const s of spec.series!) {
-        row[s.id] = s.values[i] ?? 0
-      }
-      return row
-    })
-  }, [spec])
+function toChartSpec(chart: Task1StandaloneChartSpec): Task1ChartSpec {
+  return {
+    kind: chart.chartType,
+    title: chart.title,
+    subtitle: chart.subtitle,
+    xAxis: chart.xAxis,
+    yAxis: chart.yAxis,
+    series: chart.series,
+    pieData: chart.pieData,
+    tableData: chart.tableData,
+    legend: chart.legend,
+    source: chart.source
+  }
+}
 
-  if (!spec.xAxis || !spec.series || data.length === 0) {
+function MixedChartPanel({ chart, containerWidth }: { chart: Task1StandaloneChartSpec; containerWidth: number }) {
+  const childSpec = toChartSpec(chart)
+  return (
+    <section className="task1-mixed-panel" data-chart-type={chart.chartType}>
+      {chart.chartType === 'bar' && <BarChartQuestion spec={childSpec} containerWidth={containerWidth} />}
+      {chart.chartType === 'line' && <LineChartQuestion spec={childSpec} containerWidth={containerWidth} />}
+      {chart.chartType === 'pie' && <PieChartQuestion spec={childSpec} containerWidth={containerWidth} />}
+      {chart.chartType === 'table' && <TableQuestion spec={childSpec} />}
+    </section>
+  )
+}
+
+export function MixedChartQuestion({ spec, containerWidth }: Props) {
+  if (!spec.charts || spec.charts.length !== 2) {
     return <div className="task1-chart-empty">组合图数据不完整</div>
   }
 
-  const chartHeight = Math.max(280, Math.min(400, containerWidth * 0.5))
+  const childWidth = Math.max(280, containerWidth / 2)
 
   return (
-    <div className="task1-chart-wrapper">
+    <div className="task1-chart-wrapper task1-mixed-chart" data-testid="mixed-chart">
       {spec.title && <h3 className="task1-chart-title">{spec.title}</h3>}
       {spec.subtitle && <p className="task1-chart-subtitle">{spec.subtitle}</p>}
-      <ResponsiveContainer width="100%" height={chartHeight}>
-        <ComposedChart data={data} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--outline-variant, #e0e0e0)" />
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 12, fill: 'var(--on-surface, #1d1d1d)' }}
-            tickLine={{ stroke: 'var(--outline-variant, #e0e0e0)' }}
-          >
-            {spec.xAxis.label && <Label value={spec.xAxis.label} position="bottom" offset={0} style={{ fontSize: 12, fill: 'var(--on-surface-variant, #666)' }} />}
-          </XAxis>
-          <YAxis
-            tick={{ fontSize: 12, fill: 'var(--on-surface, #1d1d1d)' }}
-            tickLine={{ stroke: 'var(--outline-variant, #e0e0e0)' }}
-            domain={spec.yAxis ? [spec.yAxis.min ?? 0, spec.yAxis.max ?? 'auto'] : [0, 'auto']}
-          >
-            {spec.yAxis?.label && <Label value={spec.yAxis.unit ? `${spec.yAxis.label} (${spec.yAxis.unit})` : spec.yAxis.label} angle={-90} position="insideLeft" style={{ fontSize: 12, fill: 'var(--on-surface-variant, #666)' }} />}
-          </YAxis>
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'var(--surface, #fff)',
-              border: '1px solid var(--outline-variant, #e0e0e0)',
-              borderRadius: 8,
-              fontSize: 13
-            }}
-          />
-          {spec.legend !== false && <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />}
-          {spec.series.map((s, i) => (
-            s.type === 'bar' ? (
-              <Bar
-                key={s.id}
-                dataKey={s.id}
-                name={s.name}
-                fill={COLORS[i % COLORS.length]}
-                radius={[4, 4, 0, 0]}
-              />
-            ) : (
-              <Line
-                key={s.id}
-                type="monotone"
-                dataKey={s.id}
-                name={s.name}
-                stroke={COLORS[i % COLORS.length]}
-                strokeWidth={2}
-                dot={{ r: 4, fill: COLORS[i % COLORS.length] }}
-              />
-            )
-          ))}
-        </ComposedChart>
-      </ResponsiveContainer>
+      <div className="task1-mixed-grid">
+        {spec.charts.map((chart, index) => (
+          <MixedChartPanel key={`${chart.chartType}-${index}`} chart={chart} containerWidth={childWidth} />
+        ))}
+      </div>
       {spec.source && <p className="task1-chart-source">{spec.source}</p>}
     </div>
   )

@@ -249,7 +249,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
   const actions = useMemo<CommandAction[]>(
     () => [
-      { id: 'home', title: '前往首页', subtitle: '查看练习概览', icon: 'home', href: '/', keywords: 'home 首页' },
+      { id: 'home', title: '前往首页', subtitle: '打开账号中心', icon: 'home', href: '/dashboard', keywords: 'home 首页 账号中心' },
       { id: 'task1', title: '开始 Task 1', subtitle: '20 分钟图表写作', icon: 'bar_chart', href: '/write/task1', keywords: 'task 1 academic graph' },
       { id: 'task2', title: '开始 Task 2', subtitle: '40 分钟议论文', icon: 'edit_document', href: '/write/task2', keywords: 'task 2 essay writing' },
       { id: 'mock', title: '开始完整模考', subtitle: '60 分钟 Task 1 + Task 2', icon: 'timer', href: '/write/mock', keywords: 'mock test 完整 模考' },
@@ -497,11 +497,11 @@ function GlobalUpdatePrompt() {
       ? '请联系开发者获取最新版本'
       : '请联系软件开发者获取最新版本。'
 
-  function closePrompt() {
+  const closePrompt = useCallback(() => {
     setDismissedKey(updateKey)
     const dismiss = window.desktopUpdater?.dismissUpdate?.()
     dismiss?.catch(() => undefined)
-  }
+  }, [updateKey])
 
   useEffect(() => {
     if (!open) return
@@ -514,7 +514,7 @@ function GlobalUpdatePrompt() {
       document.body.classList.remove('modal-open')
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open, updateKey])
+  }, [closePrompt, open])
 
   async function contactDeveloper() {
     setContacting(true)
@@ -769,48 +769,6 @@ export function EmptyState({ title, message, href, action }: { title: string; me
         </Link>
       ) : null}
     </section>
-  )
-}
-
-export function PageSkeleton({ variant = 'cards' }: { variant?: 'cards' | 'editor' | 'result' }) {
-  if (variant === 'editor') {
-    return (
-      <main className="exam-page" tabIndex={-1}>
-        <div className="skeleton-line skeleton-topbar" />
-        <section className="exam-layout">
-          <aside className="exam-left-pane">
-            <div className="skeleton-block" />
-            <div className="skeleton-block tall" />
-          </aside>
-          <section className="exam-right-pane">
-            <div className="skeleton-block editor" />
-          </section>
-        </section>
-        <div className="skeleton-loading-hint" role="status" aria-live="polite">
-          <div className="skeleton-loading-spinner" />
-          <span>正在加载题目，首次加载可能需要一些时间...</span>
-        </div>
-      </main>
-    )
-  }
-
-  return (
-    <main className="stitch-page with-nav" tabIndex={-1}>
-      <section className="stitch-container skeleton-page" aria-label="正在加载">
-        <div className="skeleton-line title" />
-        <div className={`skeleton-grid ${variant}`}>
-          {Array.from({ length: variant === 'result' ? 6 : 4 }).map((_, index) => (
-            <div key={index} className="skeleton-card" />
-          ))}
-        </div>
-        {variant === 'result' && (
-          <div className="skeleton-loading-hint" role="status" aria-live="polite">
-            <div className="skeleton-loading-spinner" />
-            <span>正在加载批改结果...</span>
-          </div>
-        )}
-      </section>
-    </main>
   )
 }
 

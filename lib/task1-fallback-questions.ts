@@ -436,45 +436,87 @@ const tableQuestions: Task1QuestionData[] = [
 
 const mixedChartQuestions: Task1QuestionData[] = [
   {
-    id: 'fb-mixed-revenue',
+    id: 'fb-mixed-bar-pie-retail',
     taskType: 'task1',
     chartType: 'mixed_charts',
     title: 'Academic Task 1 - Mixed Chart',
-    prompt: 'The charts below show the revenue and growth rate of a retail company from 2018 to 2024.',
+    prompt: 'The charts below show the revenue of a retail company by region in 2024 and the percentage distribution of its operating costs in the same year.',
     instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     chartSpec: {
       kind: 'mixed',
-      title: 'Retail Company Performance (2018-2024)',
-      xAxis: { label: 'Year', categories: ['2018', '2019', '2020', '2021', '2022', '2023', '2024'] },
-      yAxis: { label: 'Value', unit: '' },
-      series: [
-        { id: 'revenue', name: 'Revenue ($M)', type: 'bar', values: [45, 52, 48, 65, 78, 92, 105] },
-        { id: 'growth', name: 'Growth Rate (%)', type: 'line', values: [8, 15, -8, 35, 20, 18, 14] }
+      title: 'Retail Company Revenue and Operating Costs (2024)',
+      charts: [
+        {
+          chartType: 'bar',
+          title: 'Revenue by Region',
+          xAxis: { label: 'Region', categories: ['North America', 'Europe', 'Asia', 'South America'] },
+          yAxis: { label: 'Revenue', unit: '$ million' },
+          series: [
+            { id: 'revenue', name: 'Revenue', type: 'bar', values: [128, 96, 112, 54] }
+          ],
+          units: '$ million',
+          legend: true
+        },
+        {
+          chartType: 'pie',
+          title: 'Distribution of Operating Costs',
+          pieData: [
+            { label: 'Staff', value: 38 },
+            { label: 'Property', value: 24 },
+            { label: 'Marketing', value: 18 },
+            { label: 'Logistics', value: 12 },
+            { label: 'Other', value: 8 }
+          ],
+          units: '%',
+          legend: true
+        }
       ],
       legend: true
     }
   },
   {
-    id: 'fb-mixed-enrollment',
+    id: 'fb-mixed-line-table-enrollment',
     taskType: 'task1',
     chartType: 'mixed_charts',
     title: 'Academic Task 1 - Mixed Chart',
-    prompt: 'The charts below show university enrollment numbers and the percentage of international students in Australia from 2015 to 2025.',
+    prompt: 'The line chart below shows total university enrolment in Australia from 2015 to 2025, while the table gives the proportion of international students at four universities in 2025.',
     instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     chartSpec: {
       kind: 'mixed',
-      title: 'Australian University Enrollment (2015-2025)',
-      xAxis: { label: 'Year', categories: ['2015', '2017', '2019', '2021', '2023', '2025'] },
-      yAxis: { label: 'Value' },
-      series: [
-        { id: 'enrollment', name: 'Total Enrollment (thousands)', type: 'bar', values: [1400, 1500, 1560, 1480, 1600, 1680] },
-        { id: 'intl_pct', name: 'International Students (%)', type: 'line', values: [22, 25, 28, 21, 27, 30] }
+      title: 'University Enrolment in Australia',
+      charts: [
+        {
+          chartType: 'line',
+          title: 'Total University Enrolment (2015-2025)',
+          xAxis: { label: 'Year', categories: ['2015', '2017', '2019', '2021', '2023', '2025'] },
+          yAxis: { label: 'Students', unit: 'thousands' },
+          series: [
+            { id: 'enrolment', name: 'Total enrolment', type: 'line', values: [1400, 1500, 1560, 1480, 1600, 1680] }
+          ],
+          units: 'thousands',
+          legend: true
+        },
+        {
+          chartType: 'table',
+          title: 'International Students by University (2025)',
+          tableData: {
+            columns: ['University', 'International students'],
+            rows: [
+              ['University A', '34%'],
+              ['University B', '29%'],
+              ['University C', '25%'],
+              ['University D', '18%']
+            ]
+          },
+          units: '%',
+          legend: false
+        }
       ],
       legend: true
     }
   },
   {
-    id: 'fb-mixed-exports',
+    id: 'fb-mixed-bar-line-exports',
     taskType: 'task1',
     chartType: 'mixed_charts',
     title: 'Academic Task 1 - Mixed Chart',
@@ -483,50 +525,29 @@ const mixedChartQuestions: Task1QuestionData[] = [
     chartSpec: {
       kind: 'mixed',
       title: 'Agricultural Export Performance (2016-2024)',
-      xAxis: { label: 'Year', categories: ['2016', '2018', '2020', '2022', '2024'] },
-      yAxis: { label: 'Value' },
-      series: [
-        { id: 'volume', name: 'Volume (million tonnes)', type: 'bar', values: [42, 48, 45, 55, 60] },
-        { id: 'price', name: 'Unit Price ($/tonne)', type: 'line', values: [280, 310, 350, 420, 390] }
-      ],
-      legend: true
-    }
-  },
-  {
-    id: 'fb-mixed-crime',
-    taskType: 'task1',
-    chartType: 'mixed_charts',
-    title: 'Academic Task 1 - Mixed Chart',
-    prompt: 'The charts below show the number of reported crimes and the conviction rate in a city from 2018 to 2024.',
-    instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
-    chartSpec: {
-      kind: 'mixed',
-      title: 'Crime Statistics (2018-2024)',
-      xAxis: { label: 'Year', categories: ['2018', '2019', '2020', '2021', '2022', '2023', '2024'] },
-      yAxis: { label: 'Value' },
-      series: [
-        { id: 'crimes', name: 'Reported Crimes (thousands)', type: 'bar', values: [52, 48, 41, 45, 39, 36, 33] },
-        { id: 'conviction', name: 'Conviction Rate (%)', type: 'line', values: [32, 35, 38, 42, 48, 52, 55] }
-      ],
-      legend: true
-    }
-  },
-  {
-    id: 'fb-mixed-fuel',
-    taskType: 'task1',
-    chartType: 'mixed_charts',
-    title: 'Academic Task 1 - Mixed Chart',
-    prompt: 'The charts below show car sales by fuel type and the average price of electric vehicles in a market from 2019 to 2025.',
-    instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
-    chartSpec: {
-      kind: 'mixed',
-      title: 'Car Market Trends (2019-2025)',
-      xAxis: { label: 'Year', categories: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-      yAxis: { label: 'Value' },
-      series: [
-        { id: 'petrol', name: 'Petrol Cars (thousands)', type: 'bar', values: [680, 520, 550, 480, 400, 350, 300] },
-        { id: 'electric', name: 'Electric Cars (thousands)', type: 'bar', values: [80, 120, 200, 310, 420, 520, 610] },
-        { id: 'ev_price', name: 'Avg. EV Price ($k)', type: 'line', values: [55, 52, 48, 44, 40, 38, 35] }
+      charts: [
+        {
+          chartType: 'bar',
+          title: 'Export Volume',
+          xAxis: { label: 'Year', categories: ['2016', '2018', '2020', '2022', '2024'] },
+          yAxis: { label: 'Volume', unit: 'million tonnes' },
+          series: [
+            { id: 'volume', name: 'Export volume', type: 'bar', values: [42, 48, 45, 55, 60] }
+          ],
+          units: 'million tonnes',
+          legend: true
+        },
+        {
+          chartType: 'line',
+          title: 'Average Unit Price',
+          xAxis: { label: 'Year', categories: ['2016', '2018', '2020', '2022', '2024'] },
+          yAxis: { label: 'Price', unit: '$ per tonne' },
+          series: [
+            { id: 'price', name: 'Unit price', type: 'line', values: [280, 310, 350, 420, 390] }
+          ],
+          units: '$ per tonne',
+          legend: true
+        }
       ],
       legend: true
     }

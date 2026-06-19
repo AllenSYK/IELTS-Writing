@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { AppShell } from '@/components/layout/AppShell'
 import { AppInteractionProvider } from '@/components/interaction-system'
+import { UserPerformanceProvider } from '@/components/performance/UserPerformanceProvider'
 import { UserProfileProvider } from '@/stores/user-profile-store'
 import './globals.css'
 import './admin.css'
@@ -15,9 +16,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <AppInteractionProvider>
-          <UserProfileProvider>
-            <AppShell>{children}</AppShell>
-          </UserProfileProvider>
+          <UserPerformanceProvider>
+            <UserProfileProvider>
+              <AppShell>{children}</AppShell>
+            </UserProfileProvider>
+          </UserPerformanceProvider>
         </AppInteractionProvider>
       </body>
     </html>

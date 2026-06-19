@@ -17,7 +17,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             <button className="stitch-primary-button" type="button" onClick={reset}>
               重试
             </button>
-            <Link className="stitch-secondary-button" href="/">
+            <Link className="stitch-secondary-button" href="/dashboard">
               返回首页
             </Link>
           </div>

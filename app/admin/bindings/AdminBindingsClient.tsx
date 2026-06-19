@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
 import {
   CalendarPlus,
   Eye,
@@ -19,6 +20,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate, maskLicenseCode } from '@/components/admin/AdminUI'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
+import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type LicenseRef = {
   id: string
@@ -59,6 +61,13 @@ type FilterLabels = {
   user: string
 }
 
+type BindingsResponse = {
+  success: true
+  bindings: BindingRow[]
+  total: number
+  filterLabels: FilterLabels
+}
+
 const statusFilters = [
   ['all', '全部绑定'],
   ['active', '有效绑定'],
@@ -75,45 +84,35 @@ export function AdminBindingsClient() {
   const email = searchParams.get('email') || ''
   const userId = searchParams.get('userId') || ''
   const { pushToast } = useToast()
-  const [bindings, setBindings] = useState<BindingRow[]>([])
-  const [labels, setLabels] = useState<FilterLabels>({ license: '', email: '', user: '' })
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [status, setStatus] = useState('all')
-  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
   const [selected, setSelected] = useState<BindingRow | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const params = new URLSearchParams({
-        pageSize: '200',
-        search: debouncedSearch,
-        status
-      })
-      if (licenseId) params.set('licenseId', licenseId)
-      if (email) params.set('email', email)
-      if (userId) params.set('userId', userId)
-      const response = await fetch(`/api/admin/bindings?${params.toString()}`, { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '无法加载邮箱绑定。')
-      setBindings(data.bindings || [])
-      setLabels(data.filterLabels || { license: '', email: '', user: '' })
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法加载邮箱绑定。')
-    } finally {
-      setLoading(false)
-    }
+  const bindingsKey = useMemo(() => {
+    const params = new URLSearchParams({
+      pageSize: '200',
+      search: debouncedSearch,
+      status
+    })
+    if (licenseId) params.set('licenseId', licenseId)
+    if (email) params.set('email', email)
+    if (userId) params.set('userId', userId)
+    return `/api/admin/bindings?${params.toString()}`
   }, [debouncedSearch, email, licenseId, status, userId])
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
-  }, [load])
+  const {
+    data,
+    error,
+    isLoading,
+    isValidating,
+    mutate
+  } = useSWR<BindingsResponse>(bindingsKey, adminJsonFetcher, { keepPreviousData: true })
+  const bindings = data?.bindings || []
+  const labels = data?.filterLabels || { license: '', email: '', user: '' }
+  const loading = !data && isLoading
 
   function clearFilter(key: 'licenseId' | 'email' | 'userId') {
     const params = new URLSearchParams(searchParams.toString())
@@ -136,7 +135,7 @@ export function AdminBindingsClient() {
         title: action === 'extend' ? '账号有效期已延长' : action === 'revoke' ? '邮箱权限已撤销' : '邮箱已重新绑定'
       })
       setSelected(null)
-      await load()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '操作失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -152,7 +151,7 @@ export function AdminBindingsClient() {
       if (!response.ok || !data.success) throw new Error(data.message || '解绑失败。')
       pushToast({ kind: 'success', title: '邮箱已解绑', message: '绑定历史已保留，激活码次数已释放。' })
       setSelected(null)
-      await load()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '解绑失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -195,8 +194,8 @@ export function AdminBindingsClient() {
               <button key={value} className={status === value ? 'is-active' : ''} type="button" onClick={() => setStatus(value)}>{label}</button>
             ))}
           </div>
-          <button className="admin-icon-button" type="button" onClick={() => void load()} disabled={loading} aria-label="刷新">
-            <RefreshCw className={loading ? 'admin-spin' : ''} size={17} />
+          <button className="admin-icon-button" type="button" onClick={() => void mutate()} disabled={isValidating} aria-label="刷新">
+            <RefreshCw className={isValidating ? 'admin-spin' : ''} size={17} />
           </button>
         </div>
 
@@ -214,7 +213,7 @@ export function AdminBindingsClient() {
           </div>
         ) : null}
 
-        {error ? <AdminError message={error} onRetry={() => void load()} /> : null}
+        {error ? <AdminError message={error.message || '无法加载邮箱绑定。'} onRetry={() => void mutate()} /> : null}
         {loading ? <AdminTableSkeleton columns={10} rows={7} /> : bindings.length ? (
           <div className="admin-table-wrap admin-responsive-table">
             <table className="admin-table admin-binding-table">

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import useSWR from 'swr'
 import {
   ArrowRight,
   CircleCheckBig,
@@ -23,8 +23,10 @@ import {
   formatAdminDate
 } from '@/components/admin/AdminUI'
 import { useToast } from '@/components/interaction-system'
+import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type OverviewData = {
+  success: true
   stats: {
     totalLicenses: number
     availableLicenses: number
@@ -61,29 +63,12 @@ type OverviewData = {
 
 export function AdminOverviewClient() {
   const { pushToast } = useToast()
-  const [data, setData] = useState<OverviewData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const response = await fetch('/api/admin/overview', { cache: 'no-store' })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok || !result.success) throw new Error(result.message || '无法加载总览。')
-      setData(result)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法加载总览。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
-    return () => window.clearTimeout(timer)
-  }, [load])
+  const { data, error, isLoading, mutate } = useSWR<OverviewData>(
+    '/api/admin/overview',
+    adminJsonFetcher,
+    { keepPreviousData: true }
+  )
+  const loading = !data && isLoading
 
   function exportOverview() {
     if (!data) return
@@ -123,7 +108,7 @@ export function AdminOverviewClient() {
         )}
       />
 
-      {error ? <AdminError message={error} onRetry={() => void load()} /> : null}
+      {error ? <AdminError message={error.message || '无法加载总览。'} onRetry={() => void mutate()} /> : null}
 
       <section className="admin-stat-grid admin-stat-grid-six" aria-label="关键数据">
         {loading

@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
 import {
   Ban,
   CheckCircle2,
@@ -20,6 +21,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
+import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type LicenseRef = {
   id: string
@@ -80,6 +82,14 @@ type UserDetail = {
   activations: ActivationRef[]
 }
 
+type UsersResponse = {
+  success: true
+  users: UserRow[]
+  total: number
+}
+
+const EMPTY_USERS: UserRow[] = []
+
 type ConfirmState = { title: string; message: string; label: string; action: () => Promise<void> } | null
 
 function isBanned(user: UserRow) {
@@ -90,13 +100,10 @@ export function AdminUsersClient() {
   const searchParams = useSearchParams()
   const focusedUserId = searchParams.get('userId') || ''
   const { pushToast } = useToast()
-  const [users, setUsers] = useState<UserRow[]>([])
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [filter, setFilter] = useState('all')
-  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
   const [selected, setSelected] = useState<UserRow | null>(null)
   const [detail, setDetail] = useState<UserDetail | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
@@ -107,6 +114,7 @@ export function AdminUsersClient() {
   const [batchPlan, setBatchPlan] = useState('standard')
   const [batchDays, setBatchDays] = useState(365)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const focusedDetailRef = useRef('')
 
   const openDetail = useCallback(async (user: UserRow) => {
     setSelected(user)
@@ -122,33 +130,34 @@ export function AdminUsersClient() {
     }
   }, [pushToast])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const params = new URLSearchParams({ pageSize: '100', search: debouncedSearch, filter })
-      if (focusedUserId) params.set('userId', focusedUserId)
-      const response = await fetch(`/api/admin/users?${params.toString()}`, { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '无法加载用户。')
-      const rows = (data.users || []) as UserRow[]
-      setUsers(rows)
-      setSelectedIds((current) => new Set([...current].filter((id) => rows.some((user) => user.id === id))))
-      if (focusedUserId) {
-        const focused = rows.find((user) => user.id === focusedUserId)
-        if (focused) void openDetail(focused)
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '无法加载用户。')
-    } finally {
-      setLoading(false)
-    }
-  }, [debouncedSearch, filter, focusedUserId, openDetail])
+  const usersKey = useMemo(() => {
+    const params = new URLSearchParams({ pageSize: '100', search: debouncedSearch, filter })
+    if (focusedUserId) params.set('userId', focusedUserId)
+    return `/api/admin/users?${params.toString()}`
+  }, [debouncedSearch, filter, focusedUserId])
+
+  const {
+    data: usersData,
+    error,
+    isLoading,
+    isValidating,
+    mutate
+  } = useSWR<UsersResponse>(usersKey, adminJsonFetcher, { keepPreviousData: true })
+  const users = usersData?.users || EMPTY_USERS
+  const loading = !usersData && isLoading
+  const activeSelectedIds = useMemo(
+    () => new Set([...selectedIds].filter((id) => users.some((user) => user.id === id))),
+    [selectedIds, users]
+  )
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0)
+    if (!focusedUserId || !usersData || focusedDetailRef.current === focusedUserId) return
+    const focused = usersData.users.find((user) => user.id === focusedUserId)
+    if (!focused) return
+    focusedDetailRef.current = focusedUserId
+    const timer = window.setTimeout(() => void openDetail(focused), 0)
     return () => window.clearTimeout(timer)
-  }, [load])
+  }, [focusedUserId, openDetail, usersData])
 
   async function updateUser(userId: string, payload: Record<string, unknown>, success: string, keepOpen = false) {
     setSubmitting(true)
@@ -161,9 +170,9 @@ export function AdminUsersClient() {
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) throw new Error(data.message || '操作失败。')
       pushToast({ kind: 'success', title: success })
-      await load()
+      const refreshed = await mutate().catch(() => undefined)
       if (keepOpen) {
-        const user = users.find((item) => item.id === userId)
+        const user = refreshed?.users.find((item) => item.id === userId) || users.find((item) => item.id === userId)
         if (user) await openDetail(user)
       } else {
         setSelected(null)
@@ -185,7 +194,7 @@ export function AdminUsersClient() {
       pushToast({ kind: 'success', title: '用户账号已删除' })
       setSelected(null)
       setDetail(null)
-      await load()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '删除用户失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -201,7 +210,7 @@ export function AdminUsersClient() {
 
   async function batchBind(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const targets = users.filter((user) => selectedIds.has(user.id))
+    const targets = users.filter((user) => activeSelectedIds.has(user.id))
     if (!targets.length) return
     setSubmitting(true)
     try {
@@ -245,7 +254,7 @@ export function AdminUsersClient() {
       })
       setBatchOpen(false)
       setSelectedIds(new Set())
-      await load()
+      await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '批量绑定失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
@@ -266,8 +275,8 @@ export function AdminUsersClient() {
         title="用户管理"
         description="查看用户账号、角色、邮箱验证、激活状态、套餐与账号有效期。"
         actions={(
-          <button className="admin-primary-button" type="button" onClick={() => setBatchOpen(true)} disabled={!selectedIds.size}>
-            <KeyRound size={16} />批量绑定激活码{selectedIds.size ? `（${selectedIds.size}）` : ''}
+          <button className="admin-primary-button" type="button" onClick={() => setBatchOpen(true)} disabled={!activeSelectedIds.size}>
+            <KeyRound size={16} />批量绑定激活码{activeSelectedIds.size ? `（${activeSelectedIds.size}）` : ''}
           </button>
         )}
       />
@@ -286,20 +295,20 @@ export function AdminUsersClient() {
               <button key={value} className={filter === value ? 'is-active' : ''} type="button" onClick={() => setFilter(value)}>{label}</button>
             ))}
           </div>
-          <button className="admin-icon-button" type="button" onClick={() => void load()} aria-label="刷新">
-            <RefreshCw className={loading ? 'admin-spin' : ''} size={17} />
+          <button className="admin-icon-button" type="button" onClick={() => void mutate()} disabled={isValidating} aria-label="刷新">
+            <RefreshCw className={isValidating ? 'admin-spin' : ''} size={17} />
           </button>
         </div>
 
-        {selectedIds.size ? (
+        {activeSelectedIds.size ? (
           <div className="admin-selection-bar">
-            <span>已选择 <strong>{selectedIds.size}</strong> 位用户</span>
+            <span>已选择 <strong>{activeSelectedIds.size}</strong> 位用户</span>
             <button className="admin-primary-button compact" type="button" onClick={() => setBatchOpen(true)}><KeyRound size={15} />批量绑定</button>
             <button className="admin-text-button" type="button" onClick={() => setSelectedIds(new Set())}>取消选择</button>
           </div>
         ) : null}
 
-        {error ? <AdminError message={error} onRetry={() => void load()} /> : null}
+        {error ? <AdminError message={error.message || '无法加载用户。'} onRetry={() => void mutate()} /> : null}
         {loading ? <AdminTableSkeleton columns={9} rows={7} /> : users.length ? (
           <div className="admin-table-wrap admin-responsive-table">
             <table className="admin-table">
@@ -319,7 +328,7 @@ export function AdminUsersClient() {
                       <td className="admin-checkbox-column" data-label="选择">
                         <input
                           type="checkbox"
-                          checked={selectedIds.has(user.id)}
+                          checked={activeSelectedIds.has(user.id)}
                           onChange={(event) => setSelectedIds((current) => {
                             const next = new Set(current)
                             if (event.target.checked) next.add(user.id)
@@ -440,10 +449,10 @@ export function AdminUsersClient() {
         ) : null}
       </CenteredDialog>
 
-      <CenteredDialog open={batchOpen} title="批量绑定激活码" description={`为已选择的 ${selectedIds.size} 位用户分配使用权限。`} className="admin-create-dialog" onClose={() => !submitting && setBatchOpen(false)} footer={(
+      <CenteredDialog open={batchOpen} title="批量绑定激活码" description={`为已选择的 ${activeSelectedIds.size} 位用户分配使用权限。`} className="admin-create-dialog" onClose={() => !submitting && setBatchOpen(false)} footer={(
         <>
           <button className="admin-secondary-button" type="button" onClick={() => setBatchOpen(false)} disabled={submitting}>取消</button>
-          <button className="admin-primary-button" type="submit" form="batch-bind-form" disabled={submitting || !selectedIds.size}>
+          <button className="admin-primary-button" type="submit" form="batch-bind-form" disabled={submitting || !activeSelectedIds.size}>
             {submitting ? <Loader2 className="admin-spin" size={16} /> : <ShieldCheck size={16} />}{submitting ? '正在绑定' : '开始批量绑定'}
           </button>
         </>
@@ -462,7 +471,7 @@ export function AdminUsersClient() {
             </div>
           )}
           <div className="admin-confirm-summary">
-            <strong>将处理 {selectedIds.size} 位用户</strong>
+            <strong>将处理 {activeSelectedIds.size} 位用户</strong>
             <p>{batchMode === 'existing' ? '所有用户尝试绑定同一个现有激活码，受最大激活次数限制。' : '系统会为每位用户生成一个独立激活码并立即绑定。'}</p>
           </div>
         </form>

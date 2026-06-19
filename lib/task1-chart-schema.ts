@@ -3,6 +3,9 @@ import { z } from 'zod'
 export const Task1ChartKindSchema = z.enum(['line', 'bar', 'pie', 'table', 'mixed'])
 export type Task1ChartKind = z.infer<typeof Task1ChartKindSchema>
 
+export const Task1StandaloneChartKindSchema = z.enum(['line', 'bar', 'pie', 'table'])
+export type Task1StandaloneChartKind = z.infer<typeof Task1StandaloneChartKindSchema>
+
 export const Task1ChartRendererSchema = z.enum(['line', 'bar', 'pie', 'table', 'mixed', 'process', 'map'])
 export type Task1ChartRenderer = z.infer<typeof Task1ChartRendererSchema>
 
@@ -55,6 +58,22 @@ export const Task1TableDataSchema = z.object({
   rows: z.array(z.array(z.union([z.string(), z.number()]))).min(1)
 })
 
+export const Task1StandaloneChartSpecSchema = z.object({
+  chartType: Task1StandaloneChartKindSchema,
+  title: z.string().min(1),
+  subtitle: z.string().optional(),
+  xAxis: Task1AxisSchema.optional(),
+  yAxis: Task1YAxisSchema.optional(),
+  series: z.array(Task1SeriesSchema).optional(),
+  pieData: z.array(Task1PieDataSchema).optional(),
+  tableData: Task1TableDataSchema.optional(),
+  units: z.string().default(''),
+  legend: z.boolean().default(true),
+  source: z.string().optional()
+})
+
+export type Task1StandaloneChartSpec = z.infer<typeof Task1StandaloneChartSpecSchema>
+
 export const Task1ChartSpecSchema = z.object({
   kind: Task1ChartKindSchema,
   title: z.string().min(1),
@@ -64,6 +83,7 @@ export const Task1ChartSpecSchema = z.object({
   series: z.array(Task1SeriesSchema).optional(),
   pieData: z.array(Task1PieDataSchema).optional(),
   tableData: Task1TableDataSchema.optional(),
+  charts: z.array(Task1StandaloneChartSpecSchema).length(2).optional(),
   legend: z.boolean().optional(),
   source: z.string().optional()
 })
@@ -121,6 +141,338 @@ export interface Task1QuestionData {
   mapSpec?: Task1MapSpec
 }
 
+type UnknownRecord = Record<string, unknown>
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function firstDefined(...values: unknown[]) {
+  return values.find((value) => value !== undefined && value !== null)
+}
+
+function toStringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const output = value.map((item) => String(item).trim()).filter(Boolean)
+  return output.length > 0 ? output : undefined
+}
+
+function toNumberArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const output = value.map((item) => typeof item === 'number' ? item : Number(item))
+  return output.length > 0 && output.every(Number.isFinite) ? output : undefined
+}
+
+function normalizeStandaloneKind(value: unknown, hint?: Task1StandaloneChartKind): Task1StandaloneChartKind | undefined {
+  if (hint) return hint
+  if (typeof value !== 'string') return undefined
+  const normalized = value.toLowerCase().trim().replace(/[\s-]+/g, '_')
+  const map: Record<string, Task1StandaloneChartKind> = {
+    line: 'line',
+    line_chart: 'line',
+    line_graph: 'line',
+    bar: 'bar',
+    bar_chart: 'bar',
+    column: 'bar',
+    column_chart: 'bar',
+    pie: 'pie',
+    pie_chart: 'pie',
+    table: 'table',
+    data_table: 'table'
+  }
+  return map[normalized]
+}
+
+function seriesId(value: unknown, index: number) {
+  const candidate = String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return candidate || `series_${index + 1}`
+}
+
+function normalizeSeries(value: unknown, defaultType?: 'line' | 'bar'): z.infer<typeof Task1SeriesSchema>[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const normalized = value.flatMap((item, index) => {
+    if (!isRecord(item)) return []
+    const values = toNumberArray(firstDefined(item.values, item.data, item.points))
+    if (!values) return []
+    const name = toStringValue(firstDefined(item.name, item.label, item.title)) || `Series ${index + 1}`
+    const rawType = normalizeStandaloneKind(firstDefined(item.type, item.chartType))
+    const type = rawType === 'line' || rawType === 'bar' ? rawType : defaultType
+    return [{
+      id: toStringValue(item.id) || seriesId(name, index),
+      name,
+      ...(type ? { type } : {}),
+      values
+    }]
+  })
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function normalizeAxis(value: unknown, fallbackCategories?: unknown) {
+  const axis = isRecord(value) ? value : {}
+  const categories = toStringArray(firstDefined(axis.categories, axis.labels, fallbackCategories))
+  if (!categories) return undefined
+  return {
+    ...(toStringValue(firstDefined(axis.label, axis.title)) ? { label: toStringValue(firstDefined(axis.label, axis.title)) } : {}),
+    categories,
+    ...(toStringValue(firstDefined(axis.unit, axis.units)) ? { unit: toStringValue(firstDefined(axis.unit, axis.units)) } : {})
+  }
+}
+
+function normalizeYAxis(value: unknown, fallbackUnits?: unknown) {
+  const axis = isRecord(value) ? value : {}
+  const label = toStringValue(firstDefined(axis.label, axis.title))
+  const unit = toStringValue(firstDefined(axis.unit, axis.units, fallbackUnits))
+  const min = typeof axis.min === 'number' && Number.isFinite(axis.min) ? axis.min : undefined
+  const max = typeof axis.max === 'number' && Number.isFinite(axis.max) ? axis.max : undefined
+  if (!label && !unit && min === undefined && max === undefined) return undefined
+  return {
+    ...(label ? { label } : {}),
+    ...(unit ? { unit } : {}),
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {})
+  }
+}
+
+function generatedCategories(length: number) {
+  return Array.from({ length }, (_, index) => `Category ${index + 1}`)
+}
+
+function normalizePieData(value: unknown, labelsValue?: unknown): z.infer<typeof Task1PieDataSchema>[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const labels = toStringArray(labelsValue) || []
+  const output = value.flatMap((item, index) => {
+    if (isRecord(item)) {
+      const numericValue = Number(firstDefined(item.value, item.amount, item.percentage, item.data))
+      if (!Number.isFinite(numericValue)) return []
+      return [{
+        label: toStringValue(firstDefined(item.label, item.name, item.category)) || labels[index] || `Category ${index + 1}`,
+        value: numericValue
+      }]
+    }
+    const numericValue = Number(item)
+    if (!Number.isFinite(numericValue)) return []
+    return [{ label: labels[index] || `Category ${index + 1}`, value: numericValue }]
+  })
+  return output.length > 0 ? output : undefined
+}
+
+function normalizeTableData(value: unknown, fallbackColumns?: unknown, fallbackRows?: unknown) {
+  const table = isRecord(value) ? value : {}
+  const columns = toStringArray(firstDefined(table.columns, table.headers, table.labels, fallbackColumns))
+  const rawRows = firstDefined(table.rows, table.data, fallbackRows)
+  if (!columns || !Array.isArray(rawRows)) return undefined
+  const rows = rawRows.filter(Array.isArray).map((row) =>
+    row.map((cell) => typeof cell === 'number' ? cell : String(cell))
+  )
+  return rows.length > 0 ? { columns, rows } : undefined
+}
+
+function normalizeStandaloneChartCandidate(
+  value: unknown,
+  hint?: Task1StandaloneChartKind,
+  fallbackTitle?: string
+): Task1StandaloneChartSpec | null {
+  if (!isRecord(value)) return null
+  const chartType = normalizeStandaloneKind(firstDefined(value.chartType, value.kind, value.type), hint)
+  if (!chartType) return null
+
+  const units = toStringValue(firstDefined(value.units, value.unit, isRecord(value.yAxis) ? firstDefined(value.yAxis.unit, value.yAxis.units) : undefined)) || ''
+  const title = toStringValue(firstDefined(value.title, value.name)) || fallbackTitle || `${chartType[0].toUpperCase()}${chartType.slice(1)} chart`
+  const legend = typeof value.legend === 'boolean' ? value.legend : true
+  const subtitle = toStringValue(value.subtitle)
+  const source = toStringValue(value.source)
+
+  let xAxis = normalizeAxis(value.xAxis, firstDefined(value.categories, value.labels))
+  let series = normalizeSeries(firstDefined(value.series, value.datasets), chartType === 'line' || chartType === 'bar' ? chartType : undefined)
+  let pieData = normalizePieData(firstDefined(value.pieData, chartType === 'pie' ? value.data : undefined), firstDefined(value.labels, value.categories))
+  let tableData = normalizeTableData(firstDefined(value.tableData, chartType === 'table' ? value.data : undefined), value.columns, value.rows)
+
+  if ((chartType === 'line' || chartType === 'bar') && !series) {
+    const values = toNumberArray(firstDefined(value.values, value.data))
+    if (values) {
+      series = [{
+        id: 'value',
+        name: toStringValue(firstDefined(value.seriesName, value.label)) || 'Value',
+        type: chartType,
+        values
+      }]
+    }
+  }
+
+  if ((chartType === 'line' || chartType === 'bar') && series && !xAxis) {
+    const length = series[0]?.values.length || 0
+    if (length > 0 && series.every((item) => item.values.length === length)) {
+      xAxis = { categories: generatedCategories(length) }
+    }
+  }
+
+  if (chartType === 'pie' && !pieData && series?.[0]) {
+    const labels = xAxis?.categories || generatedCategories(series[0].values.length)
+    pieData = series[0].values.map((item, index) => ({ label: labels[index] || `Category ${index + 1}`, value: item }))
+    series = undefined
+    xAxis = undefined
+  }
+
+  if (chartType === 'table' && !tableData) {
+    tableData = normalizeTableData(value, value.columns, value.rows)
+  }
+
+  const candidate = {
+    chartType,
+    title,
+    ...(subtitle ? { subtitle } : {}),
+    ...(xAxis ? { xAxis } : {}),
+    ...(normalizeYAxis(value.yAxis, units) ? { yAxis: normalizeYAxis(value.yAxis, units) } : {}),
+    ...(series ? { series } : {}),
+    ...(pieData ? { pieData } : {}),
+    ...(tableData ? { tableData } : {}),
+    units,
+    legend,
+    ...(source ? { source } : {})
+  }
+  const parsed = Task1StandaloneChartSpecSchema.safeParse(candidate)
+  return parsed.success ? parsed.data : null
+}
+
+function mixedChartCandidates(spec: UnknownRecord) {
+  const candidates: Array<{ value: unknown; hint?: Task1StandaloneChartKind }> = []
+
+  if (Array.isArray(spec.charts)) {
+    spec.charts.forEach((value) => candidates.push({ value }))
+  }
+
+  const namedCharts: Array<[string, Task1StandaloneChartKind]> = [
+    ['barChart', 'bar'],
+    ['barData', 'bar'],
+    ['pieChart', 'pie'],
+    ['pieData', 'pie'],
+    ['lineChart', 'line'],
+    ['lineData', 'line'],
+    ['tableChart', 'table'],
+    ['tableData', 'table']
+  ]
+  for (const [key, hint] of namedCharts) {
+    if (isRecord(spec[key])) candidates.push({ value: spec[key], hint })
+  }
+
+  for (const key of ['leftChart', 'rightChart', 'chart1', 'chart2', 'firstChart', 'secondChart']) {
+    if (isRecord(spec[key])) candidates.push({ value: spec[key] })
+  }
+
+  if (candidates.length === 0 && Array.isArray(spec.series)) {
+    const normalized = normalizeSeries(spec.series)
+    const barSeries = normalized?.filter((item) => item.type === 'bar') || []
+    const lineSeries = normalized?.filter((item) => item.type === 'line') || []
+    const shared = {
+      xAxis: spec.xAxis,
+      yAxis: spec.yAxis,
+      units: firstDefined(spec.units, spec.unit),
+      legend: spec.legend,
+      source: spec.source
+    }
+    if (barSeries.length > 0) {
+      candidates.push({
+        hint: 'bar',
+        value: { ...shared, title: `${toStringValue(spec.title) || 'Mixed chart'} — Bar chart`, series: barSeries }
+      })
+    }
+    if (lineSeries.length > 0) {
+      candidates.push({
+        hint: 'line',
+        value: { ...shared, title: `${toStringValue(spec.title) || 'Mixed chart'} — Line chart`, series: lineSeries }
+      })
+    }
+  }
+
+  return candidates
+}
+
+function standaloneValidationErrors(spec: Task1StandaloneChartSpec, path: string) {
+  const errors: string[] = []
+  if (spec.chartType === 'line' || spec.chartType === 'bar') {
+    if (!spec.xAxis) errors.push(`${path}.xAxis is required`)
+    if (!spec.series || spec.series.length === 0) errors.push(`${path}.series requires at least one series`)
+    if (spec.xAxis && spec.series) {
+      for (const series of spec.series) {
+        if (series.values.length !== spec.xAxis.categories.length) {
+          errors.push(`${path}.series "${series.name}" has ${series.values.length} values but ${spec.xAxis.categories.length} categories`)
+        }
+      }
+    }
+  }
+  if (spec.chartType === 'pie' && (!spec.pieData || spec.pieData.length === 0)) {
+    errors.push(`${path}.pieData is required`)
+  }
+  if (spec.chartType === 'table') {
+    if (!spec.tableData) {
+      errors.push(`${path}.tableData is required`)
+    } else {
+      spec.tableData.rows.forEach((row, index) => {
+        if (row.length !== spec.tableData!.columns.length) {
+          errors.push(`${path}.tableData row ${index} has ${row.length} cells but ${spec.tableData!.columns.length} columns`)
+        }
+      })
+    }
+  }
+  return errors
+}
+
+export function normalizeTask1ChartSpec(spec: unknown, expectedKind?: Task1ChartKind): Task1ChartSpec | null {
+  if (!isRecord(spec)) return null
+  const inferredKind = expectedKind || (spec.kind === 'mixed' ? 'mixed' : normalizeStandaloneKind(firstDefined(spec.kind, spec.chartType, spec.type)))
+  if (!inferredKind) return null
+
+  if (inferredKind === 'mixed') {
+    const title = toStringValue(spec.title) || 'Mixed charts'
+    const charts = mixedChartCandidates(spec)
+      .map((candidate, index) => normalizeStandaloneChartCandidate(candidate.value, candidate.hint, `${title} — Chart ${index + 1}`))
+      .filter((chart): chart is Task1StandaloneChartSpec => chart !== null)
+    const candidate = {
+      kind: 'mixed' as const,
+      title,
+      ...(toStringValue(spec.subtitle) ? { subtitle: toStringValue(spec.subtitle) } : {}),
+      charts,
+      legend: typeof spec.legend === 'boolean' ? spec.legend : true,
+      ...(toStringValue(spec.source) ? { source: toStringValue(spec.source) } : {})
+    }
+    const parsed = Task1ChartSpecSchema.safeParse(candidate)
+    return parsed.success ? parsed.data : null
+  }
+
+  const standalone = normalizeStandaloneChartCandidate(spec, inferredKind)
+  if (!standalone) return null
+  const candidate: Task1ChartSpec = {
+    kind: standalone.chartType,
+    title: standalone.title,
+    subtitle: standalone.subtitle,
+    xAxis: standalone.xAxis,
+    yAxis: standalone.yAxis,
+    series: standalone.series,
+    pieData: standalone.pieData,
+    tableData: standalone.tableData,
+    legend: standalone.legend,
+    source: standalone.source
+  }
+  const parsed = Task1ChartSpecSchema.safeParse(candidate)
+  return parsed.success ? parsed.data : null
+}
+
+export function prepareTask1ChartSpec(
+  spec: unknown,
+  expectedKind?: Task1ChartKind
+): { success: true; data: Task1ChartSpec } | { success: false; errors: string[] } {
+  const normalized = normalizeTask1ChartSpec(spec, expectedKind)
+  if (!normalized) return { success: false, errors: ['Chart data could not be normalized into the canonical schema'] }
+  const validation = validateChartSpec(normalized, expectedKind)
+  return validation.valid
+    ? { success: true, data: normalized }
+    : { success: false, errors: validation.errors }
+}
+
 export function validateChartSpec(spec: unknown, expectedKind?: Task1ChartKind): { valid: boolean; errors: string[] } {
   const errors: string[] = []
 
@@ -135,7 +487,10 @@ export function validateChartSpec(spec: unknown, expectedKind?: Task1ChartKind):
     errors.push(`Expected kind "${expectedKind}" but got "${data.kind}"`)
   }
 
-  if (data.kind === 'line' || data.kind === 'bar' || data.kind === 'mixed') {
+  if (data.kind === 'line' || data.kind === 'bar') {
+    if (!data.xAxis) {
+      errors.push('Chart requires xAxis categories')
+    }
     if (!data.series || data.series.length === 0) {
       errors.push('Chart requires at least one series')
     }
@@ -153,11 +508,15 @@ export function validateChartSpec(spec: unknown, expectedKind?: Task1ChartKind):
         }
       }
     }
-    if (data.kind === 'mixed' && data.series) {
-      const hasType = data.series.every(s => s.type)
-      if (!hasType) {
-        errors.push('Mixed chart requires each series to have a type (line or bar)')
-      }
+  }
+
+  if (data.kind === 'mixed') {
+    if (!data.charts || data.charts.length !== 2) {
+      errors.push('Mixed chart requires exactly two independently renderable chart objects')
+    } else {
+      data.charts.forEach((chart, index) => {
+        errors.push(...standaloneValidationErrors(chart, `charts.${index}`))
+      })
     }
   }
 
@@ -207,6 +566,16 @@ export function createChartSpecLog(spec: Task1ChartSpec | undefined) {
   }
   if (spec.tableData) {
     dataPointCount = spec.tableData.rows.length * spec.tableData.columns.length
+  }
+  if (spec.charts) {
+    seriesCount = spec.charts.reduce((sum, chart) => sum + (chart.series?.length || 0), 0)
+    categoryCount = spec.charts.reduce((sum, chart) => sum + (chart.xAxis?.categories.length || chart.pieData?.length || chart.tableData?.rows.length || 0), 0)
+    dataPointCount = spec.charts.reduce((sum, chart) => {
+      if (chart.series) return sum + chart.series.reduce((seriesSum, series) => seriesSum + series.values.length, 0)
+      if (chart.pieData) return sum + chart.pieData.length
+      if (chart.tableData) return sum + chart.tableData.rows.length * chart.tableData.columns.length
+      return sum
+    }, 0)
   }
 
   return { chartKind: spec.kind, categoryCount, seriesCount, dataPointCount }

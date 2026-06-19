@@ -3,8 +3,7 @@ import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireWebAdmin } from './auth'
 
 export async function requireAdminService() {
-  const { user, profile } = await requireWebAdmin()
-  const service = createSupabaseServiceRoleClient()
+  const { user, profile, service } = await requireWebAdmin()
   return { user, profile, service }
 }
 

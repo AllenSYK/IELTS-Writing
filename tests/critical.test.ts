@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { parseAiEvaluationText } from '../lib/ai'
+import { generateWritingPromptWithAi, parseAiEvaluationText } from '../lib/ai'
 import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts-questions'
 import { calculateWritingOverall, isExpiredAt, roundToHalfBand } from '../lib/ielts-scoring'
 import { isValidPublicKey } from '../lib/license/token'
@@ -12,6 +13,8 @@ import {
   getEffectiveLicenseStatus,
   UNBOUND_BINDING_REASON
 } from '../lib/web-license/admin-license-data'
+import { prepareTask1ChartSpec, validateChartSpec } from '../lib/task1-chart-schema'
+import { getFallbackQuestionsByType } from '../lib/task1-fallback-questions'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -125,6 +128,245 @@ test('Question bank covers required IELTS task types', () => {
   const task2Types = new Set(task2Questions.map((question) => question.questionType))
   for (const type of ['opinion', 'discussion', 'advantages_disadvantages', 'problem_solution', 'two_part', 'positive_negative']) {
     assert.equal(task2Types.has(type as keyof typeof QuestionTypeLabels), true)
+  }
+})
+
+test('Mixed chart normalizes bar + pie aliases into two renderable chart objects', () => {
+  const prepared = prepareTask1ChartSpec({
+    kind: 'mixed',
+    title: 'Retail performance',
+    barData: {
+      title: 'Revenue by region',
+      labels: ['Europe', 'Asia', 'Americas'],
+      datasets: [{ label: 'Revenue', data: [80, 95, 110] }],
+      unit: '$ million',
+      legend: true
+    },
+    pieChart: {
+      title: 'Operating costs',
+      labels: ['Staff', 'Property', 'Other'],
+      data: [50, 30, 20],
+      units: '%',
+      legend: true
+    }
+  }, 'mixed')
+
+  assert.equal(prepared.success, true)
+  if (!prepared.success) return
+  assert.deepEqual(prepared.data.charts?.map((chart) => chart.chartType), ['bar', 'pie'])
+  assert.deepEqual(prepared.data.charts?.[0]?.xAxis?.categories, ['Europe', 'Asia', 'Americas'])
+  assert.deepEqual(prepared.data.charts?.[0]?.series?.[0]?.values, [80, 95, 110])
+  assert.equal(prepared.data.charts?.[1]?.pieData?.length, 3)
+})
+
+test('Mixed chart validates line + table as independent charts', () => {
+  const prepared = prepareTask1ChartSpec({
+    kind: 'mixed',
+    title: 'University data',
+    charts: [
+      {
+        chartType: 'line',
+        title: 'Enrolment',
+        categories: ['2020', '2022', '2024'],
+        series: [{ name: 'Students', data: [1200, 1350, 1480] }],
+        units: 'students',
+        legend: true
+      },
+      {
+        chartType: 'table',
+        title: 'International students',
+        columns: ['Faculty', 'Share'],
+        rows: [['Business', '32%'], ['Engineering', '27%']],
+        units: '%',
+        legend: false
+      }
+    ]
+  }, 'mixed')
+
+  assert.equal(prepared.success, true)
+  if (!prepared.success) return
+  assert.deepEqual(prepared.data.charts?.map((chart) => chart.chartType), ['line', 'table'])
+  assert.equal(validateChartSpec(prepared.data, 'mixed').valid, true)
+})
+
+test('Legacy bar + line mixed chart migrates to two chart objects and survives JSON round-trip', () => {
+  const prepared = prepareTask1ChartSpec({
+    kind: 'mixed',
+    title: 'Exports',
+    xAxis: { categories: ['2020', '2022', '2024'] },
+    series: [
+      { id: 'volume', name: 'Volume', type: 'bar', values: [40, 52, 61] },
+      { id: 'price', name: 'Price', type: 'line', values: [280, 340, 390] }
+    ],
+    legend: true
+  }, 'mixed')
+
+  assert.equal(prepared.success, true)
+  if (!prepared.success) return
+  const restored = prepareTask1ChartSpec(JSON.parse(JSON.stringify(prepared.data)), 'mixed')
+  assert.equal(restored.success, true)
+  if (!restored.success) return
+  assert.deepEqual(restored.data.charts?.map((chart) => chart.chartType), ['bar', 'line'])
+})
+
+test('Mixed chart rejects a single incomplete child chart', () => {
+  const prepared = prepareTask1ChartSpec({
+    kind: 'mixed',
+    title: 'Incomplete',
+    charts: [
+      {
+        chartType: 'bar',
+        title: 'Only chart',
+        labels: ['A', 'B'],
+        data: [1, 2],
+        units: '',
+        legend: true
+      }
+    ]
+  }, 'mixed')
+  assert.equal(prepared.success, false)
+})
+
+test('Built-in Mixed Chart fallbacks cover bar + pie, line + table, and bar + line', () => {
+  const combinations = new Set<string>()
+  for (const question of getFallbackQuestionsByType('mixed_charts')) {
+    const prepared = prepareTask1ChartSpec(question.chartSpec, 'mixed')
+    assert.equal(prepared.success, true, question.id)
+    if (prepared.success) {
+      combinations.add(prepared.data.charts?.map((chart) => chart.chartType).join('+') || '')
+    }
+  }
+  assert.equal(combinations.has('bar+pie'), true)
+  assert.equal(combinations.has('line+table'), true)
+  assert.equal(combinations.has('bar+line'), true)
+})
+
+function aiStreamResponse(content: string) {
+  const body = [
+    `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: 'stop' }] })}`,
+    '',
+    'data: [DONE]',
+    ''
+  ].join('\n')
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+function mixedPromptJson(chartSpec: unknown) {
+  return JSON.stringify({
+    title: 'Academic Task 1 - Mixed Chart',
+    promptLead: 'The charts below show two related sets of retail data in 2024.',
+    promptDetail: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
+    questionType: 'mixed_charts',
+    chartSpec
+  })
+}
+
+function restoreAiEnv(original: { key?: string; baseUrl?: string; model?: string }) {
+  if (original.key === undefined) delete process.env.AI_API_KEY
+  else process.env.AI_API_KEY = original.key
+  if (original.baseUrl === undefined) delete process.env.AI_BASE_URL
+  else process.env.AI_BASE_URL = original.baseUrl
+  if (original.model === undefined) delete process.env.AI_MODEL
+  else process.env.AI_MODEL = original.model
+}
+
+test('Mixed Chart generation retries once after incomplete AI data', async () => {
+  const originalFetch = globalThis.fetch
+  const originalEnv = {
+    key: process.env.AI_API_KEY,
+    baseUrl: process.env.AI_BASE_URL,
+    model: process.env.AI_MODEL
+  }
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  process.env.AI_MODEL = 'test-model'
+
+  const responses = [
+    mixedPromptJson({
+      kind: 'mixed',
+      title: 'Incomplete',
+      charts: [{ chartType: 'bar', title: 'Only chart', labels: ['A'], data: [1] }]
+    }),
+    mixedPromptJson({
+      kind: 'mixed',
+      title: 'Complete',
+      barData: {
+        title: 'Revenue',
+        labels: ['Europe', 'Asia'],
+        datasets: [{ label: 'Revenue', data: [80, 95] }],
+        units: '$ million',
+        legend: true
+      },
+      pieChart: {
+        title: 'Costs',
+        labels: ['Staff', 'Other'],
+        data: [65, 35],
+        units: '%',
+        legend: true
+      }
+    })
+  ]
+  let calls = 0
+  globalThis.fetch = (async () => aiStreamResponse(responses[calls++] || responses[responses.length - 1])) as typeof fetch
+
+  try {
+    const question = await generateWritingPromptWithAi({
+      taskType: 'task1',
+      selection: {
+        task1ChartType: 'mixed_charts',
+        task1Subtype: 'bar_pie',
+        task2EssayType: 'random',
+        task2Topic: 'random'
+      }
+    })
+    assert.equal(calls, 2)
+    assert.equal(question.generatedSource, 'ai')
+    assert.deepEqual(question.chartSpec?.charts?.map((chart) => chart.chartType), ['bar', 'pie'])
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreAiEnv(originalEnv)
+  }
+})
+
+test('Mixed Chart generation falls back after two invalid AI responses', async () => {
+  const originalFetch = globalThis.fetch
+  const originalEnv = {
+    key: process.env.AI_API_KEY,
+    baseUrl: process.env.AI_BASE_URL,
+    model: process.env.AI_MODEL
+  }
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  process.env.AI_MODEL = 'test-model'
+
+  const incomplete = mixedPromptJson({
+    kind: 'mixed',
+    title: 'Still incomplete',
+    charts: [{ chartType: 'line', title: 'Only chart', labels: ['2024'], data: [10] }]
+  })
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls += 1
+    return aiStreamResponse(incomplete)
+  }) as typeof fetch
+
+  try {
+    const question = await generateWritingPromptWithAi({
+      taskType: 'task1',
+      selection: {
+        task1ChartType: 'mixed_charts',
+        task1Subtype: 'line_table',
+        task2EssayType: 'random',
+        task2Topic: 'random'
+      }
+    })
+    assert.equal(calls, 2)
+    assert.equal(question.generatedSource, 'local-template')
+    assert.equal(prepareTask1ChartSpec(question.chartSpec, 'mixed').success, true)
+    assert.deepEqual(question.chartSpec?.charts?.map((chart) => chart.chartType), ['line', 'table'])
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreAiEnv(originalEnv)
   }
 })
 
@@ -251,6 +493,20 @@ test('Admin and ordinary login redirects remain separate', () => {
     }),
     '/dashboard'
   )
+})
+
+test('User Home navigation targets the account center without a client redirect page', async () => {
+  const [nextConfig, sidebar, commandPalette, appShell] = await Promise.all([
+    readFile(new URL('../next.config.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/interaction-system.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
+  ])
+
+  assert.match(nextConfig, /source:\s*['"]\/['"][\s\S]*?destination:\s*['"]\/dashboard['"][\s\S]*?permanent:\s*false/)
+  assert.match(sidebar, /id:\s*['"]home['"],\s*href:\s*['"]\/dashboard['"]/)
+  assert.match(commandPalette, /id:\s*['"]home['"][\s\S]*?href:\s*['"]\/dashboard['"]/)
+  assert.doesNotMatch(appShell, /写作概览/)
 })
 
 test('Admin license status distinguishes unused, partial, exhausted, and expired', () => {

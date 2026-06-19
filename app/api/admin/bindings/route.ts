@@ -31,16 +31,7 @@ export async function GET(request: Request) {
         status,
         last_used_at,
         revoked_at,
-        revoked_reason,
-        license_codes (
-          id,
-          code_value,
-          code_prefix,
-          plan,
-          status,
-          expires_at,
-          duration_days
-        )
+        revoked_reason
       `)
       .order('activated_at', { ascending: false })
       .limit(1000)
@@ -52,18 +43,34 @@ export async function GET(request: Request) {
     const { data, error } = await query
     if (error) throw error
 
-    const userIds = [...new Set((data || []).map((binding) => binding.user_id))]
-    const { data: profiles, error: profilesError } = userIds.length
-      ? await service.from('profiles').select('id, email, role').in('id', userIds)
-      : { data: [], error: null }
-    if (profilesError) throw profilesError
-    const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]))
+    const userIds = new Set((data || []).map((binding) => binding.user_id))
+    const licenseIds = new Set((data || []).map((binding) => binding.license_id))
+    if (userId) userIds.add(userId)
+    if (licenseId) licenseIds.add(licenseId)
+
+    const [profilesResult, licensesResult] = await Promise.all([
+      userIds.size
+        ? service.from('profiles').select('id, email, role').in('id', [...userIds])
+        : Promise.resolve({ data: [], error: null }),
+      licenseIds.size
+        ? service
+            .from('license_codes')
+            .select('id, code_value, code_prefix, plan, status, expires_at, duration_days')
+            .in('id', [...licenseIds])
+        : Promise.resolve({ data: [], error: null })
+    ])
+
+    if (profilesResult.error) throw profilesResult.error
+    if (licensesResult.error) throw licensesResult.error
+
+    const profileMap = new Map((profilesResult.data || []).map((profile) => [profile.id, profile]))
+    const licenseMap = new Map((licensesResult.data || []).map((license) => [license.id, license]))
 
     const normalized = (data || []).map((binding) => {
-      const license = Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes
+      const license = licenseMap.get(binding.license_id)
       return {
         ...binding,
-        license_codes: license,
+        license_codes: license || null,
         binding_status: getEffectiveBindingStatus({
           ...binding,
           license_status: license?.status,
@@ -89,26 +96,13 @@ export async function GET(request: Request) {
 
     let licenseLabel = ''
     if (licenseId) {
-      const match = normalized[0]?.license_codes
-      if (match) {
-        licenseLabel = match.code_value || `${match.code_prefix}-••••-••••`
-      } else {
-        const { data: license } = await service
-          .from('license_codes')
-          .select('code_value, code_prefix')
-          .eq('id', licenseId)
-          .maybeSingle()
-        licenseLabel = license?.code_value || (license?.code_prefix ? `${license.code_prefix}-••••-••••` : licenseId)
-      }
+      const license = licenseMap.get(licenseId)
+      licenseLabel = license?.code_value || (license?.code_prefix ? `${license.code_prefix}-••••-••••` : licenseId)
     }
 
     let userLabel = ''
     if (userId) {
       userLabel = profileMap.get(userId)?.email || userId
-      if (!profileMap.has(userId)) {
-        const { data: profile } = await service.from('profiles').select('email').eq('id', userId).maybeSingle()
-        userLabel = profile?.email || userId
-      }
     }
 
     return json({

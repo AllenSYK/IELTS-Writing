@@ -9,48 +9,29 @@ import {
 export async function GET() {
   try {
     const { service } = await requireAdminService()
-    const [
-      licensesResult,
-      profilesResult,
-      bindingsResult,
-      recentLicensesResult,
-      recentBindingsResult,
-      recentUsersResult
-    ] = await Promise.all([
-      service.from('license_codes').select('id, status, activation_count, max_activations, expires_at'),
-      service.from('profiles').select('id, email, role, license_status, created_at'),
-      service.from('license_activations').select('id, license_id, user_id, status, expires_at, revoked_reason, license_codes(status, expires_at)'),
+    const [licensesResult, profilesResult, bindingsResult] = await Promise.all([
       service
         .from('license_codes')
-        .select('id, code_prefix, plan, status, activation_count, max_activations, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5),
-      service
-        .from('license_activations')
-        .select('id, user_id, email, status, expires_at, revoked_reason, activated_at, license_codes(id, code_prefix, plan)')
-        .order('activated_at', { ascending: false })
-        .limit(5),
+        .select('id, code_prefix, plan, status, activation_count, max_activations, expires_at, created_at')
+        .order('created_at', { ascending: false }),
       service
         .from('profiles')
         .select('id, email, role, license_status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5)
+        .order('created_at', { ascending: false }),
+      service
+        .from('license_activations')
+        .select('id, license_id, user_id, email, status, expires_at, revoked_reason, activated_at')
+        .order('activated_at', { ascending: false })
     ])
 
-    for (const result of [
-      licensesResult,
-      profilesResult,
-      bindingsResult,
-      recentLicensesResult,
-      recentBindingsResult,
-      recentUsersResult
-    ]) {
+    for (const result of [licensesResult, profilesResult, bindingsResult]) {
       if (result.error) throw result.error
     }
 
     const licenses = licensesResult.data || []
     const profiles = profilesResult.data || []
     const bindings = bindingsResult.data || []
+    const licenseMap = new Map(licenses.map((license) => [license.id, license]))
     const currentlyBoundUserIds = new Set(
       bindings
         .filter((binding) => binding.revoked_reason !== UNBOUND_BINDING_REASON)
@@ -67,7 +48,7 @@ export async function GET() {
       activation_count: usageByLicense.get(license.id) || 0
     }))
     const bindingStatuses = bindings.map((binding) => {
-      const license = Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes
+      const license = licenseMap.get(binding.license_id)
       return getEffectiveBindingStatus({
         ...binding,
         license_status: license?.status,
@@ -85,7 +66,7 @@ export async function GET() {
         activeBindings: bindingStatuses.filter((status) => ['active', 'expiring'].includes(status)).length,
         unboundUsers: profiles.filter((profile) => profile.role !== 'admin' && !currentlyBoundUserIds.has(profile.id)).length
       },
-      recentLicenses: (recentLicensesResult.data || []).map((license) => {
+      recentLicenses: licenses.slice(0, 5).map((license) => {
         const activationCount = usageByLicense.get(license.id) || 0
         return {
           ...license,
@@ -93,11 +74,17 @@ export async function GET() {
           status: getEffectiveLicenseStatus({ ...license, activation_count: activationCount })
         }
       }),
-      recentBindings: (recentBindingsResult.data || []).map((binding) => ({
-        ...binding,
-        binding_status: getEffectiveBindingStatus(binding)
-      })),
-      recentUsers: recentUsersResult.data || []
+      recentBindings: bindings.slice(0, 5).map((binding) => {
+        const license = licenseMap.get(binding.license_id)
+        return {
+          ...binding,
+          license_codes: license
+            ? { id: license.id, code_prefix: license.code_prefix, plan: license.plan }
+            : null,
+          binding_status: getEffectiveBindingStatus(binding)
+        }
+      }),
+      recentUsers: profiles.slice(0, 5)
     })
   } catch (error) {
     return adminApiError(error, '无法加载管理总览')

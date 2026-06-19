@@ -624,7 +624,7 @@ async function generatePrompt(payload) {
           excludePromptSummaries: Array.isArray(payload.excludePromptSummaries) ? payload.excludePromptSummaries : []
         })
       },
-      60000
+      120000
     )
     if (!response.ok || data.error) {
       return {

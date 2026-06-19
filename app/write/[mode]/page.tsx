@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
-import { AsyncButton, ConfirmDialog, PageSkeleton, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
+import { AsyncButton, ConfirmDialog, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
+import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { MaterialIcon } from '@/components/stitch-ui'
 import { Task1Visual } from '@/components/task1/Task1Visual'
 import {
@@ -18,7 +19,12 @@ import {
   type Task1TrainingType,
   type Task2QuestionType
 } from '@/lib/ielts-questions'
-import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec } from '@/lib/task1-chart-schema'
+import {
+  prepareTask1ChartSpec,
+  type Task1ChartKind,
+  type Task1ProcessSpec,
+  type Task1MapSpec
+} from '@/lib/task1-chart-schema'
 import { calculateWritingOverall, formatBandNumber, parseBand, weightedCriterionScore } from '@/lib/ielts-scoring'
 import {
   countWords,
@@ -49,7 +55,7 @@ import {
   selectionFromSearchParams,
   type PromptSelection
 } from '@/lib/writing-options'
-import { getRandomFallbackQuestion } from '@/lib/task1-fallback-questions'
+import { getFallbackQuestionsByType, getRandomFallbackQuestion } from '@/lib/task1-fallback-questions'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
@@ -84,8 +90,11 @@ const evaluationStages = [
   '详细批改已完成'
 ]
 const AI_EVALUATION_TIMEOUT_MS = 260000
+const QUESTION_CACHE_TTL_MS = 5 * 60 * 1000
 
 const pendingEvaluations = new Map<string, Promise<EssayEvaluation>>()
+const pendingQuestionRequests = new Map<string, Promise<WritingQuestion>>()
+const recentQuestionCache = new Map<string, { question: WritingQuestion; cachedAt: number }>()
 
 function normalizeMode(value: string | string[] | undefined): WritingTaskType {
   const mode = Array.isArray(value) ? value[0] : value
@@ -111,6 +120,82 @@ function timerKeyFor(mode: WritingTaskType) {
   return `aerowrite-timer-${mode}`
 }
 
+function questionCacheKey(taskType: MockTaskType, selection: PromptSelection) {
+  return `aerowrite-question-cache:${taskType}:${JSON.stringify(selection)}`
+}
+
+function readCachedQuestion(taskType: MockTaskType, selection: PromptSelection) {
+  const key = questionCacheKey(taskType, selection)
+  const memoryCached = recentQuestionCache.get(key)
+  if (memoryCached && Date.now() - memoryCached.cachedAt < QUESTION_CACHE_TTL_MS) {
+    return memoryCached.question
+  }
+
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(key) || '{}') as {
+      question?: WritingQuestion
+      cachedAt?: number
+    }
+    if (stored.question && stored.cachedAt && Date.now() - stored.cachedAt < QUESTION_CACHE_TTL_MS) {
+      const question = normalizeGeneratedQuestion(stored.question)
+      recentQuestionCache.set(key, { question, cachedAt: stored.cachedAt })
+      return question
+    }
+  } catch {
+    window.sessionStorage.removeItem(key)
+  }
+
+  return null
+}
+
+function rememberQuestion(taskType: MockTaskType, selection: PromptSelection, question: WritingQuestion) {
+  const key = questionCacheKey(taskType, selection)
+  const cachedAt = Date.now()
+  recentQuestionCache.set(key, { question, cachedAt })
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify({ question, cachedAt }))
+  } catch {
+    // Memory cache still prevents duplicate loading when session storage is unavailable.
+  }
+  return question
+}
+
+function expectedChartKind(questionType: string | undefined): Task1ChartKind | undefined {
+  const map: Record<string, Task1ChartKind> = {
+    line_graph: 'line',
+    line_chart: 'line',
+    bar_chart: 'bar',
+    pie_chart: 'pie',
+    table: 'table',
+    mixed_charts: 'mixed'
+  }
+  return questionType ? map[questionType] : undefined
+}
+
+function validChartSpec(spec: unknown, questionType: string | undefined) {
+  const kind = expectedChartKind(questionType)
+  if (!kind || !spec) return undefined
+  const prepared = prepareTask1ChartSpec(spec, kind)
+  return prepared.success ? prepared.data : undefined
+}
+
+function mixedFallbackChartSpec() {
+  const fallback = getFallbackQuestionsByType('mixed_charts')[0]
+  const prepared = prepareTask1ChartSpec(fallback?.chartSpec, 'mixed')
+  return prepared.success ? prepared.data : undefined
+}
+
+function normalizeGeneratedQuestion(question: WritingQuestion): WritingQuestion {
+  if (question.taskType !== 'task1') return question
+  const kind = expectedChartKind(question.questionType)
+  if (!kind) return question
+  const prepared = prepareTask1ChartSpec(question.chartSpec, kind)
+  if (!prepared.success) {
+    throw new Error(`生成的图表数据未通过完整性校验：${prepared.errors.join('；')}`)
+  }
+  return { ...question, chartSpec: prepared.data }
+}
+
 function readDraft(draftKey: string): DraftPayload | null {
   const raw = window.localStorage.getItem(draftKey)
   if (!raw) return null
@@ -126,12 +211,13 @@ function readDraft(draftKey: string): DraftPayload | null {
 }
 
 function writeDraft(draftKey: string, essay: string, questionId?: string, question?: WritingQuestion) {
+  const chartSpec = question ? validChartSpec(question.chartSpec, question.questionType) : undefined
   const payload: DraftPayload = {
     essay,
     updatedAt: new Date().toISOString(),
     wordCount: countWords(essay),
     questionId,
-    chartSpec: question?.chartSpec as Record<string, unknown> | undefined,
+    chartSpec: chartSpec as Record<string, unknown> | undefined,
     processSpec: question?.processSpec as Record<string, unknown> | undefined,
     mapSpec: question?.mapSpec as Record<string, unknown> | undefined,
     imageUrl: question?.image,
@@ -175,6 +261,9 @@ function restoreQuestionFromRecord(source: {
     }
   }
   if (!promptDetail) promptDetail = ''
+  const expectedKind = isTask1 ? expectedChartKind(source.questionType) : undefined
+  const restoredChartSpec = validChartSpec(source.chartSpec, source.questionType)
+    || (expectedKind === 'mixed' ? mixedFallbackChartSpec() : undefined)
 
   return {
     id: source.questionId || `restored-${source.id}`,
@@ -187,7 +276,7 @@ function restoreQuestionFromRecord(source: {
     questionType: (source.questionType || (isTask1 ? 'line_chart' : 'opinion')) as Task1QuestionType | Task2QuestionType,
     trainingType: (source.trainingType as Task1TrainingType) || (isTask1 ? 'academic' : undefined),
     generatedSource: 'static-bank',
-    chartSpec: source.chartSpec as unknown as Task1ChartSpec | undefined,
+    chartSpec: restoredChartSpec,
     processSpec: source.processSpec as unknown as Task1ProcessSpec | undefined,
     mapSpec: source.mapSpec as unknown as Task1MapSpec | undefined,
     image: source.imageUrl
@@ -279,7 +368,7 @@ function offsetAnnotations(annotations: EssayAnnotation[] | undefined, offset: n
   }))
 }
 
-function combineMockEvaluation(task1: EssayEvaluation, task2: EssayEvaluation, task1Essay = '', task2Essay = ''): EssayEvaluation {
+function combineMockEvaluation(task1: EssayEvaluation, task2: EssayEvaluation, task1Essay = ''): EssayEvaluation {
   const task1Band = parseBand(task1.overallBand || task1.bandEstimate)
   const task2Band = parseBand(task2.overallBand || task2.bandEstimate)
   if (task1Band === null || task2Band === null) {
@@ -461,82 +550,87 @@ export default function WritePage() {
           const restoredTask1 = sourceRecord?.components?.task1?.essay || task1Draft?.essay || ''
           const restoredTask2 = sourceRecord?.components?.task2?.essay || task2Draft?.essay || ''
 
-          let task1Question: WritingQuestion
-          if (sourceRecord) {
-            const task1Comp = sourceRecord.components?.task1
-            task1Question = restoreQuestionFromRecord({
-              id: sourceRecord.id,
-              questionId: task1Comp?.questionId || sourceRecord.questionId?.split('+')[0],
-              taskType: 'task1',
-              title: task1Comp?.title || sourceRecord.title,
-              prompt: task1Comp?.prompt || '',
-              promptLead: task1Comp?.promptLead,
-              promptDetail: task1Comp?.promptDetail,
-              questionType: task1Comp?.questionType,
-              trainingType: task1Comp?.trainingType,
-              chartSpec: task1Comp?.chartSpec || sourceRecord.chartSpec,
-              processSpec: task1Comp?.processSpec || sourceRecord.processSpec,
-              mapSpec: task1Comp?.mapSpec || sourceRecord.mapSpec,
-              imageUrl: task1Comp?.imageUrl
-            })
-            if (!task1Question.chartSpec && !task1Question.processSpec && !task1Question.mapSpec && !task1Question.image) {
-              const bankQuestion = getQuestionById(task1Comp?.questionId || sourceRecord.questionId?.split('+')[0])
-              if (bankQuestion && (bankQuestion.chartSpec || bankQuestion.processSpec || bankQuestion.mapSpec || bankQuestion.image)) {
-                task1Question = {
-                  ...task1Question,
-                  chartSpec: bankQuestion.chartSpec,
-                  processSpec: bankQuestion.processSpec,
-                  mapSpec: bankQuestion.mapSpec,
-                  image: bankQuestion.image || task1Question.image,
-                  imageAlt: bankQuestion.imageAlt || task1Question.imageAlt
+          const task1QuestionPromise = (async () => {
+            if (sourceRecord) {
+              const task1Comp = sourceRecord.components?.task1
+              let restored = restoreQuestionFromRecord({
+                id: sourceRecord.id,
+                questionId: task1Comp?.questionId || sourceRecord.questionId?.split('+')[0],
+                taskType: 'task1',
+                title: task1Comp?.title || sourceRecord.title,
+                prompt: task1Comp?.prompt || '',
+                promptLead: task1Comp?.promptLead,
+                promptDetail: task1Comp?.promptDetail,
+                questionType: task1Comp?.questionType,
+                trainingType: task1Comp?.trainingType,
+                chartSpec: task1Comp?.chartSpec || sourceRecord.chartSpec,
+                processSpec: task1Comp?.processSpec || sourceRecord.processSpec,
+                mapSpec: task1Comp?.mapSpec || sourceRecord.mapSpec,
+                imageUrl: task1Comp?.imageUrl
+              })
+              if (!restored.chartSpec && !restored.processSpec && !restored.mapSpec && !restored.image) {
+                const bankQuestion = getQuestionById(task1Comp?.questionId || sourceRecord.questionId?.split('+')[0])
+                if (bankQuestion && (bankQuestion.chartSpec || bankQuestion.processSpec || bankQuestion.mapSpec || bankQuestion.image)) {
+                  restored = {
+                    ...restored,
+                    chartSpec: bankQuestion.chartSpec,
+                    processSpec: bankQuestion.processSpec,
+                    mapSpec: bankQuestion.mapSpec,
+                    image: bankQuestion.image || restored.image,
+                    imageAlt: bankQuestion.imageAlt || restored.imageAlt
+                  }
                 }
               }
+              return restored
             }
-          } else if (task1Draft && (task1Draft.chartSpec || task1Draft.processSpec || task1Draft.mapSpec)) {
-            task1Question = restoreQuestionFromRecord({
-              id: 'draft-mock-task1',
-              questionId: task1Draft.questionId,
-              taskType: 'task1',
-              title: task1Draft.title || '',
-              prompt: '',
-              promptLead: task1Draft.promptLead,
-              promptDetail: task1Draft.promptDetail,
-              questionType: task1Draft.questionType,
-              trainingType: task1Draft.trainingType,
-              chartSpec: task1Draft.chartSpec,
-              processSpec: task1Draft.processSpec,
-              mapSpec: task1Draft.mapSpec,
-              imageUrl: task1Draft.imageUrl
-            })
-          } else {
-            task1Question =
-              getQuestionById(task1Draft?.questionId) ||
-              (restoredTask1 ? fallback.task1 : await generateQuestionFor('task1', selection))
-          }
+            if (task1Draft && (task1Draft.chartSpec || task1Draft.processSpec || task1Draft.mapSpec)) {
+              return restoreQuestionFromRecord({
+                id: 'draft-mock-task1',
+                questionId: task1Draft.questionId,
+                taskType: 'task1',
+                title: task1Draft.title || '',
+                prompt: '',
+                promptLead: task1Draft.promptLead,
+                promptDetail: task1Draft.promptDetail,
+                questionType: task1Draft.questionType,
+                trainingType: task1Draft.trainingType,
+                chartSpec: task1Draft.chartSpec,
+                processSpec: task1Draft.processSpec,
+                mapSpec: task1Draft.mapSpec,
+                imageUrl: task1Draft.imageUrl
+              })
+            }
+            return getQuestionById(task1Draft?.questionId)
+              || (restoredTask1 ? fallback.task1 : generateQuestionFor('task1', selection))
+          })()
 
-          let task2Question: WritingQuestion
-          if (sourceRecord) {
-            const task2Comp = sourceRecord.components?.task2
-            task2Question = restoreQuestionFromRecord({
-              id: sourceRecord.id,
-              questionId: task2Comp?.questionId || sourceRecord.questionId?.split('+')[1],
-              taskType: 'task2',
-              title: task2Comp?.title || sourceRecord.title,
-              prompt: task2Comp?.prompt || '',
-              promptLead: task2Comp?.promptLead,
-              promptDetail: task2Comp?.promptDetail,
-              questionType: task2Comp?.questionType,
-              trainingType: task2Comp?.trainingType,
-              chartSpec: task2Comp?.chartSpec,
-              processSpec: task2Comp?.processSpec,
-              mapSpec: task2Comp?.mapSpec,
-              imageUrl: task2Comp?.imageUrl
-            })
-          } else {
-            task2Question =
-              getQuestionById(task2Draft?.questionId) ||
-              (restoredTask2 ? fallback.task2 : await generateQuestionFor('task2', selection))
-          }
+          const task2QuestionPromise = (async () => {
+            if (sourceRecord) {
+              const task2Comp = sourceRecord.components?.task2
+              return restoreQuestionFromRecord({
+                id: sourceRecord.id,
+                questionId: task2Comp?.questionId || sourceRecord.questionId?.split('+')[1],
+                taskType: 'task2',
+                title: task2Comp?.title || sourceRecord.title,
+                prompt: task2Comp?.prompt || '',
+                promptLead: task2Comp?.promptLead,
+                promptDetail: task2Comp?.promptDetail,
+                questionType: task2Comp?.questionType,
+                trainingType: task2Comp?.trainingType,
+                chartSpec: task2Comp?.chartSpec,
+                processSpec: task2Comp?.processSpec,
+                mapSpec: task2Comp?.mapSpec,
+                imageUrl: task2Comp?.imageUrl
+              })
+            }
+            return getQuestionById(task2Draft?.questionId)
+              || (restoredTask2 ? fallback.task2 : generateQuestionFor('task2', selection))
+          })()
+
+          const [task1Question, task2Question] = await Promise.all([
+            task1QuestionPromise,
+            task2QuestionPromise
+          ])
 
           if (cancelled) return
           setMockQuestions({ task1: task1Question, task2: task2Question })
@@ -753,25 +847,39 @@ export default function WritePage() {
   }
 
   async function requestGeneratedQuestion(payload: GeneratePromptPayload) {
-    if (window.desktopAi?.generatePrompt) {
-      const result = await timeoutPromise(window.desktopAi.generatePrompt(payload), 65000, 'AI 题目生成超时，已改用本地题库。')
-      if (result.ok && result.question) return result.question
-      throw new Error(result.message || result.error || 'AI 题目生成失败。')
-    }
+    const requestKey = JSON.stringify(payload)
+    const existing = pendingQuestionRequests.get(requestKey)
+    if (existing) return existing
 
-    const response = await fetch('/api/ai/generate-prompt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const request = (async () => {
+      if (window.desktopAi?.generatePrompt) {
+        const result = await timeoutPromise(window.desktopAi.generatePrompt(payload), 130000, 'AI 题目生成超时，已改用本地题库。')
+        if (result.ok && result.question) return normalizeGeneratedQuestion(result.question)
+        throw new Error(result.message || result.error || 'AI 题目生成失败。')
+      }
+
+      const response = await fetch('/api/ai/generate-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      const data = (await response.json().catch(() => ({}))) as { question?: WritingQuestion; error?: string; message?: string }
+      if (!response.ok || !data.question) {
+        throw new Error(data.message || data.error || 'AI 题目生成失败。')
+      }
+      return normalizeGeneratedQuestion(data.question)
+    })().finally(() => {
+      pendingQuestionRequests.delete(requestKey)
     })
-    const data = (await response.json().catch(() => ({}))) as { question?: WritingQuestion; error?: string; message?: string }
-    if (!response.ok || !data.question) {
-      throw new Error(data.message || data.error || 'AI 题目生成失败。')
-    }
-    return data.question
+
+    pendingQuestionRequests.set(requestKey, request)
+    return request
   }
 
   async function generateQuestionFor(taskType: MockTaskType, selection: PromptSelection) {
+    const cachedQuestion = readCachedQuestion(taskType, selection)
+    if (cachedQuestion) return cachedQuestion
+
     const userProfileId = currentPromptProfileId()
     const duplicateContext = {
       taskType,
@@ -791,7 +899,7 @@ export default function WritePage() {
         const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
         if (!duplicate.duplicate) {
           recordGeneratedPrompt(question, selection, question.generatedSource === 'ai' ? 'ai' : 'local-template', userProfileId)
-          return question
+          return rememberQuestion(taskType, selection, question)
         }
       } catch (caught) {
         if (attempt === 0) {
@@ -819,7 +927,7 @@ export default function WritePage() {
       }
       recordGeneratedPrompt(question, selection, 'local-template', userProfileId)
       setPromptGenerationNotice('已使用本地题库生成题目。')
-      return question
+      return rememberQuestion(taskType, selection, question)
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -827,7 +935,7 @@ export default function WritePage() {
       const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
       if (!duplicate.duplicate) {
         recordGeneratedPrompt(question, selection, 'local-template', userProfileId)
-        return question
+        return rememberQuestion(taskType, selection, question)
       }
     }
 
@@ -837,7 +945,7 @@ export default function WritePage() {
       setPromptGenerationNotice('最近已经生成过高度相似题目，已显示题库中最接近当前选择的备用题。')
     }
     recordGeneratedPrompt(fallback, selection, 'static-bank', userProfileId)
-    return fallback
+    return rememberQuestion(taskType, selection, fallback)
   }
 
   async function submitCurrent() {
@@ -1046,7 +1154,7 @@ export default function WritePage() {
       const task1Share = totalMockWords > 0 ? mockWordCounts.task1 / totalMockWords : 0.33
       const task1Duration = Math.round(elapsedSeconds * task1Share)
       const task2Duration = Math.max(0, elapsedSeconds - task1Duration)
-      const evaluation = combineMockEvaluation(task1Evaluation, task2Evaluation, mockEssays.task1, mockEssays.task2)
+      const evaluation = combineMockEvaluation(task1Evaluation, task2Evaluation, mockEssays.task1)
       const originalEssay = `Task 1\n${mockEssays.task1}\n\nTask 2\n${mockEssays.task2}`
       const record: WritingRecord = {
         id: createRecordId(),

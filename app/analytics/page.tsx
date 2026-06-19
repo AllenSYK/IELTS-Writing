@@ -6,7 +6,7 @@ import { ErrorDistributionBars } from '@/components/analytics/ErrorDistributionB
 import { GoalStatusPanel } from '@/components/analytics/GoalStatusPanel'
 import { IeltsRadarChart } from '@/components/analytics/IeltsRadarChart'
 import { PracticePlan } from '@/components/analytics/PracticePlan'
-import { PageSkeleton } from '@/components/interaction-system'
+import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
 import {
   buildErrorDistribution,
@@ -16,10 +16,10 @@ import {
 import { averageTaskBand } from '@/lib/ielts-scoring'
 import {
   averageScore,
-  loadWritingRecords,
   scoreValue,
   type WritingRecord
 } from '@/lib/writing-records'
+import { UserRouteCacheKeys, useUserWritingRecords } from '@/lib/user-route-cache'
 import { useUserProfile } from '@/stores/user-profile-store'
 
 type AnalyticsRange = '7' | '30' | 'all'
@@ -47,23 +47,22 @@ function buildTrend(records: WritingRecord[]) {
 
 export default function AnalyticsPage() {
   const { profile } = useUserProfile()
-  const [records, setRecords] = useState<WritingRecord[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.level0)
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [range, setRange] = useState<AnalyticsRange>('30')
   const [now, setNow] = useState(0)
 
   useEffect(() => {
     window.queueMicrotask(() => {
       setRange((window.localStorage.getItem('aerowrite-analytics-range') as AnalyticsRange | null) || '30')
-      setRecords(loadWritingRecords())
       setNow(Date.now())
-      setLoaded(true)
+      setPreferencesLoaded(true)
     })
   }, [])
 
   useEffect(() => {
-    if (loaded) window.localStorage.setItem('aerowrite-analytics-range', range)
-  }, [loaded, range])
+    if (preferencesLoaded) window.localStorage.setItem('aerowrite-analytics-range', range)
+  }, [preferencesLoaded, range])
 
   const scopedRecords = useMemo(() => {
     if (range === 'all') return records
@@ -84,7 +83,7 @@ export default function AnalyticsPage() {
   const errorDistribution = useMemo(() => buildErrorDistribution(scopedRecords), [scopedRecords])
   const recommendations = useMemo(() => buildPracticeRecommendations(scopedRecords), [scopedRecords])
 
-  if (!loaded) return <PageSkeleton />
+  if (!preferencesLoaded || isLoading) return <PageSkeleton />
 
   const rangeOptions: Array<{ id: AnalyticsRange; label: string }> = [
     { id: '7', label: '近7天' },

@@ -1,3 +1,5 @@
+import { prepareTask1ChartSpec, type Task1ChartKind } from '@/lib/task1-chart-schema'
+
 export type WritingTaskType = 'task1' | 'task2' | 'mock'
 
 export type CriterionKey =
@@ -152,6 +154,7 @@ export const WritingRecordsStorageKey = 'aerowrite-writing-records-v1'
 export const WritingRecordsDedupeMigrationKey = 'aerowrite-writing-records-dedupe-v2'
 export const MistakeBookStorageKey = 'aerowrite-mistake-book-v1'
 export const LocalDeviceStorageKey = 'aerowrite-local-device-id-v1'
+export const WritingRecordsUpdatedEvent = 'aerowrite:writing-records-updated'
 
 export const TaskTypeLabels: Record<WritingTaskType, string> = {
   task1: 'IELTS Task 1',
@@ -204,6 +207,25 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function chartKindForQuestionType(questionType: unknown): Task1ChartKind | undefined {
+  if (typeof questionType !== 'string') return undefined
+  const map: Record<string, Task1ChartKind> = {
+    line_graph: 'line',
+    line_chart: 'line',
+    bar_chart: 'bar',
+    pie_chart: 'pie',
+    table: 'table',
+    mixed_charts: 'mixed'
+  }
+  return map[questionType]
+}
+
+function normalizeStoredChartSpec(value: unknown, questionType?: unknown): Record<string, unknown> | undefined {
+  if (!isObject(value)) return undefined
+  const prepared = prepareTask1ChartSpec(value, chartKindForQuestionType(questionType))
+  return prepared.success ? prepared.data as Record<string, unknown> : undefined
 }
 
 function isEssayAnnotationCategory(value: unknown): value is EssayAnnotationCategory {
@@ -497,6 +519,12 @@ function persistDedupeMigration(records: WritingRecord[], originalCount: number)
   window.localStorage.setItem(WritingRecordsDedupeMigrationKey, 'done')
 }
 
+function notifyWritingRecordsUpdated() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(WritingRecordsUpdatedEvent))
+  }
+}
+
 export function loadWritingRecords(): WritingRecord[] {
   if (typeof window === 'undefined') return []
   const raw = window.localStorage.getItem(WritingRecordsStorageKey)
@@ -533,6 +561,7 @@ function normalizeWritingRecord(record: WritingRecord): WritingRecord {
       ? rawRecord.annotationVersion
       : (normalizeEvaluation(record.evaluation)?.annotationVersion ?? (acceptedChanges.length > 0 ? 1 : undefined)),
     evaluation: normalizeEvaluation(record.evaluation) as EssayEvaluation,
+    chartSpec: normalizeStoredChartSpec(rawRecord.chartSpec, rawRecord.questionType),
     components: normalizeComponents(record.components)
   }
 }
@@ -556,7 +585,7 @@ function normalizeComponents(value: unknown): WritingRecord['components'] {
       questionId: typeof component.questionId === 'string' ? component.questionId : undefined,
       questionType: typeof component.questionType === 'string' ? component.questionType : undefined,
       trainingType: typeof component.trainingType === 'string' ? component.trainingType : undefined,
-      chartSpec: isObject(component.chartSpec) ? component.chartSpec as Record<string, unknown> : undefined,
+      chartSpec: normalizeStoredChartSpec(component.chartSpec, component.questionType),
       processSpec: isObject(component.processSpec) ? component.processSpec as Record<string, unknown> : undefined,
       mapSpec: isObject(component.mapSpec) ? component.mapSpec as Record<string, unknown> : undefined,
       imageUrl: typeof component.imageUrl === 'string' ? component.imageUrl : undefined,
@@ -571,20 +600,24 @@ export function saveWritingRecord(record: WritingRecord) {
   if (typeof window === 'undefined') return
   const records = loadWritingRecords().filter((item) => !sharesDedupKey(item, record))
   const evaluation = normalizeEvaluation(record.evaluation) || record.evaluation
+  const normalizedRecord = normalizeWritingRecord({
+    ...record,
+    evaluation
+  })
   window.localStorage.setItem(
     WritingRecordsStorageKey,
     JSON.stringify([
       {
-        ...record,
-        deviceId: record.deviceId || getLocalDeviceId(),
-        originalEssay: record.originalEssay || record.essay,
-        acceptedChanges: record.acceptedChanges || [],
-        annotationVersion: record.annotationVersion || evaluation.annotationVersion,
-        evaluation
+        ...normalizedRecord,
+        deviceId: normalizedRecord.deviceId || getLocalDeviceId(),
+        originalEssay: normalizedRecord.originalEssay || normalizedRecord.essay,
+        acceptedChanges: normalizedRecord.acceptedChanges || [],
+        annotationVersion: normalizedRecord.annotationVersion || evaluation.annotationVersion
       },
       ...records
     ].slice(0, 100))
   )
+  notifyWritingRecordsUpdated()
 }
 
 export function replaceWritingRecords(records: WritingRecord[]) {
@@ -597,6 +630,7 @@ export function replaceWritingRecords(records: WritingRecord[]) {
         .slice(0, 100)
     )
   )
+  notifyWritingRecordsUpdated()
 }
 
 export function deleteWritingRecord(id: string) {

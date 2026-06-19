@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { updateSupabaseSession } from '@/lib/supabase/middleware'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return updateSupabaseSession(request)
 }
 
@@ -16,6 +16,7 @@ export const config = {
     '/write/:path*',
     '/result/:path*',
     '/analytics/:path*',
+    '/level0/:path*',
     '/admin',
     '/admin/:path*'
   ]
