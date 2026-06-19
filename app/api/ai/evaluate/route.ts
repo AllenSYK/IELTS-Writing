@@ -4,12 +4,15 @@ import { apiError, json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense, type WebLicenseCheck } from '@/lib/web-license/auth'
 
+export const maxDuration = 300
+
 const EvaluateSchema = z.object({
   essay: z.string().min(50).max(12000),
   taskType: z.enum(['task1', 'task2']).default('task2'),
   prompt: z.string().max(4000).optional(),
   questionType: z.string().max(80).optional(),
-  phase: z.enum(['quick', 'detailed', 'full']).default('full')
+  phase: z.enum(['quick', 'detailed', 'full']).default('full'),
+  promptVersion: z.string().max(120).optional()
 })
 
 export async function POST(request: Request) {

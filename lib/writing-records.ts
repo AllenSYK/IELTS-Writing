@@ -1,5 +1,6 @@
 import { prepareTask1ChartSpec, type Task1ChartKind } from '@/lib/task1-chart-schema'
 import { readStorageValue, userScopedStorageKey } from '@/lib/user-storage'
+import { calculateEssayOverallBand, formatBandNumber } from '@/lib/ielts-scoring'
 
 export type WritingTaskType = 'task1' | 'task2' | 'mock'
 
@@ -13,6 +14,8 @@ export type CriterionKey =
 export type CriterionScore = {
   score: string
   feedback: string
+  evidence?: string[]
+  whyNotHigher?: string
 }
 
 export type SentenceErrorCategory = 'grammar' | 'lexical' | 'cohesion' | 'task' | 'other'
@@ -57,6 +60,7 @@ export type EssayAnnotation = {
   impactOnScore: string
   suggestion: string
   unresolved?: boolean
+  blockIndex?: number
 }
 
 export type AcceptedAnnotationChange = {
@@ -101,6 +105,7 @@ export type EssayEvaluation = {
   suggestions?: string[]
   revisedEssay?: string
   modelEssay?: string
+  annotationWarnings?: string[]
   feedback: string[]
   provider?: string
   model?: string
@@ -296,9 +301,17 @@ function normalizeEssayAnnotation(value: unknown, index: number): EssayAnnotatio
     : replacement
       ? `建议改为：${replacement}`
       : explanationZh
+  const generatedId = stableHash([
+    start,
+    end,
+    category,
+    originalText,
+    replacement || '',
+    typeof value.blockIndex === 'number' ? value.blockIndex : index
+  ].join('|'))
 
   return {
-    id: typeof value.id === 'string' && value.id.trim() ? value.id : `annotation-${index + 1}`,
+    id: typeof value.id === 'string' && value.id.trim() ? value.id : `annotation-${generatedId}`,
     start,
     end,
     originalText,
@@ -310,7 +323,30 @@ function normalizeEssayAnnotation(value: unknown, index: number): EssayAnnotatio
     explanationEn: typeof value.explanationEn === 'string' ? value.explanationEn : undefined,
     impactOnScore: typeof value.impactOnScore === 'string' ? value.impactOnScore : '该问题会影响对应评分维度的准确性或清晰度。',
     suggestion,
-    unresolved: Boolean(value.unresolved)
+    unresolved: Boolean(value.unresolved) || start < 0 || end <= start,
+    blockIndex: typeof value.blockIndex === 'number' && Number.isFinite(value.blockIndex)
+      ? Math.max(0, Math.trunc(value.blockIndex))
+      : undefined
+  }
+}
+
+function normalizeCriterionScore(value: unknown): CriterionScore | undefined {
+  if (!isObject(value)) return undefined
+  const rawScore = value.score
+  const score = typeof rawScore === 'string'
+    ? rawScore
+    : typeof rawScore === 'number' && Number.isFinite(rawScore)
+      ? String(rawScore)
+      : ''
+  if (!score || typeof value.feedback !== 'string') return undefined
+
+  return {
+    score,
+    feedback: value.feedback,
+    evidence: Array.isArray(value.evidence)
+      ? value.evidence.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    whyNotHigher: typeof value.whyNotHigher === 'string' ? value.whyNotHigher : undefined
   }
 }
 
@@ -371,7 +407,12 @@ export function normalizeEvaluation(value: unknown): EssayEvaluation | null {
     }
   }
 
-  const bandEstimate = typeof value.bandEstimate === 'string' ? value.bandEstimate : typeof value.overallBand === 'string' ? value.overallBand : ''
+  const rawBandEstimate = value.bandEstimate ?? value.overallBand ?? value.band ?? value.score
+  const bandEstimate = typeof rawBandEstimate === 'string'
+    ? rawBandEstimate
+    : typeof rawBandEstimate === 'number' && Number.isFinite(rawBandEstimate)
+      ? String(rawBandEstimate)
+      : ''
   if (!bandEstimate) return null
 
   const sentenceAnnotations = Array.isArray(value.sentenceAnnotations)
@@ -390,15 +431,38 @@ export function normalizeEvaluation(value: unknown): EssayEvaluation | null {
       ? [value.summary]
       : []
 
+  const taskAchievement = normalizeCriterionScore(criteria.taskAchievement)
+  const taskResponse = normalizeCriterionScore(criteria.taskResponse)
+  const coherenceCohesion = normalizeCriterionScore(criteria.coherenceCohesion)
+  const lexicalResource = normalizeCriterionScore(criteria.lexicalResource)
+  const grammaticalRangeAccuracy = normalizeCriterionScore(criteria.grammaticalRangeAccuracy)
+  const normalizedCriteria: Partial<Record<CriterionKey, CriterionScore>> = {
+    ...(taskAchievement ? { taskAchievement } : {}),
+    ...(taskResponse ? { taskResponse } : {}),
+    ...(coherenceCohesion ? { coherenceCohesion } : {}),
+    ...(lexicalResource ? { lexicalResource } : {}),
+    ...(grammaticalRangeAccuracy ? { grammaticalRangeAccuracy } : {})
+  }
+  const hasSingleTaskCriterion = Boolean(taskAchievement) !== Boolean(taskResponse)
+  const serverOverall = typeof value.annotationVersion === 'number' && value.annotationVersion >= 2 && hasSingleTaskCriterion
+    ? calculateEssayOverallBand([
+        taskAchievement?.score ?? taskResponse?.score,
+        coherenceCohesion?.score,
+        lexicalResource?.score,
+        grammaticalRangeAccuracy?.score
+      ])
+    : null
+  const normalizedOverall = serverOverall === null ? bandEstimate : formatBandNumber(serverOverall)
+
   return {
-    overallBand: typeof value.overallBand === 'string' ? value.overallBand : bandEstimate,
-    bandEstimate,
-    taskAchievement: isObject(criteria.taskAchievement) ? (criteria.taskAchievement as CriterionScore) : undefined,
-    taskResponse: isObject(criteria.taskResponse) ? (criteria.taskResponse as CriterionScore) : undefined,
-    coherenceCohesion: isObject(criteria.coherenceCohesion) ? (criteria.coherenceCohesion as CriterionScore) : undefined,
-    lexicalResource: isObject(criteria.lexicalResource) ? (criteria.lexicalResource as CriterionScore) : undefined,
-    grammaticalRangeAccuracy: isObject(criteria.grammaticalRangeAccuracy) ? (criteria.grammaticalRangeAccuracy as CriterionScore) : undefined,
-    criteria: criteria as Partial<Record<CriterionKey, CriterionScore>>,
+    overallBand: normalizedOverall,
+    bandEstimate: normalizedOverall,
+    taskAchievement,
+    taskResponse,
+    coherenceCohesion,
+    lexicalResource,
+    grammaticalRangeAccuracy,
+    criteria: normalizedCriteria,
     summary: typeof value.summary === 'string' ? value.summary : typeof value.overallFeedback === 'string' ? value.overallFeedback : '',
     overallFeedback: typeof value.overallFeedback === 'string' ? value.overallFeedback : typeof value.summary === 'string' ? value.summary : '',
     strengths: Array.isArray(value.strengths) ? value.strengths.filter((item): item is string => typeof item === 'string') : [],
@@ -416,6 +480,9 @@ export function normalizeEvaluation(value: unknown): EssayEvaluation | null {
     improvedEssay: typeof value.improvedEssay === 'string' ? value.improvedEssay : typeof value.revisedEssay === 'string' ? value.revisedEssay : '',
     revisedEssay: typeof value.revisedEssay === 'string' ? value.revisedEssay : typeof value.improvedEssay === 'string' ? value.improvedEssay : '',
     modelEssay: typeof value.modelEssay === 'string' ? value.modelEssay : '',
+    annotationWarnings: Array.isArray(value.annotationWarnings)
+      ? value.annotationWarnings.filter((item): item is string => typeof item === 'string')
+      : [],
     nextSteps: Array.isArray(value.nextSteps) ? value.nextSteps.filter((item): item is string => typeof item === 'string') : [],
     feedback,
     provider: typeof value.provider === 'string' ? value.provider : undefined,

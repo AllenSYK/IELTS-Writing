@@ -65,12 +65,53 @@ function isResolvedAnnotation(annotation: EssayAnnotation, essay: string) {
   )
 }
 
-function applyAcceptedChanges(originalEssay: string, changes: AcceptedAnnotationChange[]) {
-  return changes
+const AnnotationSeverityRank = { high: 3, medium: 2, low: 1 } as const
+
+function applyAcceptedChanges(
+  originalEssay: string,
+  changes: AcceptedAnnotationChange[],
+  annotations: EssayAnnotation[]
+) {
+  const annotationById = new Map(annotations.map((annotation) => [annotation.id, annotation]))
+  const selected: AcceptedAnnotationChange[] = []
+  const sorted = changes
     .filter((change) => change.start >= 0 && change.end > change.start && originalEssay.slice(change.start, change.end) === change.originalText)
     .slice()
+    .sort((a, b) => {
+      const firstSeverity = annotationById.get(a.annotationId)?.severity ?? 'medium'
+      const secondSeverity = annotationById.get(b.annotationId)?.severity ?? 'medium'
+      const severity = AnnotationSeverityRank[secondSeverity] - AnnotationSeverityRank[firstSeverity]
+      if (severity !== 0) return severity
+      return (b.end - b.start) - (a.end - a.start) || a.start - b.start
+    })
+  for (const change of sorted) {
+    if (!selected.some((current) => current.start < change.end && change.start < current.end)) {
+      selected.push(change)
+    }
+  }
+  return selected
     .sort((a, b) => b.start - a.start)
     .reduce((text, change) => `${text.slice(0, change.start)}${change.replacement}${text.slice(change.end)}`, originalEssay)
+}
+
+function annotationPriority(a: EssayAnnotation, b: EssayAnnotation) {
+  const severity = AnnotationSeverityRank[b.severity] - AnnotationSeverityRank[a.severity]
+  if (severity !== 0) return severity
+  const length = (b.end - b.start) - (a.end - a.start)
+  if (length !== 0) return length
+  return a.start - b.start
+}
+
+function annotationsOverlap(a: Pick<EssayAnnotation, 'start' | 'end'>, b: Pick<EssayAnnotation, 'start' | 'end'>) {
+  return a.start < b.end && b.start < a.end
+}
+
+function compatibleAnnotations(annotations: EssayAnnotation[]) {
+  const selected: EssayAnnotation[] = []
+  for (const annotation of annotations.slice().sort(annotationPriority)) {
+    if (!selected.some((current) => annotationsOverlap(current, annotation))) selected.push(annotation)
+  }
+  return selected
 }
 
 function countAnnotations(annotations: EssayAnnotation[]) {
@@ -189,13 +230,13 @@ export default function ResultPage() {
   const resolvedAnnotations = allAnnotations.filter((annotation) => isResolvedAnnotation(annotation, originalEssay))
   const unresolvedAnnotations = allAnnotations.filter((annotation) => !isResolvedAnnotation(annotation, originalEssay))
   const acceptedIds = new Set(acceptedChanges.map((change) => change.annotationId))
-  const activeAnnotations = resolvedAnnotations.filter((annotation) => !ignoredIds.has(annotation.id))
+  const activeAnnotations = allAnnotations.filter((annotation) => !ignoredIds.has(annotation.id))
   const annotationCounts = countAnnotations(activeAnnotations)
   const visibleAnnotations = activeAnnotations.filter((annotation) => annotationMatchesFilter(annotation, annotationFilter))
   const effectiveSelectedAnnotationId = visibleAnnotations.some((annotation) => annotation.id === selectedAnnotationId)
     ? selectedAnnotationId
     : visibleAnnotations[0]?.id ?? null
-  const modifiedEssay = applyAcceptedChanges(originalEssay, acceptedChanges)
+  const modifiedEssay = applyAcceptedChanges(originalEssay, acceptedChanges, allAnnotations)
   const criterionOrder = criterionKeysForTask(record.taskType)
   const topIssues =
     evaluation.weaknesses && evaluation.weaknesses.length > 0
@@ -212,7 +253,9 @@ export default function ResultPage() {
       key,
       label: resultCriterionLabel(key),
       score: criterion?.score ? formatBand(criterion.score) : '—',
-      feedback: criterion?.feedback
+      feedback: criterion?.feedback,
+      evidence: criterion?.evidence,
+      whyNotHigher: criterion?.whyNotHigher
     }
   })
 
@@ -255,9 +298,18 @@ export default function ResultPage() {
   }
 
   function acceptAnnotation(annotation: EssayAnnotation) {
-    if (!annotation.replacement || acceptedIds.has(annotation.id)) return
+    if (!annotation.replacement || acceptedIds.has(annotation.id) || !isResolvedAnnotation(annotation, originalEssay)) return
+    const acceptedAnnotations = acceptedChanges
+      .map((change) => allAnnotations.find((item) => item.id === change.annotationId))
+      .filter((item): item is EssayAnnotation => Boolean(item))
+    const conflicts = acceptedAnnotations.filter((item) => annotationsOverlap(item, annotation))
+    if (conflicts.length > 0 && compatibleAnnotations([...conflicts, annotation]).every((item) => item.id !== annotation.id)) {
+      pushToast({ kind: 'info', title: '未接受此修改', message: '它与已接受的更高优先级修改重叠。' })
+      return
+    }
+    const conflictingIds = new Set(conflicts.map((item) => item.id))
     const nextChanges = [
-      ...acceptedChanges.filter((change) => change.annotationId !== annotation.id),
+      ...acceptedChanges.filter((change) => change.annotationId !== annotation.id && !conflictingIds.has(change.annotationId)),
       {
         annotationId: annotation.id,
         start: annotation.start,
@@ -268,7 +320,10 @@ export default function ResultPage() {
       }
     ]
     persistAcceptedChanges(nextChanges)
-    pushToast({ kind: 'success', title: '已接受修改' })
+    pushToast({
+      kind: 'success',
+      title: conflicts.length > 0 ? '已替换冲突修改' : '已接受修改'
+    })
   }
 
   function ignoreAnnotation(annotation: EssayAnnotation) {
@@ -293,19 +348,31 @@ export default function ResultPage() {
   }
 
   function acceptAllVisibleAnnotations() {
-    const existing = new Map(acceptedChanges.map((change) => [change.annotationId, change]))
-    for (const annotation of visibleAnnotations) {
-      if (!annotation.replacement || ignoredIds.has(annotation.id)) continue
-      existing.set(annotation.id, {
+    const existingAnnotations = acceptedChanges
+      .map((change) => allAnnotations.find((annotation) => annotation.id === change.annotationId))
+      .filter((annotation): annotation is EssayAnnotation => Boolean(annotation))
+    const candidates = [
+      ...existingAnnotations,
+      ...visibleAnnotations.filter((annotation) =>
+        Boolean(annotation.replacement) &&
+        !ignoredIds.has(annotation.id) &&
+        !acceptedIds.has(annotation.id) &&
+        isResolvedAnnotation(annotation, originalEssay)
+      )
+    ]
+    const selected = compatibleAnnotations(candidates)
+    const existingChanges = new Map(acceptedChanges.map((change) => [change.annotationId, change]))
+    const nextChanges = selected.map((annotation) =>
+      existingChanges.get(annotation.id) ?? {
         annotationId: annotation.id,
         start: annotation.start,
         end: annotation.end,
         originalText: annotation.originalText,
-        replacement: annotation.replacement,
+        replacement: annotation.replacement as string,
         acceptedAt: new Date().toISOString()
-      })
-    }
-    persistAcceptedChanges(Array.from(existing.values()))
+      }
+    )
+    persistAcceptedChanges(nextChanges)
     setShowAcceptAllConfirm(false)
     pushToast({ kind: 'success', title: '已接受当前筛选下的可替换建议' })
   }
@@ -408,6 +475,21 @@ export default function ResultPage() {
                 ) : tab === 'corrected' ? (
                   <div className="annotation-workbench">
                     <AnnotationFilterBar value={annotationFilter} counts={annotationCounts} onChange={setAnnotationFilter} />
+                    <div className="annotation-stats" aria-live="polite">
+                      <strong>共发现 {allAnnotations.length} 处问题</strong>
+                      <span>已定位 {resolvedAnnotations.length} 处</span>
+                      <span>未精确定位 {unresolvedAnnotations.length} 处</span>
+                    </div>
+                    {evaluation.annotationWarnings && evaluation.annotationWarnings.length > 0 ? (
+                      <div className="annotation-warning-list" role="status">
+                        <strong>部分分析未完成</strong>
+                        <ul>
+                          {evaluation.annotationWarnings.map((warning, index) => (
+                            <li key={`annotation-warning-${index}`}>{warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     {allAnnotations.length > 0 && visibleAnnotations.length === 0 ? (
                       <div className="annotation-inline-empty">
                         <MaterialIcon name="filter_alt_off" size={18} />
@@ -441,9 +523,16 @@ export default function ResultPage() {
                         <ul>
                           {unresolvedAnnotations.map((annotation) => (
                             <li key={annotation.id}>
-                              <span className="annotation-category-chip">{EssayAnnotationLabels[annotation.category]}</span>
-                              <strong>{annotation.originalText}</strong>
-                              <p>{annotation.explanationZh}</p>
+                              <div className="unresolved-annotation-heading">
+                                <span className="annotation-category-chip">{EssayAnnotationLabels[annotation.category]}</span>
+                                <strong>{annotation.originalText}</strong>
+                              </div>
+                              <dl className="unresolved-annotation-details">
+                                <div><dt>推荐修改</dt><dd>{annotation.replacement || annotation.suggestion}</dd></div>
+                                <div><dt>中文解释</dt><dd>{annotation.explanationZh}</dd></div>
+                                <div><dt>分数影响</dt><dd>{annotation.impactOnScore}</dd></div>
+                                <div><dt>建议</dt><dd>{annotation.suggestion}</dd></div>
+                              </dl>
                             </li>
                           ))}
                         </ul>
@@ -461,6 +550,8 @@ export default function ResultPage() {
           inspector={
             <AnnotationInspector
               annotations={visibleAnnotations}
+              allAnnotations={allAnnotations}
+              originalEssay={originalEssay}
               selectedId={effectiveSelectedAnnotationId}
               emptyMessage={
                 allAnnotations.length === 0

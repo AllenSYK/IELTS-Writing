@@ -26,7 +26,7 @@ function isRenderable(annotation: EssayAnnotation, essay: string) {
   )
 }
 
-function primaryAnnotation(annotations: EssayAnnotation[]) {
+function orderedAnnotations(annotations: EssayAnnotation[]) {
   return annotations
     .slice()
     .sort((a, b) => {
@@ -35,7 +35,7 @@ function primaryAnnotation(annotations: EssayAnnotation[]) {
       const length = (b.end - b.start) - (a.end - a.start)
       if (length !== 0) return length
       return a.start - b.start
-    })[0]
+    })
 }
 
 export const AnnotatedEssay = memo(function AnnotatedEssay({
@@ -60,6 +60,9 @@ export const AnnotatedEssay = memo(function AnnotatedEssay({
     }
     const points = Array.from(boundaries).sort((a, b) => a - b)
     const nextNodes: ReactNode[] = []
+    const sortedAnnotations = renderable.slice().sort((a, b) => a.start - b.start || a.end - b.end)
+    const activeAnnotations = new Map<string, EssayAnnotation>()
+    let annotationCursor = 0
 
     for (let index = 0; index < points.length - 1; index += 1) {
       const start = points[index]
@@ -67,25 +70,39 @@ export const AnnotatedEssay = memo(function AnnotatedEssay({
       const text = essay.slice(start, end)
       if (!text) continue
 
-      const covering = renderable.filter((annotation) => annotation.start < end && annotation.end > start)
+      for (const [id, annotation] of activeAnnotations) {
+        if (annotation.end <= start) activeAnnotations.delete(id)
+      }
+      while (
+        annotationCursor < sortedAnnotations.length &&
+        sortedAnnotations[annotationCursor].start <= start
+      ) {
+        const annotation = sortedAnnotations[annotationCursor]
+        if (annotation.end > start) activeAnnotations.set(annotation.id, annotation)
+        annotationCursor += 1
+      }
+      const covering = Array.from(activeAnnotations.values())
       if (covering.length === 0) {
         nextNodes.push(text)
         continue
       }
 
-      const primary = primaryAnnotation(covering)
+      const ordered = orderedAnnotations(covering)
+      const selectedIndex = ordered.findIndex((annotation) => annotation.id === selectedId)
+      const active = selectedIndex >= 0 ? ordered[selectedIndex] : ordered[0]
       nextNodes.push(
         <button
-          key={`${start}-${end}-${primary.id}`}
+          key={`${start}-${end}-${ordered.map((annotation) => annotation.id).join('-')}`}
           type="button"
-          className={`annotation-mark annotation-${primary.category} severity-${primary.severity} ${selectedId === primary.id ? 'is-active' : ''}`}
-          aria-label={`${EssayAnnotationLabels[primary.category]}：${primary.originalText}`}
-          aria-describedby={`annotation-desc-${primary.id}`}
-          data-annotation-id={primary.id}
+          className={`annotation-mark annotation-${active.category} severity-${active.severity} ${selectedIndex >= 0 ? 'is-active' : ''}`}
+          aria-label={`${EssayAnnotationLabels[active.category]}：${active.originalText}${covering.length > 1 ? `，此处共 ${covering.length} 个问题` : ''}`}
+          aria-describedby={`annotation-desc-${active.id}`}
+          data-annotation-id={active.id}
           data-annotation-count={covering.length}
-          onClick={() => onSelect(primary.id)}
+          onClick={() => onSelect(ordered[(selectedIndex + 1 + ordered.length) % ordered.length].id)}
         >
           {text}
+          {covering.length > 1 ? <sup className="annotation-count-badge">{covering.length}</sup> : null}
         </button>
       )
     }

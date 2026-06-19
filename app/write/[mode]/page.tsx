@@ -91,7 +91,7 @@ const evaluationStages = [
   '正在补充详细批改',
   '详细批改已完成'
 ]
-const AI_EVALUATION_TIMEOUT_MS = 260000
+const AI_EVALUATION_TIMEOUT_MS = 10 * 60 * 1000
 const QUESTION_CACHE_TTL_MS = 5 * 60 * 1000
 
 const pendingEvaluations = new Map<string, Promise<EssayEvaluation>>()
@@ -403,7 +403,7 @@ function combineMockEvaluation(task1: EssayEvaluation, task2: EssayEvaluation, t
     strengths: [...(task1.strengths ?? []), ...(task2.strengths ?? [])].slice(0, 6),
     weaknesses: [...(task1.weaknesses ?? []), ...(task2.weaknesses ?? [])].slice(0, 6),
     annotations,
-    annotationVersion: annotations.length > 0 ? 1 : undefined,
+    annotationVersion: Math.max(task1.annotationVersion ?? 1, task2.annotationVersion ?? 1),
     sentenceAnnotations: [...(task1.sentenceAnnotations ?? task1.sentenceErrors ?? []), ...(task2.sentenceAnnotations ?? task2.sentenceErrors ?? [])],
     sentenceErrors: [...(task1.sentenceErrors ?? []), ...(task2.sentenceErrors ?? [])],
     suggestions: [...(task1.nextSteps ?? task1.suggestions ?? []), ...(task2.nextSteps ?? task2.suggestions ?? [])].slice(0, 6),

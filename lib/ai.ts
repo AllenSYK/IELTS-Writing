@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { formatBandNumber, parseBand } from '@/lib/ielts-scoring'
+import { calculateEssayOverallBand, formatBandNumber } from '@/lib/ielts-scoring'
 import type {
   CriterionKey,
   CriterionScore,
@@ -40,6 +40,12 @@ type EssayEvaluationInput = {
   questionType?: string
   phase?: 'quick' | 'detailed' | 'full'
   promptVersion?: string
+}
+
+export type EssayTextBlock = {
+  index: number
+  text: string
+  baseOffset: number
 }
 
 export type PromptGenerationInput = {
@@ -159,25 +165,32 @@ const ProviderDefaults: Record<string, Pick<AiConfig, 'baseUrl' | 'model'>> = {
   }
 }
 const DEFAULT_AI_TIMEOUT_MS = 240000
-const MAX_COMPLETION_TOKENS_QUICK = 2000
+const MAX_COMPLETION_TOKENS_SCORING = 3200
+const MAX_COMPLETION_TOKENS_ANNOTATION = 6500
+const MAX_COMPLETION_TOKENS_REWRITE = 5200
 const MAX_COMPLETION_TOKENS_DETAILED = 4000
+const GRADING_VERSION = 'official-rubric-v2'
+const ANNOTATION_VERSION = 2
+const MAX_ANNOTATION_BLOCK_CHARS = 1800
 
-const ScoreSchema = z.union([z.string(), z.number()]).transform((value) => String(value))
+const ScoreSchema = z.union([z.string(), z.number()]).transform((value, context) => {
+  if (typeof value === 'string' && !value.trim()) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Score cannot be empty.' })
+    return z.NEVER
+  }
+  const numeric = typeof value === 'number' ? value : Number(value.trim())
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > 9) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Score must be an integer from 0 to 9.' })
+    return z.NEVER
+  }
+  return String(numeric)
+})
 
 const CriterionSchema = z.object({
   score: ScoreSchema,
-  feedback: z.string().default('')
-})
-
-const SentenceErrorSchema = z.object({
-  original: z.string().min(1),
-  correction: z.string().min(1).optional(),
-  suggested: z.string().min(1).optional(),
-  explanation: z.string().min(1),
-  chineseExplanation: z.string().optional(),
-  errorType: z.string().optional(),
-  sentence: z.string().optional(),
-  category: z.enum(['grammar', 'lexical', 'cohesion', 'task', 'other']).default('other')
+  feedback: z.string().min(1),
+  evidence: z.array(z.string()).default([]),
+  whyNotHigher: z.string().optional()
 })
 
 const AnnotationCategorySchema = z.enum([
@@ -203,38 +216,53 @@ const ScoreCriterionSchema = z.enum([
   'Grammatical Range and Accuracy'
 ])
 
-const EssayAnnotationSchema = z.object({
+const LegacyEssayAnnotationSchema = z.object({
   id: z.string().min(1).max(80).optional(),
-  start: z.number().int(),
-  end: z.number().int(),
+  start: z.number().int().optional(),
+  end: z.number().int().optional(),
   originalText: z.string().min(1).default(''),
   replacement: z.string().min(1).optional(),
   category: AnnotationCategorySchema,
   severity: z.enum(['low', 'medium', 'high']),
   scoreCriterion: ScoreCriterionSchema,
-  explanationZh: z.string().min(1).max(80),
+  explanationZh: z.string().min(1),
   explanationEn: z.string().optional(),
-  impactOnScore: z.string().max(60).default(''),
-  suggestion: z.string().min(1).max(60)
+  impactOnScore: z.string().default(''),
+  suggestion: z.string().min(1)
 })
 
-const AiQuickEvaluationSchema = z.object({
-  overallBand: ScoreSchema,
+const AiScoringSchema = z.object({
+  overallBand: z.union([z.string(), z.number()]).optional(),
   taskAchievement: CriterionSchema.optional(),
   taskResponse: CriterionSchema.optional(),
   coherenceCohesion: CriterionSchema,
   lexicalResource: CriterionSchema,
   grammaticalRangeAccuracy: CriterionSchema,
-  summary: z.string().max(120),
+  summary: z.string().min(1),
   strengths: z.array(z.string()).max(3),
   weaknesses: z.array(z.string()).max(3),
-  annotations: z.array(EssayAnnotationSchema).max(6).default([])
+  annotations: z.array(LegacyEssayAnnotationSchema).default([])
 })
 
-const AiDetailedEvaluationSchema = z.object({
-  annotations: z.array(EssayAnnotationSchema).max(12).default([]),
-  sentenceAnnotations: z.array(SentenceErrorSchema).default([]),
-  correctedEssay: z.string().default(''),
+const BlockAnnotationSchema = z.object({
+  originalText: z.string().min(1),
+  occurrence: z.coerce.number().int().default(1).transform((value) => Math.max(1, value)),
+  replacement: z.string().min(1).optional(),
+  category: AnnotationCategorySchema,
+  severity: z.enum(['low', 'medium', 'high']),
+  scoreCriterion: ScoreCriterionSchema,
+  explanationZh: z.string().min(1),
+  explanationEn: z.string().optional(),
+  impactOnScore: z.string().default(''),
+  suggestion: z.string().min(1)
+})
+
+const BlockAnnotationResponseSchema = z.object({
+  annotations: z.array(BlockAnnotationSchema).default([]),
+  checkedWholeBlock: z.boolean()
+})
+
+const RewriteResponseSchema = z.object({
   improvedEssay: z.string().default(''),
   modelEssay: z.string().default(''),
   nextSteps: z.array(z.string()).max(4).default([])
@@ -324,62 +352,207 @@ function getAiConfig(): AiConfig {
   }
 }
 
-function buildQuickEvaluationPrompt(input: EssayEvaluationInput) {
-  const { essay, taskType, prompt, questionType } = input
-  const firstCriterion = taskType === 'task1' ? 'taskAchievement' : 'taskResponse'
+const TaskResponseRubric = `TASK RESPONSE
+Band 9: Fully and deeply addresses every part of the task. Presents a clear, fully developed position. Ideas are directly relevant, fully extended and convincingly supported. Content lapses are extremely rare.
+Band 8: Sufficiently addresses every part of the task. Presents a clear and well-developed position. Main ideas are relevant, extended and supported, with only occasional minor omissions or weaknesses.
+Band 7: Addresses the main parts of the task. Presents a clear position throughout. Main ideas are relevant and generally developed, although some support may be general, incomplete or insufficiently precise.
+Band 6: Addresses the main parts of the task, but some parts may receive more attention than others. Presents a relevant position, although conclusions may be unclear, repetitive or insufficiently developed. Main ideas are relevant but some are inadequately developed or supported.
+Band 5: Addresses the task only partially. A position is present but may be unclear or insufficiently developed. Ideas are limited, repetitive or insufficiently supported, and some material may be irrelevant.
+Band 4: Responds to the task only minimally or inappropriately. A position is difficult to identify. Main ideas are unclear, repetitive, insufficiently relevant or poorly supported.
+Band 3: Does not adequately address the task or significantly misunderstands it. No clear position is identifiable. Very few ideas are presented and they are largely irrelevant or undeveloped.
+Band 2: Barely responds to the task. No identifiable position. May present one or two undeveloped and largely irrelevant ideas.
+Band 1: Content is almost entirely unrelated to the task.
+Band 0: No answer, the response is not written in English, or the response is demonstrably fully memorised.`
 
-  const parts: string[] = [
-    `Quick IELTS ${taskType.toUpperCase()} assessment. Chinese feedback, English quotes.`,
-    `Criteria: ${firstCriterion}, coherenceCohesion, lexicalResource, grammaticalRangeAccuracy.`,
-    `Annotations: max 6, explanationZh<=60chars, suggestion<=50chars. summary<=100chars. strengths<=3, weaknesses<=3.`,
-    `Each annotation MUST have: start, end, originalText (exact text from essay), category, severity, scoreCriterion, explanationZh, impactOnScore (how it affects score), suggestion.`,
-    `start/end are UTF-16 indexes. essay.slice(start,end)==originalText.`,
-    `Category: grammar|spelling|vocabulary|collocation|coherence|cohesion|task-response|punctuation|sentence-structure|style|repetition|unclear-expression.`,
-    `Severity: low|medium|high. scoreCriterion: Task ${taskType === 'task1' ? 'Achievement' : 'Response'}|Coherence and Cohesion|Lexical Resource|Grammatical Range and Accuracy.`,
-  ]
+const TaskAchievementRubric = `TASK ACHIEVEMENT — ACADEMIC
+Band 9: Fully satisfies all task requirements. Selects and clearly presents all key features. Provides a precise overview. Comparisons are accurate, relevant and fully supported by appropriate data. Content lapses are extremely rare.
+Band 8: Covers all task requirements sufficiently. Selects and presents the key features clearly. Provides a clear overview. Important comparisons and data are accurate, with only minor omissions.
+Band 7: Covers the requirements of the task. Presents a clear overview. Identifies the main trends, differences or stages, but some details may be insufficiently developed or less precise.
+Band 6: Addresses the task requirements and provides a relevant overview, although it may be incomplete or mechanical. Key features are identified, but some may be insufficiently highlighted, inaccurately supported or mixed with unnecessary detail.
+Band 5: Generally addresses the task but may not cover all key features. The overview may be unclear, incomplete or absent. Important details may be omitted, inaccurate or presented as a list without effective comparison.
+Band 4: Attempts the task but covers few key features. There may be no clear overview. Information may be inaccurate, irrelevant, repetitive or poorly organised.
+Band 3: Fails to address the task adequately. Key features are largely missing or misunderstood. The response may consist mainly of inaccurate or irrelevant details.
+Band 2: Barely responds to the task. Very little relevant information is presented.
+Band 1: The response is almost entirely unrelated to the visual information.
+Band 0: No answer, the response is not written in English, or the response is demonstrably fully memorised.`
 
-  if (prompt) {
-    parts.push(`Prompt: ${prompt}`)
-  }
-  if (questionType) {
-    parts.push(`Type: ${questionType}`)
-  }
+const LetterTaskAchievementRubric = `TASK ACHIEVEMENT — GENERAL TRAINING LETTER
+Assess how clearly the purpose of the letter is stated, whether every bullet point is covered and sufficiently developed, whether tone and register suit the recipient and situation, whether letter conventions are appropriate, and whether important requirements are omitted or irrelevant material is included.
+Band 9 means every requirement is fully and naturally satisfied with a consistently appropriate tone. Band 8 allows only minor omissions. Band 7 covers all main requirements clearly with generally appropriate tone. Band 6 addresses the main requirements but development or tone may be uneven. Band 5 is partial, underdeveloped or inconsistently appropriate. Band 4 is minimal or frequently inappropriate. Band 3 substantially misunderstands or omits the task. Band 2 barely responds. Band 1 is almost entirely unrelated. Band 0 is no answer, not English, or demonstrably fully memorised. Do not require a chart overview for a letter.`
 
-  parts.push('Essay:', essay)
+const CoherenceRubric = `COHERENCE AND COHESION
+Band 9: Information and ideas progress effortlessly and logically. Cohesive devices are used naturally and unobtrusively. Paragraphing is skilfully managed.
+Band 8: Information and ideas are logically sequenced and clearly progressed. Cohesion is well managed. Paragraphing is sufficient and appropriate, with only occasional minor lapses.
+Band 7: Information and ideas are logically organised with clear progression. A range of cohesive devices is used flexibly, although there may be occasional overuse, underuse or misuse. Paragraphing is generally effective.
+Band 6: The response is generally coherent with an overall progression. Cohesive devices are used with some effectiveness but may be mechanical, repetitive, inaccurate or omitted. Paragraph focus or organisation may occasionally be unclear.
+Band 5: Some organisation is evident, but overall progression is not consistently clear. Relationships between ideas are understandable but not smooth. Cohesive devices may be limited, repetitive or inaccurate. Paragraphing may be inadequate.
+Band 4: Ideas are present but not arranged coherently. There is no clear progression. Relationships between ideas are often unclear. Basic cohesive devices are repetitive or inaccurate, and paragraphing is weak.
+Band 3: There is little logical organisation. Ideas are difficult to connect. Cohesive devices are very limited or frequently inaccurate.
+Band 2: There is very little control of organisation or cohesion.
+Band 1: The response does not communicate a coherent message.
+Band 0: No answer.`
 
-  return parts.join('\n')
+const LexicalRubric = `LEXICAL RESOURCE
+Band 9: Uses a very wide range of vocabulary with full flexibility, precision and naturalness. Collocation and register are controlled skilfully. Spelling and word-formation errors are extremely rare.
+Band 8: Uses a wide vocabulary resource fluently and flexibly to convey precise meanings. Less common vocabulary and collocation are handled skilfully. Occasional inaccuracies do not reduce clarity.
+Band 7: Uses sufficient vocabulary to allow flexibility and some precision. Uses some less common vocabulary and shows awareness of style and collocation. A small number of word-choice, spelling or word-formation errors remain.
+Band 6: Uses an adequate range of vocabulary for the task. Meaning is generally clear, although range or precision may be limited. Attempts at less common vocabulary may cause inaccuracies. Errors rarely prevent communication.
+Band 5: Uses a limited but minimally adequate vocabulary. Repetition and simplification are noticeable. Word-choice, spelling or word-formation errors may cause some difficulty for the reader.
+Band 4: Uses mainly basic and repetitive vocabulary, which may be inappropriate for the task. Formulaic language may be overused. Word-choice and word-formation errors sometimes distort meaning.
+Band 3: Uses a very limited vocabulary. Spelling and word-formation errors seriously restrict communication.
+Band 2: Uses an extremely limited vocabulary with very little control.
+Band 1: Uses only isolated words.
+Band 0: No answer.`
+
+const GrammarRubric = `GRAMMATICAL RANGE AND ACCURACY
+Band 9: Uses a wide range of sentence structures with full flexibility and accuracy. Grammar and punctuation are controlled extremely well. Errors are extremely rare and do not affect communication.
+Band 8: Uses a wide range of structures flexibly and accurately. Most sentences are error-free. Occasional errors are non-systematic and have almost no effect on communication.
+Band 7: Uses a variety of complex structures with reasonable flexibility and accuracy. Error-free sentences are frequent. A small number of grammatical errors remain but do not impede understanding.
+Band 6: Uses a mix of simple and complex sentence forms, but flexibility is limited. Complex structures are less accurate than simple structures. Grammar and punctuation errors occur, but they rarely prevent understanding.
+Band 5: Uses a limited and repetitive range of structures. Attempts complex sentences but these are often inaccurate. Simple sentences are usually more accurate. Errors may cause some difficulty for the reader.
+Band 4: Uses a very limited range of structures, mainly simple sentences. Subordination is limited. Errors are frequent and may distort meaning. Punctuation control is weak.
+Band 3: Attempts sentence forms, but grammar and punctuation errors predominate and frequently distort meaning.
+Band 2: Cannot use sentence forms correctly except in memorised or formulaic expressions.
+Band 1: Cannot produce functional sentence structures.
+Band 0: No answer.`
+
+const ScoringSystemPrompt = `You are a strict, evidence-based IELTS Writing examiner.
+
+Use the supplied condensed IELTS Writing Public Band Descriptors.
+
+SCORING RULES:
+1. Assess the response only against the actual task and the four IELTS criteria.
+2. Judge every criterion independently.
+3. Do not inflate a score merely because the response sounds fluent.
+4. Do not reduce a score merely because the candidate expresses an unusual opinion.
+5. Award the highest descriptor band that is consistently supported by the response.
+6. Do not award a higher band when an important limiting feature from a lower band is clearly present.
+7. Criterion scores must be integers from 0 to 9.
+8. Do not calculate or return the final overall band. The server calculates it.
+9. Feedback must be written in Simplified Chinese.
+10. Evidence quoted from the candidate response must remain in English.
+11. For each criterion, explain why the awarded band is justified.
+12. For each criterion, provide specific evidence from the response.
+13. For each criterion, explain why the next higher band was not awarded.
+14. Do not score by counting errors alone.
+15. Consider range, frequency, severity, clarity and effect on communication.
+16. Do not treat a merely optional stylistic improvement as a definite error.
+17. Return valid JSON only.
+18. Do not use markdown.
+19. Do not wrap the response in code fences.
+20. The response must start with { and end with }.`
+
+const AnnotationSystemPrompt = `You are an exhaustive IELTS Writing error annotator.
+
+Inspect the supplied text block from beginning to end.
+
+Identify every distinct, defensible language error or scoring problem, including grammar, spelling, punctuation, word choice, word formation, collocation, sentence structure, unclear expression, repetition that damages quality, cohesion, coherence, and task response or task achievement.
+
+RULES:
+1. There is no requested numerical limit on annotations.
+2. Do not stop after finding several obvious errors.
+3. Check every sentence and every relevant phrase.
+4. Annotate each distinct issue once.
+5. Do not mark a merely optional stylistic preference as an error.
+6. Copy originalText exactly from the supplied text block.
+7. Never paraphrase originalText.
+8. Give a concrete replacement whenever a local correction is possible.
+9. For paragraph-level logic or task problems, replacement may be omitted, but the suggestion must be actionable.
+10. Explanations must be concise and written in Simplified Chinese.
+11. Original quotations and replacements must remain in English.
+12. Return valid JSON only.
+13. Do not use markdown.
+14. Do not use code fences.
+15. Set checkedWholeBlock to true only after checking the complete supplied block.`
+
+export function officialTaskRubric(
+  taskType: Exclude<WritingTaskType, 'mock'>,
+  questionType?: string
+) {
+  if (taskType === 'task2') return TaskResponseRubric
+  return questionType === 'letter' ? LetterTaskAchievementRubric : TaskAchievementRubric
 }
 
-function buildDetailedEvaluationPrompt(input: EssayEvaluationInput, quickResult: AiQuickEvaluation) {
-  const { essay, taskType, prompt, questionType } = input
-  const maxWordCount = Math.ceil(essay.split(/\s+/).length * 1.15)
-  const existingIssues = quickResult.annotations.map((a) => ({ text: a.originalText, cat: a.category }))
+function buildScoringPrompt(input: EssayEvaluationInput) {
+  const criterionKey = input.taskType === 'task1' ? 'taskAchievement' : 'taskResponse'
+  return [
+    `taskType: ${input.taskType}`,
+    `questionType: ${input.questionType || 'unspecified'}`,
+    'Complete task:',
+    input.prompt || 'No separate task prompt was supplied.',
+    '',
+    'Condensed official descriptors:',
+    officialTaskRubric(input.taskType, input.questionType),
+    CoherenceRubric,
+    LexicalRubric,
+    GrammarRubric,
+    '',
+    `Score these four criteria independently: ${criterionKey}, coherenceCohesion, lexicalResource, grammaticalRangeAccuracy.`,
+    'Each criterion score must be an integer from 0 to 9. Do not return overallBand.',
+    `Return JSON with ${criterionKey}, coherenceCohesion, lexicalResource, grammaticalRangeAccuracy, summary, strengths, and weaknesses.`,
+    'Each criterion must contain score, feedback, evidence, and whyNotHigher. JSON only.',
+    `Required shape: {"${criterionKey}":{"score":6,"feedback":"中文说明","evidence":["candidate quotation"],"whyNotHigher":"中文说明"},"coherenceCohesion":{"score":6,"feedback":"中文说明","evidence":[],"whyNotHigher":"中文说明"},"lexicalResource":{"score":6,"feedback":"中文说明","evidence":[],"whyNotHigher":"中文说明"},"grammaticalRangeAccuracy":{"score":6,"feedback":"中文说明","evidence":[],"whyNotHigher":"中文说明"},"summary":"中文总体评价","strengths":[],"weaknesses":[]}`,
+    '',
+    'Candidate response:',
+    input.essay
+  ].join('\n')
+}
 
-  const parts: string[] = [
-    `Detailed IELTS ${taskType.toUpperCase()} analysis. Chinese feedback, English quotes.`,
-    `Add remaining annotations (max 12 total). Do NOT repeat: ${JSON.stringify(existingIssues)}.`,
-    `explanationZh<=60chars, suggestion<=50chars.`,
-    `Provide: sentenceAnnotations, correctedEssay, improvedEssay (max ${maxWordCount} words), modelEssay (${taskType === 'task1' ? '170-210' : '250-290'} words), nextSteps (max 4).`,
-    `sentenceAnnotations.category: grammar|lexical|cohesion|task|other.`,
-  ]
+function buildAnnotationPrompt(input: EssayEvaluationInput, block: EssayTextBlock) {
+  return [
+    `taskType: ${input.taskType}`,
+    `questionType: ${input.questionType || 'unspecified'}`,
+    'Complete task:',
+    input.prompt || 'No separate task prompt was supplied.',
+    '',
+    'Complete candidate response for context:',
+    input.essay,
+    '',
+    `Current block index: ${block.index}`,
+    'Inspect only the current block below, from beginning to end. There is no annotation limit.',
+    'originalText and occurrence must refer only to this current block. Do not return start or end offsets.',
+    'Return JSON only with annotations and checkedWholeBlock.',
+    'Required shape: {"annotations":[{"originalText":"exact block text","occurrence":1,"replacement":"corrected text","category":"grammar","severity":"medium","scoreCriterion":"Grammatical Range and Accuracy","explanationZh":"中文解释","explanationEn":"optional","impactOnScore":"中文影响","suggestion":"中文建议"}],"checkedWholeBlock":true}',
+    '',
+    'Current block:',
+    block.text
+  ].join('\n')
+}
 
-  if (prompt) {
-    parts.push(`Prompt: ${prompt}`)
-  }
-  if (questionType) {
-    parts.push(`Type: ${questionType}`)
-  }
-
-  parts.push('Essay:', essay)
-
-  return parts.join('\n')
+function buildRewritePrompt(input: EssayEvaluationInput, scoring: AiScoringResult, annotations: EssayAnnotation[]) {
+  const maxImprovedWords = Math.ceil(input.essay.split(/\s+/).filter(Boolean).length * 1.15)
+  const task1ModelLength = input.questionType === 'letter' ? 'a natural IELTS letter length' : '170-210 words'
+  const mainIssues = annotations.slice(0, 40).map((annotation) => ({
+    text: annotation.originalText,
+    category: annotation.category,
+    explanation: annotation.explanationZh
+  }))
+  return [
+    'Generate an improved essay, a model essay, and concrete next steps from the task, candidate response, official scores, and main issues.',
+    'The improvedEssay must preserve the candidate’s position and main ideas while improving organisation, vocabulary, and grammar.',
+    `Keep improvedEssay within about ${maxImprovedWords} words unless the original is clearly below the minimum length.`,
+    `The modelEssay must fully answer the task and be ${input.taskType === 'task1' ? task1ModelLength : '250-290 words'}.`,
+    'Return at most four specific nextSteps based on actual weaknesses.',
+    'Do not return annotations or correctedEssay. Return JSON only without markdown.',
+    'Required shape: {"improvedEssay":"...","modelEssay":"...","nextSteps":["..."]}',
+    '',
+    `taskType: ${input.taskType}`,
+    `questionType: ${input.questionType || 'unspecified'}`,
+    'Complete task:',
+    input.prompt || 'No separate task prompt was supplied.',
+    'Candidate response:',
+    input.essay,
+    'Official criterion scoring:',
+    JSON.stringify(scoring),
+    'Main detected issues:',
+    JSON.stringify(mainIssues)
+  ].join('\n')
 }
 
 function essayHash(essay: string): string {
-  const normalized = essay.trim().replace(/\s+/g, ' ').toLowerCase()
   let hash = 2166136261
-  for (let i = 0; i < normalized.length; i++) {
-    hash ^= normalized.charCodeAt(i)
+  for (let i = 0; i < essay.length; i++) {
+    hash ^= essay.charCodeAt(i)
     hash = Math.imul(hash, 16777619)
   }
   return (hash >>> 0).toString(36)
@@ -393,12 +566,28 @@ type CachedEvaluation = {
 const evaluationCache = new Map<string, CachedEvaluation>()
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-function getCacheKey(essay: string, taskType: string, prompt?: string, promptVersion?: string, model?: string): string {
+export function getEvaluationCacheKey({
+  essay,
+  taskType,
+  prompt,
+  promptVersion,
+  model,
+  phase = 'full',
+  gradingVersion = GRADING_VERSION
+}: {
+  essay: string
+  taskType: string
+  prompt?: string
+  promptVersion?: string
+  model?: string
+  phase?: string
+  gradingVersion?: string
+}): string {
   const eHash = essayHash(essay)
   const pHash = prompt ? essayHash(prompt) : 'no-prompt'
   const pvHash = promptVersion ? essayHash(promptVersion) : 'v1'
   const mHash = model ? essayHash(model) : 'default'
-  return `${eHash}:${taskType}:${pHash}:${pvHash}:${mHash}`
+  return `${eHash}:${taskType}:${pHash}:${pvHash}:${mHash}:${phase}:${gradingVersion}`
 }
 
 function getCachedEvaluation(cacheKey: string): EssayEvaluation | null {
@@ -895,11 +1084,6 @@ function normalizeEvaluationObject(value: unknown) {
   }
 }
 
-function annotationId(index: number, annotation: z.infer<typeof EssayAnnotationSchema>) {
-  if (annotation.id?.trim()) return annotation.id.trim()
-  return `ann-${index + 1}-${Math.abs(hashText(`${annotation.start}:${annotation.end}:${annotation.originalText}`))}`
-}
-
 function hashText(value: string) {
   let hash = 0
   for (let index = 0; index < value.length; index += 1) {
@@ -912,59 +1096,191 @@ function isExactAnnotationMatch(essay: string, start: number, end: number, origi
   return start >= 0 && end > start && end <= essay.length && essay.slice(start, end) === originalText
 }
 
-function findNearbyMatch(essay: string, originalText: string, proposedStart: number) {
-  if (!originalText || proposedStart < 0 || proposedStart > essay.length) return null
-  const radius = 240
-  const windowStart = Math.max(0, proposedStart - radius)
-  const windowEnd = Math.min(essay.length, proposedStart + originalText.length + radius)
-  const windowText = essay.slice(windowStart, windowEnd)
-  const matches: number[] = []
-  let cursor = windowText.indexOf(originalText)
-  while (cursor !== -1) {
-    matches.push(windowStart + cursor)
-    cursor = windowText.indexOf(originalText, cursor + Math.max(1, originalText.length))
+function splitLongBlock(text: string, baseOffset: number) {
+  const blocks: Array<{ text: string; baseOffset: number }> = []
+  let localOffset = 0
+
+  while (text.length - localOffset > MAX_ANNOTATION_BLOCK_CHARS) {
+    const limit = localOffset + MAX_ANNOTATION_BLOCK_CHARS
+    const searchStart = localOffset + Math.floor(MAX_ANNOTATION_BLOCK_CHARS * 0.55)
+    const window = text.slice(searchStart, limit)
+    const boundaryMatches = [...window.matchAll(/[.!?](?:["')\]]+)?\s+|\n+/g)]
+    const boundary = boundaryMatches.length > 0
+      ? searchStart + (boundaryMatches.at(-1)?.index ?? 0) + (boundaryMatches.at(-1)?.[0].length ?? 0)
+      : limit
+    const end = Math.max(localOffset + 1, boundary)
+    blocks.push({ text: text.slice(localOffset, end), baseOffset: baseOffset + localOffset })
+    localOffset = end
   }
-  if (matches.length === 0) return null
-  const start = matches.sort((a, b) => Math.abs(a - proposedStart) - Math.abs(b - proposedStart))[0]
-  return { start, end: start + originalText.length }
+
+  if (localOffset < text.length) {
+    blocks.push({ text: text.slice(localOffset), baseOffset: baseOffset + localOffset })
+  }
+  return blocks
 }
 
-function normalizeAnnotationPositions(
-  annotations: z.infer<typeof EssayAnnotationSchema>[],
+export function splitEssayIntoBlocks(essay: string): EssayTextBlock[] {
+  if (!essay) return []
+  const paragraphSegments: Array<{ text: string; baseOffset: number }> = []
+  const separator = /(?:\r?\n[ \t]*){2,}/g
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = separator.exec(essay)) !== null) {
+    const end = match.index + match[0].length
+    paragraphSegments.push({ text: essay.slice(cursor, end), baseOffset: cursor })
+    cursor = end
+  }
+  if (cursor < essay.length) paragraphSegments.push({ text: essay.slice(cursor), baseOffset: cursor })
+  if (paragraphSegments.length === 0) paragraphSegments.push({ text: essay, baseOffset: 0 })
+
+  const blocks = paragraphSegments.flatMap((segment) =>
+    segment.text.length > MAX_ANNOTATION_BLOCK_CHARS
+      ? splitLongBlock(segment.text, segment.baseOffset)
+      : [segment]
+  )
+
+  return blocks.map((block, index) => ({ ...block, index }))
+}
+
+function findOccurrence(text: string, originalText: string, occurrence: number) {
+  let localStart = -1
+  let searchFrom = 0
+  for (let index = 0; index < occurrence; index += 1) {
+    localStart = text.indexOf(originalText, searchFrom)
+    if (localStart === -1) return -1
+    searchFrom = localStart + Math.max(1, originalText.length)
+  }
+  return localStart
+}
+
+export function locateBlockAnnotation(
+  rawAnnotation: z.infer<typeof BlockAnnotationSchema>,
+  block: EssayTextBlock,
+  taskType: Exclude<WritingTaskType, 'mock'>
+): EssayAnnotation {
+  const occurrence = Math.max(1, rawAnnotation.occurrence || 1)
+  const localStart = findOccurrence(block.text, rawAnnotation.originalText, occurrence)
+  const start = localStart === -1 ? -1 : block.baseOffset + localStart
+  const end = start === -1 ? -1 : start + rawAnnotation.originalText.length
+  const unresolved = localStart === -1
+  const stableKey = [
+    unresolved ? `block-${block.index}` : `${start}:${end}`,
+    rawAnnotation.category,
+    rawAnnotation.originalText,
+    rawAnnotation.replacement || ''
+  ].join('|')
+
+  return {
+    id: `ann-${Math.abs(hashText(stableKey))}`,
+    start,
+    end,
+    originalText: rawAnnotation.originalText,
+    replacement: rawAnnotation.replacement,
+    category: rawAnnotation.category as EssayAnnotationCategory,
+    severity: rawAnnotation.severity,
+    scoreCriterion: normalizeScoreCriterionForTask(rawAnnotation.scoreCriterion, taskType),
+    explanationZh: rawAnnotation.explanationZh,
+    explanationEn: rawAnnotation.explanationEn,
+    impactOnScore: rawAnnotation.impactOnScore,
+    suggestion: rawAnnotation.suggestion,
+    unresolved,
+    blockIndex: block.index
+  }
+}
+
+function normalizeReplacement(value: string | undefined) {
+  return value?.trim().replace(/\s+/g, ' ').toLowerCase() || ''
+}
+
+const severityRank = { high: 3, medium: 2, low: 1 } as const
+
+export function dedupeAndSortAnnotations(annotations: EssayAnnotation[]) {
+  const seen = new Set<string>()
+  return annotations
+    .filter((annotation) => {
+      const key = annotation.unresolved
+        ? `unresolved:${annotation.blockIndex ?? -1}:${annotation.originalText}:${annotation.category}:${normalizeReplacement(annotation.replacement)}`
+        : `resolved:${annotation.start}:${annotation.end}:${annotation.category}:${normalizeReplacement(annotation.replacement)}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((a, b) => {
+      if (Boolean(a.unresolved) !== Boolean(b.unresolved)) return a.unresolved ? 1 : -1
+      if (!a.unresolved && !b.unresolved) {
+        if (a.start !== b.start) return a.start - b.start
+        if (a.end !== b.end) return a.end - b.end
+        const severity = severityRank[b.severity] - severityRank[a.severity]
+        if (severity !== 0) return severity
+      }
+      return (a.blockIndex ?? 0) - (b.blockIndex ?? 0)
+    })
+}
+
+function overlaps(a: Pick<EssayAnnotation, 'start' | 'end'>, b: Pick<EssayAnnotation, 'start' | 'end'>) {
+  return a.start < b.end && b.start < a.end
+}
+
+function correctionPriority(a: EssayAnnotation, b: EssayAnnotation) {
+  const severity = severityRank[b.severity] - severityRank[a.severity]
+  if (severity !== 0) return severity
+  const length = (b.end - b.start) - (a.end - a.start)
+  if (length !== 0) return length
+  return a.start - b.start
+}
+
+export function selectApplicableCorrections(essay: string, annotations: EssayAnnotation[]) {
+  const candidates = annotations
+    .filter((annotation) =>
+      Boolean(annotation.replacement) &&
+      isExactAnnotationMatch(essay, annotation.start, annotation.end, annotation.originalText)
+    )
+    .slice()
+    .sort(correctionPriority)
+  const selected: EssayAnnotation[] = []
+
+  for (const candidate of candidates) {
+    if (!selected.some((annotation) => overlaps(annotation, candidate))) selected.push(candidate)
+  }
+  return selected
+}
+
+export function buildCorrectedEssay(essay: string, annotations: EssayAnnotation[]) {
+  return selectApplicableCorrections(essay, annotations)
+    .sort((a, b) => b.start - a.start)
+    .reduce(
+      (text, annotation) => `${text.slice(0, annotation.start)}${annotation.replacement}${text.slice(annotation.end)}`,
+      essay
+    )
+}
+
+function normalizeLegacyAnnotationPositions(
+  annotations: z.infer<typeof LegacyEssayAnnotationSchema>[],
   essay: string,
   taskType: Exclude<WritingTaskType, 'mock'>
-): EssayAnnotation[] {
-  return annotations.map((annotation, index) => {
-    let start = annotation.start
-    let end = annotation.end
-    let unresolved = false
-
-    if (!isExactAnnotationMatch(essay, start, end, annotation.originalText)) {
-      const nearby = findNearbyMatch(essay, annotation.originalText, start)
-      if (nearby && isExactAnnotationMatch(essay, nearby.start, nearby.end, annotation.originalText)) {
-        start = nearby.start
-        end = nearby.end
-      } else {
-        start = -1
-        end = -1
-        unresolved = true
-      }
-    }
-
+) {
+  return annotations.map((annotation, index): EssayAnnotation => {
+    const proposedStart = annotation.start ?? -1
+    const proposedEnd = annotation.end ?? -1
+    const resolved = isExactAnnotationMatch(essay, proposedStart, proposedEnd, annotation.originalText)
+    const start = resolved ? proposedStart : -1
+    const end = resolved ? proposedEnd : -1
+    const stableKey = `${start}:${end}:${annotation.category}:${annotation.originalText}:${annotation.replacement || ''}`
     return {
-      id: annotationId(index, annotation),
+      id: annotation.id?.trim() || `ann-${Math.abs(hashText(stableKey))}-${index}`,
       start,
       end,
       originalText: annotation.originalText,
       replacement: annotation.replacement,
-      category: annotation.category as EssayAnnotationCategory,
+      category: annotation.category,
       severity: annotation.severity,
       scoreCriterion: normalizeScoreCriterionForTask(annotation.scoreCriterion, taskType),
       explanationZh: annotation.explanationZh,
       explanationEn: annotation.explanationEn,
       impactOnScore: annotation.impactOnScore,
       suggestion: annotation.suggestion,
-      unresolved
+      unresolved: !resolved
     }
   })
 }
@@ -997,82 +1313,84 @@ function sentenceErrorFromAnnotation(annotation: EssayAnnotation): SentenceError
 }
 
 function normalizeEvaluation(
-  quickResult: AiQuickEvaluation,
-  detailedResult: AiDetailedEvaluation | null,
+  scoringResult: AiScoringResult,
+  annotations: EssayAnnotation[],
+  rewriteResult: AiRewriteResult | null,
+  annotationWarnings: string[],
   provider: string,
   model: string,
   taskType: Exclude<WritingTaskType, 'mock'>,
   essay: string
 ): EssayEvaluation {
-  const firstCriterion = taskType === 'task1' ? quickResult.taskAchievement : quickResult.taskResponse
+  const firstCriterion = taskType === 'task1' ? scoringResult.taskAchievement : scoringResult.taskResponse
   const firstCriterionKey = taskType === 'task1' ? 'taskAchievement' : 'taskResponse'
   const criteria: Partial<Record<CriterionKey, CriterionScore>> = {
     [firstCriterionKey]: firstCriterion,
-    coherenceCohesion: quickResult.coherenceCohesion,
-    lexicalResource: quickResult.lexicalResource,
-    grammaticalRangeAccuracy: quickResult.grammaticalRangeAccuracy
+    coherenceCohesion: scoringResult.coherenceCohesion,
+    lexicalResource: scoringResult.lexicalResource,
+    grammaticalRangeAccuracy: scoringResult.grammaticalRangeAccuracy
   }
-
-  const allAnnotations = [
-    ...quickResult.annotations,
-    ...(detailedResult?.annotations || [])
-  ]
-  const annotations = normalizeAnnotationPositions(allAnnotations, essay, taskType)
-  const annotationSentenceErrors = annotations
-    .filter((annotation) => !annotation.unresolved)
-    .map(sentenceErrorFromAnnotation)
-
-  const sentenceErrors: SentenceError[] = detailedResult?.sentenceAnnotations && detailedResult.sentenceAnnotations.length > 0
-    ? detailedResult.sentenceAnnotations.map((annotation) => ({
-        original: annotation.original,
-        correction: annotation.correction || annotation.suggested || annotation.original,
-        explanation: annotation.explanation,
-        chineseExplanation: annotation.chineseExplanation || annotation.explanation,
-        category: annotation.category,
-        errorType: annotation.errorType || annotation.category,
-        sentence: annotation.sentence
-      }))
-    : annotationSentenceErrors
-
-  const roundedOverall = formatBandNumber(parseBand(quickResult.overallBand))
+  const overall = calculateEssayOverallBand([
+    firstCriterion?.score,
+    scoringResult.coherenceCohesion.score,
+    scoringResult.lexicalResource.score,
+    scoringResult.grammaticalRangeAccuracy.score
+  ])
+  if (overall === null) {
+    throw new AiProviderError('AI 返回的四项评分不完整，无法计算总分。', undefined, 'ai_scoring_incomplete')
+  }
+  const roundedOverall = formatBandNumber(overall)
+  const sentenceErrors = annotations.map(sentenceErrorFromAnnotation)
 
   return {
     overallBand: roundedOverall,
     bandEstimate: roundedOverall,
-    taskAchievement: quickResult.taskAchievement,
-    taskResponse: quickResult.taskResponse,
-    coherenceCohesion: quickResult.coherenceCohesion,
-    lexicalResource: quickResult.lexicalResource,
-    grammaticalRangeAccuracy: quickResult.grammaticalRangeAccuracy,
+    taskAchievement: scoringResult.taskAchievement,
+    taskResponse: scoringResult.taskResponse,
+    coherenceCohesion: scoringResult.coherenceCohesion,
+    lexicalResource: scoringResult.lexicalResource,
+    grammaticalRangeAccuracy: scoringResult.grammaticalRangeAccuracy,
     criteria,
-    summary: quickResult.summary,
-    overallFeedback: quickResult.summary,
-    strengths: quickResult.strengths,
-    weaknesses: quickResult.weaknesses,
+    summary: scoringResult.summary,
+    overallFeedback: scoringResult.summary,
+    strengths: scoringResult.strengths,
+    weaknesses: scoringResult.weaknesses,
     annotations,
-    annotationVersion: 1,
+    annotationVersion: ANNOTATION_VERSION,
     sentenceAnnotations: sentenceErrors,
     sentenceErrors,
-    suggestions: detailedResult?.nextSteps || [],
-    correctedEssay: detailedResult?.correctedEssay || '',
-    improvedEssay: detailedResult?.improvedEssay || '',
-    revisedEssay: detailedResult?.improvedEssay || '',
-    modelEssay: detailedResult?.modelEssay || '',
-    nextSteps: detailedResult?.nextSteps || [],
-    feedback: [quickResult.summary, ...quickResult.weaknesses].filter(Boolean),
+    suggestions: rewriteResult?.nextSteps || [],
+    correctedEssay: buildCorrectedEssay(essay, annotations),
+    improvedEssay: rewriteResult?.improvedEssay || '',
+    revisedEssay: rewriteResult?.improvedEssay || '',
+    modelEssay: rewriteResult?.modelEssay || '',
+    nextSteps: rewriteResult?.nextSteps || [],
+    annotationWarnings,
+    feedback: [scoringResult.summary, ...scoringResult.weaknesses].filter(Boolean),
     provider,
     model
   }
 }
 
 function normalizeQuickEvaluation(
-  quickResult: AiQuickEvaluation,
+  scoringResult: AiScoringResult,
   provider: string,
   model: string,
   taskType: Exclude<WritingTaskType, 'mock'>,
   essay: string
 ): EssayEvaluation {
-  return normalizeEvaluation(quickResult, null, provider, model, taskType, essay)
+  const legacyAnnotations = normalizeLegacyAnnotationPositions(scoringResult.annotations, essay, taskType)
+  const result = normalizeEvaluation(
+    scoringResult,
+    dedupeAndSortAnnotations(legacyAnnotations),
+    null,
+    [],
+    provider,
+    model,
+    taskType,
+    essay
+  )
+  return scoringResult.annotations.length > 0 ? result : { ...result, correctedEssay: '' }
 }
 
 async function fetchCompletion(
@@ -1207,40 +1525,88 @@ function httpProviderError(status: number) {
   return new AiProviderError(`AI 服务返回 HTTP ${status} 错误。`, status, 'ai_http_error')
 }
 
-function validateQuickEvaluation(value: unknown, taskType: Exclude<WritingTaskType, 'mock'>) {
+function validateScoringResult(value: unknown, taskType: Exclude<WritingTaskType, 'mock'>) {
   const normalized = normalizeEvaluationObject(value)
-  const parsed = AiQuickEvaluationSchema.safeParse(normalized)
+  const parsed = AiScoringSchema.safeParse(normalized)
   if (!parsed.success) {
-    console.error('[ai-quick-schema]', parsed.error.issues.map((issue) => ({
+    console.error('[ai-scoring-schema]', parsed.error.issues.map((issue) => ({
       path: issue.path.join('.'),
       code: issue.code
     })))
-    throw new AiProviderError('AI 返回的快速评分格式不正确。', undefined, 'ai_quick_schema_error')
+    throw new AiProviderError('AI 返回的正式评分格式不正确。', undefined, 'ai_scoring_schema_error')
   }
   if (taskType === 'task1' && !parsed.data.taskAchievement) {
-    throw new AiProviderError('AI 返回缺少 Task Achievement 评分。')
+    throw new AiProviderError('AI 返回缺少 Task Achievement 评分。', undefined, 'ai_scoring_incomplete')
   }
   if (taskType === 'task2' && !parsed.data.taskResponse) {
-    throw new AiProviderError('AI 返回缺少 Task Response 评分。')
+    throw new AiProviderError('AI 返回缺少 Task Response 评分。', undefined, 'ai_scoring_incomplete')
   }
   return parsed.data
 }
 
-function validateDetailedEvaluation(value: unknown) {
-  const normalized = normalizeEvaluationObject(value)
-  const parsed = AiDetailedEvaluationSchema.safeParse(normalized)
+function validateBlockAnnotations(value: unknown) {
+  const parsed = BlockAnnotationResponseSchema.safeParse(value)
   if (!parsed.success) {
-    console.error('[ai-detailed-schema]', parsed.error.issues.map((issue) => ({
+    console.error('[ai-annotation-schema]', parsed.error.issues.map((issue) => ({
       path: issue.path.join('.'),
       code: issue.code
     })))
-    throw new AiProviderError('AI 返回的详细分析格式不正确。', undefined, 'ai_detailed_schema_error')
+    throw new AiProviderError('AI 返回的文本块批注格式不正确。', undefined, 'ai_annotation_schema_error')
+  }
+  if (!parsed.data.checkedWholeBlock) {
+    throw new AiProviderError('AI 未确认完成当前文本块检查。', undefined, 'ai_annotation_incomplete')
   }
   return parsed.data
 }
 
-export type AiQuickEvaluation = z.infer<typeof AiQuickEvaluationSchema>
-export type AiDetailedEvaluation = z.infer<typeof AiDetailedEvaluationSchema>
+function validateRewriteResult(value: unknown) {
+  const parsed = RewriteResponseSchema.safeParse(value)
+  if (!parsed.success) {
+    console.error('[ai-rewrite-schema]', parsed.error.issues.map((issue) => ({
+      path: issue.path.join('.'),
+      code: issue.code
+    })))
+    throw new AiProviderError('AI 返回的提升版本格式不正确。', undefined, 'ai_rewrite_schema_error')
+  }
+  return parsed.data
+}
+
+export type AiScoringResult = z.infer<typeof AiScoringSchema>
+export type AiRewriteResult = z.infer<typeof RewriteResponseSchema>
+
+async function requestJsonStage<T>(
+  config: AiConfig,
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  maxTokens: number,
+  validate: (value: unknown) => T,
+  perfLog?: PerformanceLog
+) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const requestMessages = attempt === 0
+        ? messages
+        : [
+            ...messages,
+            {
+              role: 'user' as const,
+              content: 'The previous attempt failed or did not pass server validation. Return one corrected valid JSON object only. Do not include markdown or commentary.'
+            }
+          ]
+      const text = await fetchCompletion(config, requestMessages, maxTokens, perfLog, {
+        responseFormat: { type: 'json_object' }
+      })
+      return validate(parseJsonObject(text, perfLog))
+    } catch (error) {
+      if (attempt === 1) throw error
+      if (perfLog) {
+        perfLog.retryCount += 1
+        perfLog.retryReason = error instanceof Error ? error.message : 'invalid JSON'
+      }
+    }
+  }
+
+  throw new AiProviderError('AI 阶段请求失败。', undefined, 'ai_stage_failed')
+}
 
 export function parseAiEvaluationText(
   text: string,
@@ -1250,14 +1616,21 @@ export function parseAiEvaluationText(
   essay = ''
 ) {
   const parsed = parseJsonObject(text)
-  const quickResult = validateQuickEvaluation(parsed, taskType)
-  return normalizeQuickEvaluation(quickResult, provider, model, taskType, essay)
+  const scoringResult = validateScoringResult(parsed, taskType)
+  return normalizeQuickEvaluation(scoringResult, provider, model, taskType, essay)
 }
 
 export async function evaluateEssayWithAi(input: EssayEvaluationInput): Promise<EssayEvaluation> {
   const config = getAiConfig()
-  const cacheKey = getCacheKey(input.essay, input.taskType, input.prompt, input.promptVersion, config.model)
   const phase = input.phase || 'full'
+  const cacheKey = getEvaluationCacheKey({
+    essay: input.essay,
+    taskType: input.taskType,
+    prompt: input.prompt,
+    promptVersion: input.promptVersion,
+    model: config.model,
+    phase
+  })
 
   const cached = getCachedEvaluation(cacheKey)
   if (cached) {
@@ -1272,124 +1645,108 @@ export async function evaluateEssayWithAi(input: EssayEvaluationInput): Promise<
   logPerf(perfLog, 'start')
 
   try {
-    const quickMessages: Array<{ role: 'system' | 'user'; content: string }> = [
+    const scoringMessages: Array<{ role: 'system' | 'user'; content: string }> = [
       {
         role: 'system',
-        content: `You are a certified IELTS writing examiner. Return valid JSON only. No markdown, no code fences, no explanations. Response must start with { and end with }.
-
-Required JSON structure:
-{
-  "overallBand": "6.5",
-  "${input.taskType === 'task1' ? 'taskAchievement' : 'taskResponse'}": {"score": "6.0", "feedback": "..."},
-  "coherenceCohesion": {"score": "6.5", "feedback": "..."},
-  "lexicalResource": {"score": "6.0", "feedback": "..."},
-  "grammaticalRangeAccuracy": {"score": "6.5", "feedback": "..."},
-  "summary": "brief summary in Chinese",
-  "strengths": ["strength1", "strength2"],
-  "weaknesses": ["weakness1", "weakness2"],
-  "annotations": [...]
-}`
+        content: ScoringSystemPrompt
       },
       {
         role: 'user',
-        content: buildQuickEvaluationPrompt(input)
+        content: buildScoringPrompt(input)
       }
     ]
 
-    logPerf(perfLog, 'quick-phase-start')
-    let quickText = await fetchCompletion(config, quickMessages, MAX_COMPLETION_TOKENS_QUICK, perfLog, {
-      responseFormat: { type: 'json_object' }
-    })
+    logPerf(perfLog, 'scoring-phase-start')
+    const rawScoringResult = await requestJsonStage(
+      config,
+      scoringMessages,
+      MAX_COMPLETION_TOKENS_SCORING,
+      (value) => validateScoringResult(value, input.taskType),
+      perfLog
+    )
+    const scoringResult: AiScoringResult = { ...rawScoringResult, annotations: [] }
+    logPerf(perfLog, 'scoring-phase-complete')
 
-    let quickParsed: unknown
-    try {
-      const parseStart = Date.now()
-      quickParsed = parseJsonObject(quickText, perfLog)
-      const quickResult = validateQuickEvaluation(quickParsed, input.taskType)
-      perfLog.parseCompletedAt = Date.now()
-      perfLog.parseDurationMs = perfLog.parseCompletedAt - parseStart
-      perfLog.annotationCount = quickResult.annotations.length
-      logPerf(perfLog, 'quick-phase-complete')
-
-      if (phase === 'quick') {
-        const result = normalizeQuickEvaluation(quickResult, config.provider, config.model, input.taskType, input.essay)
-        perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
-        logPerf(perfLog, 'done', { phase: 'quick' })
-        return result
-      }
-
-      const detailedMessages: Array<{ role: 'system' | 'user'; content: string }> = [
-        {
-          role: 'system',
-          content: 'You are a certified IELTS writing examiner. Return valid JSON only. No markdown, no code fences, no explanations. Response must start with { and end with }.'
-        },
-        {
-          role: 'user',
-          content: buildDetailedEvaluationPrompt(input, quickResult)
-        }
-      ]
-
-      logPerf(perfLog, 'detailed-phase-start')
-      const detailedPerfLog = { ...perfLog, phase: 'detailed' as const }
-      const detailedText = await fetchCompletion(config, detailedMessages, MAX_COMPLETION_TOKENS_DETAILED, detailedPerfLog, {
-        responseFormat: { type: 'json_object' }
-      })
-
-      try {
-        const detailedParseStart = Date.now()
-        const detailedParsed = parseJsonObject(detailedText, detailedPerfLog)
-        const detailedResult = validateDetailedEvaluation(detailedParsed)
-        detailedPerfLog.parseCompletedAt = Date.now()
-        detailedPerfLog.parseDurationMs = (detailedPerfLog.parseCompletedAt - detailedParseStart)
-
-        const saveStart = Date.now()
-        const result = normalizeEvaluation(quickResult, detailedResult, config.provider, config.model, input.taskType, input.essay)
-        setCachedEvaluation(cacheKey, result)
-        perfLog.saveCompletedAt = Date.now()
-        perfLog.saveDurationMs = perfLog.saveCompletedAt - saveStart
-
-        perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
-        perfLog.annotationCount = result.annotations?.length || 0
-        logPerf(perfLog, 'done', { phase: 'full', cached: true })
-        return result
-      } catch (detailedError) {
-        console.warn('[ai-evaluate]', {
-          requestId: perfLog.requestId,
-          phase: 'detailed',
-          fallback: 'quick',
-          error: detailedError instanceof Error ? detailedError.message : 'unknown'
-        })
-        const result = normalizeQuickEvaluation(quickResult, config.provider, config.model, input.taskType, input.essay)
-        setCachedEvaluation(cacheKey, result)
-        perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
-        logPerf(perfLog, 'done', { phase: 'quick-fallback' })
-        return result
-      }
-    } catch (firstError) {
-      if (!(firstError instanceof AiProviderError)) throw firstError
-
-      perfLog.retryCount = 1
-      perfLog.retryReason = firstError.message
-      logPerf(perfLog, 'retry')
-
-      quickText = await fetchCompletion(config, [
-        ...quickMessages,
-        {
-          role: 'user',
-          content: 'Your previous response was invalid JSON. Return corrected valid JSON only.\n\nPrevious:\n' + quickText.slice(0, 200)
-        }
-      ], MAX_COMPLETION_TOKENS_QUICK, perfLog, {
-        responseFormat: { type: 'json_object' }
-      })
-
-      const retriedParsed = parseJsonObject(quickText, perfLog)
-      const quickResult = validateQuickEvaluation(retriedParsed, input.taskType)
-      const result = normalizeQuickEvaluation(quickResult, config.provider, config.model, input.taskType, input.essay)
+    if (phase === 'quick') {
+      const result = normalizeQuickEvaluation(scoringResult, config.provider, config.model, input.taskType, input.essay)
       setCachedEvaluation(cacheKey, result)
       perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
-      logPerf(perfLog, 'done', { phase: 'quick-retry' })
+      logPerf(perfLog, 'done', { phase: 'quick' })
       return result
     }
+
+    const blocks = splitEssayIntoBlocks(input.essay)
+    const locatedAnnotations: EssayAnnotation[] = []
+    const annotationWarnings: string[] = []
+
+    for (const block of blocks) {
+      if (!block.text.trim()) continue
+      const blockPerfLog = { ...perfLog, phase: `annotation-block-${block.index}` }
+      try {
+        const response = await requestJsonStage(
+          config,
+          [
+            { role: 'system', content: AnnotationSystemPrompt },
+            { role: 'user', content: buildAnnotationPrompt(input, block) }
+          ],
+          MAX_COMPLETION_TOKENS_ANNOTATION,
+          validateBlockAnnotations,
+          blockPerfLog
+        )
+        locatedAnnotations.push(
+          ...response.annotations.map((annotation) => locateBlockAnnotation(annotation, block, input.taskType))
+        )
+      } catch (error) {
+        const message = `第 ${block.index + 1} 个文本块检查失败：${error instanceof Error ? error.message : '未知错误'}`
+        annotationWarnings.push(message)
+        console.warn('[ai-annotation-block]', {
+          requestId: perfLog.requestId,
+          blockIndex: block.index,
+          error: error instanceof Error ? error.message : 'unknown'
+        })
+      }
+    }
+
+    const annotations = dedupeAndSortAnnotations(locatedAnnotations)
+    let rewriteResult: AiRewriteResult | null = null
+    try {
+      rewriteResult = await requestJsonStage(
+        config,
+        [
+          {
+            role: 'system',
+            content: 'You improve IELTS essays and write model answers. Return valid JSON only. Preserve the candidate’s core position in improvedEssay. Do not return correctedEssay or annotations.'
+          },
+          { role: 'user', content: buildRewritePrompt(input, scoringResult, annotations) }
+        ],
+        MAX_COMPLETION_TOKENS_REWRITE,
+        validateRewriteResult,
+        { ...perfLog, phase: 'rewrite' }
+      )
+    } catch (error) {
+      const message = `提升版与范文生成失败：${error instanceof Error ? error.message : '未知错误'}`
+      annotationWarnings.push(message)
+      console.warn('[ai-rewrite]', {
+        requestId: perfLog.requestId,
+        error: error instanceof Error ? error.message : 'unknown'
+      })
+    }
+
+    const result = normalizeEvaluation(
+      scoringResult,
+      annotations,
+      rewriteResult,
+      annotationWarnings,
+      config.provider,
+      config.model,
+      input.taskType,
+      input.essay
+    )
+    setCachedEvaluation(cacheKey, result)
+    perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
+    perfLog.annotationCount = annotations.length
+    logPerf(perfLog, 'done', { phase })
+    return result
   } catch (error) {
     perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
     logPerf(perfLog, 'error', { error: error instanceof Error ? error.message : 'unknown' })
@@ -1397,11 +1754,10 @@ Required JSON structure:
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeAiPromptResponse(raw: any, taskType: string): any {
-  if (!raw || typeof raw !== 'object' || taskType !== 'task1') return raw
+function normalizeAiPromptResponse(raw: unknown, taskType: string): unknown {
+  if (!isObject(raw) || taskType !== 'task1') return raw
 
-  const result = { ...raw }
+  const result: Record<string, unknown> = { ...raw }
   const kindMap: Record<string, Task1ChartKind> = {
     line_graph: 'line',
     line_chart: 'line',
@@ -1410,9 +1766,9 @@ function normalizeAiPromptResponse(raw: any, taskType: string): any {
     table: 'table',
     mixed_charts: 'mixed'
   }
-  const expectedKind = kindMap[result.questionType]
+  const expectedKind = typeof result.questionType === 'string' ? kindMap[result.questionType] : undefined
 
-  if (!result.chartSpec && result.chartData && typeof result.chartData === 'object') {
+  if (!result.chartSpec && isObject(result.chartData)) {
     result.chartSpec = result.chartData
     delete result.chartData
   }
@@ -1423,14 +1779,18 @@ function normalizeAiPromptResponse(raw: any, taskType: string): any {
     if (hasMixedData) {
       result.chartSpec = {
         kind: 'mixed',
-        title: result.chartTitle || result.title || 'Mixed charts',
+        title: typeof result.chartTitle === 'string'
+          ? result.chartTitle
+          : typeof result.title === 'string'
+            ? result.title
+            : 'Mixed charts',
         ...Object.fromEntries(mixedAliases.filter((key) => result[key] !== undefined).map((key) => [key, result[key]]))
       }
     }
   }
 
-  if (result.chartSpec && typeof result.chartSpec === 'object') {
-    const spec = { ...result.chartSpec }
+  if (isObject(result.chartSpec)) {
+    const spec: Record<string, unknown> = { ...result.chartSpec }
     if (!spec.kind && expectedKind) spec.kind = expectedKind
     const normalized = normalizeTask1ChartSpec(spec, expectedKind)
     result.chartSpec = normalized || spec

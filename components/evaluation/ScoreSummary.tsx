@@ -14,6 +14,8 @@ type CriterionSummary = {
   label: string
   score: string
   feedback?: string
+  evidence?: string[]
+  whyNotHigher?: string
 }
 
 export function ScoreSummary({
@@ -65,6 +67,21 @@ export function ScoreSummary({
               <div>
                 <span className="ui-label">{criterion.label}</span>
                 {criterion.feedback ? <p>{criterion.feedback}</p> : null}
+                {criterion.evidence && criterion.evidence.length > 0 ? (
+                  <details className="criterion-evidence">
+                    <summary>查看原文证据（{criterion.evidence.length}）</summary>
+                    <ul>
+                      {criterion.evidence.map((evidence, index) => (
+                        <li key={`${criterion.key}-evidence-${index}`}>{evidence}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+                {criterion.whyNotHigher ? (
+                  <p className="criterion-why-not-higher">
+                    <strong>为什么未达到更高分：</strong>{criterion.whyNotHigher}
+                  </p>
+                ) : null}
               </div>
               <strong>{criterion.score}</strong>
             </article>

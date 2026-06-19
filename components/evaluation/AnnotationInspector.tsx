@@ -9,6 +9,8 @@ import {
 
 type AnnotationInspectorProps = {
   annotations: EssayAnnotation[]
+  allAnnotations: EssayAnnotation[]
+  originalEssay: string
   selectedId?: string | null
   emptyMessage: string
   acceptedIds: Set<string>
@@ -30,6 +32,8 @@ const SeverityLabels = {
 
 export function AnnotationInspector({
   annotations,
+  allAnnotations,
+  originalEssay,
   selectedId,
   emptyMessage,
   acceptedIds,
@@ -47,6 +51,14 @@ export function AnnotationInspector({
   const accepted = annotation ? acceptedIds.has(annotation.id) : false
   const ignored = annotation ? ignoredIds.has(annotation.id) : false
   const canAccept = Boolean(annotation?.replacement && !accepted && !ignored)
+  const sameLocationCount = annotation && annotation.start >= 0
+    ? allAnnotations.filter((item) => item.start === annotation.start && item.end === annotation.end).length
+    : 0
+  const unresolved = Boolean(annotation?.unresolved || (annotation && (
+    annotation.start < 0 ||
+    annotation.end <= annotation.start ||
+    originalEssay.slice(annotation.start, annotation.end) !== annotation.originalText
+  )))
 
   function move(delta: number) {
     if (annotations.length === 0) return
@@ -81,6 +93,12 @@ export function AnnotationInspector({
           <span>第 {currentIndex + 1} / {annotations.length} 个问题</span>
           {accepted ? <strong>已接受</strong> : ignored ? <strong>已忽略</strong> : null}
         </div>
+        {sameLocationCount > 1 ? (
+          <p className="annotation-overlap-note">此处共有 {sameLocationCount} 个问题，可使用上一个/下一个逐项查看。</p>
+        ) : null}
+        {unresolved ? (
+          <p className="annotation-unresolved-note">此问题未能在原文中精确定位，因此不能自动替换。</p>
+        ) : null}
 
         <dl className="annotation-detail-list">
           <div>
@@ -122,7 +140,7 @@ export function AnnotationInspector({
       </div>
 
       <div className="annotation-action-grid">
-        <button className="ui-primary-button" type="button" onClick={() => onAccept(annotation)} disabled={!canAccept} title={!annotation.replacement ? '此建议没有可直接替换的文本' : accepted ? '此建议已接受' : ignored ? '此建议已忽略' : undefined}>
+        <button className="ui-primary-button" type="button" onClick={() => onAccept(annotation)} disabled={!canAccept || unresolved} title={unresolved ? '此建议未精确定位，不能自动替换' : !annotation.replacement ? '此建议没有可直接替换的文本' : accepted ? '此建议已接受' : ignored ? '此建议已忽略' : undefined}>
           <MaterialIcon name={accepted ? 'check_circle' : 'done'} size={17} />
           接受修改
         </button>
@@ -140,7 +158,18 @@ export function AnnotationInspector({
         </button>
       </div>
 
-      <button className="annotation-accept-all" type="button" onClick={onAcceptAllRequest} disabled={annotations.every((item) => acceptedIds.has(item.id) || ignoredIds.has(item.id) || !item.replacement)}>
+      <button
+        className="annotation-accept-all"
+        type="button"
+        onClick={onAcceptAllRequest}
+        disabled={annotations.every((item) =>
+          acceptedIds.has(item.id) ||
+          ignoredIds.has(item.id) ||
+          !item.replacement ||
+          item.unresolved ||
+          item.start < 0
+        )}
+      >
         <MaterialIcon name="done_all" size={17} />
         接受全部
       </button>

@@ -11,8 +11,22 @@ export function parseBand(score: string | number | null | undefined) {
 
 export function roundToHalfBand(value: number) {
   if (!Number.isFinite(value)) return 0
+
   const clamped = Math.min(9, Math.max(0, value))
-  return Math.round(clamped * 2) / 2
+  const whole = Math.floor(clamped)
+  const fraction = clamped - whole
+
+  if (fraction < 0.25) return whole
+  if (fraction < 0.75) return whole + 0.5
+  return Math.min(9, whole + 1)
+}
+
+export function calculateEssayOverallBand(scores: Array<string | number | null | undefined>) {
+  const parsed = scores.map(parseBand)
+  if (parsed.length !== 4 || parsed.some((score) => score === null)) return null
+
+  const validScores = parsed as number[]
+  return roundToHalfBand(validScores.reduce((sum, score) => sum + score, 0) / validScores.length)
 }
 
 export function formatBandNumber(value: number | null | undefined) {

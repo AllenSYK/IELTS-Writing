@@ -1,10 +1,24 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { generateWritingPromptWithAi, parseAiEvaluationText } from '../lib/ai'
+import {
+  buildCorrectedEssay,
+  dedupeAndSortAnnotations,
+  generateWritingPromptWithAi,
+  getEvaluationCacheKey,
+  locateBlockAnnotation,
+  officialTaskRubric,
+  parseAiEvaluationText,
+  splitEssayIntoBlocks
+} from '../lib/ai'
 import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts-questions'
-import { calculateWritingOverall, isExpiredAt, roundToHalfBand } from '../lib/ielts-scoring'
-import { countWords, normalizeEvaluation } from '../lib/writing-records'
+import {
+  calculateEssayOverallBand,
+  calculateWritingOverall,
+  isExpiredAt,
+  roundToHalfBand
+} from '../lib/ielts-scoring'
+import { countWords, normalizeEvaluation, type EssayAnnotation } from '../lib/writing-records'
 import { resolveAuthRedirect } from '../lib/auth/route-access'
 import {
   getEffectiveBindingStatus,
@@ -18,8 +32,19 @@ import { readStorageValue } from '../lib/user-storage'
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
   assert.equal(roundToHalfBand(6.25), 6.5)
+  assert.equal(roundToHalfBand(6.5), 6.5)
   assert.equal(roundToHalfBand(6.74), 6.5)
   assert.equal(roundToHalfBand(6.75), 7)
+  assert.equal(roundToHalfBand(8.75), 9)
+  assert.equal(roundToHalfBand(9), 9)
+})
+
+test('Single essay overall is calculated from exactly four criterion scores', () => {
+  assert.equal(calculateEssayOverallBand([6, 6, 6, 7]), 6.5)
+  assert.equal(calculateEssayOverallBand([6, 6, 7, 8]), 7)
+  assert.equal(calculateEssayOverallBand([5, 6, 6, 7]), 6)
+  assert.equal(calculateEssayOverallBand([9, 9, 9, 9]), 9)
+  assert.equal(calculateEssayOverallBand([6, 6, 7]), null)
 })
 
 test('Writing mock score weights Task 2 about twice Task 1', () => {
@@ -32,10 +57,10 @@ test('批改响应解析器接受完整的 Task 2 结构', () => {
   const parsed = parseAiEvaluationText(
     JSON.stringify({
       overallBand: '7.0',
-      taskResponse: { score: '7.0', feedback: 'clear position' },
-      coherenceCohesion: { score: '7.0', feedback: 'logical' },
-      lexicalResource: { score: '7.0', feedback: 'range is adequate' },
-      grammaticalRangeAccuracy: { score: '6.5', feedback: 'some errors' },
+      taskResponse: { score: 6, feedback: 'clear position', evidence: ['A clear position'], whyNotHigher: 'support is general' },
+      coherenceCohesion: { score: 6, feedback: 'logical' },
+      lexicalResource: { score: 6, feedback: 'range is adequate' },
+      grammaticalRangeAccuracy: { score: 7, feedback: 'some errors' },
       summary: '整体回应清楚。',
       strengths: ['position is clear'],
       weaknesses: ['examples need more detail'],
@@ -43,9 +68,25 @@ test('批改响应解析器接受完整的 Task 2 结构', () => {
     }),
     'task2'
   )
-  assert.equal(parsed.overallBand, '7')
-  assert.equal(parsed.criteria?.taskResponse?.score, '7.0')
+  assert.equal(parsed.overallBand, '6.5')
+  assert.equal(parsed.criteria?.taskResponse?.score, '6')
+  assert.deepEqual(parsed.criteria?.taskResponse?.evidence, ['A clear position'])
   assert.equal(parsed.summary, '整体回应清楚。')
+})
+
+test('AI overallBand is ignored in favour of server-side criterion averaging', () => {
+  const parsed = parseAiEvaluationText(JSON.stringify({
+    overallBand: 8,
+    taskResponse: { score: 6, feedback: '回应主要任务' },
+    coherenceCohesion: { score: 6, feedback: '结构基本清楚' },
+    lexicalResource: { score: 6, feedback: '词汇够用' },
+    grammaticalRangeAccuracy: { score: 7, feedback: '句式有变化' },
+    summary: '服务器计算总分。',
+    strengths: [],
+    weaknesses: []
+  }), 'task2')
+  assert.equal(parsed.overallBand, '6.5')
+  assert.equal(parsed.bandEstimate, '6.5')
 })
 
 test('批改标注使用准确的 UTF-16 偏移并标记无法定位的文本', () => {
@@ -53,10 +94,10 @@ test('批改标注使用准确的 UTF-16 偏移并标记无法定位的文本', 
   const parsed = parseAiEvaluationText(
     JSON.stringify({
       overallBand: '6.0',
-      taskResponse: { score: '6.0', feedback: 'position is present' },
-      coherenceCohesion: { score: '6.0', feedback: 'basic progression' },
-      lexicalResource: { score: '5.5', feedback: 'some word choice errors' },
-      grammaticalRangeAccuracy: { score: '5.5', feedback: 'agreement errors' },
+      taskResponse: { score: 6, feedback: 'position is present' },
+      coherenceCohesion: { score: 6, feedback: 'basic progression' },
+      lexicalResource: { score: 5, feedback: 'some word choice errors' },
+      grammaticalRangeAccuracy: { score: 5, feedback: 'agreement errors' },
       summary: '需要提升准确性。',
       strengths: ['观点基本明确'],
       weaknesses: ['语法错误影响清晰度'],
@@ -105,9 +146,9 @@ test('批改响应解析器拒绝缺少任务评分项的数据', () => {
     parseAiEvaluationText(
       JSON.stringify({
         overallBand: '7.0',
-        coherenceCohesion: { score: '7.0', feedback: 'logical' },
-        lexicalResource: { score: '7.0', feedback: 'range is adequate' },
-        grammaticalRangeAccuracy: { score: '6.5', feedback: 'some errors' },
+        coherenceCohesion: { score: 7, feedback: 'logical' },
+        lexicalResource: { score: 7, feedback: 'range is adequate' },
+        grammaticalRangeAccuracy: { score: 6, feedback: 'some errors' },
         summary: '整体回应清楚。',
         strengths: [],
         weaknesses: [],
@@ -116,6 +157,188 @@ test('批改响应解析器拒绝缺少任务评分项的数据', () => {
       'task1'
     )
   )
+})
+
+test('Criterion scores reject half bands and values outside 0-9', () => {
+  const base = {
+    taskResponse: { score: 6, feedback: '回应任务' },
+    coherenceCohesion: { score: 6, feedback: '结构清楚' },
+    lexicalResource: { score: 6, feedback: '词汇够用' },
+    grammaticalRangeAccuracy: { score: 6, feedback: '语法基本准确' },
+    summary: '测试',
+    strengths: [],
+    weaknesses: []
+  }
+  assert.throws(() => parseAiEvaluationText(JSON.stringify({
+    ...base,
+    lexicalResource: { score: 6.5, feedback: 'invalid' }
+  }), 'task2'))
+  assert.throws(() => parseAiEvaluationText(JSON.stringify({
+    ...base,
+    lexicalResource: { score: 10, feedback: 'invalid' }
+  }), 'task2'))
+})
+
+test('Task 1 and Task 2 require their correct first criterion', () => {
+  const shared = {
+    coherenceCohesion: { score: 6, feedback: '结构清楚' },
+    lexicalResource: { score: 6, feedback: '词汇够用' },
+    grammaticalRangeAccuracy: { score: 6, feedback: '语法基本准确' },
+    summary: '测试',
+    strengths: [],
+    weaknesses: []
+  }
+  const task1 = parseAiEvaluationText(JSON.stringify({
+    ...shared,
+    taskAchievement: { score: 6, feedback: '完成主要要求' }
+  }), 'task1')
+  const task2 = parseAiEvaluationText(JSON.stringify({
+    ...shared,
+    taskResponse: { score: 6, feedback: '回应主要问题' }
+  }), 'task2')
+  assert.equal(task1.criteria?.taskAchievement?.score, '6')
+  assert.equal(task2.criteria?.taskResponse?.score, '6')
+  assert.throws(() => parseAiEvaluationText(JSON.stringify({
+    ...shared,
+    taskResponse: { score: 6, feedback: '错误维度' }
+  }), 'task1'))
+})
+
+test('More than 20 legacy annotations are preserved without truncation', () => {
+  const annotations = Array.from({ length: 24 }, (_, index) => ({
+    originalText: `issue-${index}`,
+    category: 'grammar',
+    severity: 'low',
+    scoreCriterion: 'Grammatical Range and Accuracy',
+    explanationZh: '问题说明',
+    impactOnScore: '影响准确性',
+    suggestion: '修改建议'
+  }))
+  const parsed = parseAiEvaluationText(JSON.stringify({
+    taskResponse: { score: 6, feedback: '回应任务' },
+    coherenceCohesion: { score: 6, feedback: '结构清楚' },
+    lexicalResource: { score: 6, feedback: '词汇够用' },
+    grammaticalRangeAccuracy: { score: 6, feedback: '语法基本准确' },
+    summary: '测试',
+    strengths: [],
+    weaknesses: [],
+    annotations
+  }), 'task2')
+  assert.equal(parsed.annotations?.length, 24)
+})
+
+test('Essay blocks preserve every character and occurrence locates repeated text locally', () => {
+  const essay = 'Many people agree. Many people disagree.\n\nMany people remain unsure.'
+  const blocks = splitEssayIntoBlocks(essay)
+  assert.equal(blocks.map((block) => block.text).join(''), essay)
+  const second = locateBlockAnnotation({
+    originalText: 'Many people',
+    occurrence: 2,
+    category: 'grammar',
+    severity: 'medium',
+    scoreCriterion: 'Grammatical Range and Accuracy',
+    explanationZh: '测试',
+    impactOnScore: '测试',
+    suggestion: '测试'
+  }, blocks[0], 'task2')
+  assert.equal(second.start, essay.indexOf('Many people', 1))
+  assert.equal(essay.slice(second.start, second.end), 'Many people')
+
+  const otherParagraph = locateBlockAnnotation({
+    originalText: 'Many people',
+    occurrence: 1,
+    category: 'grammar',
+    severity: 'medium',
+    scoreCriterion: 'Grammatical Range and Accuracy',
+    explanationZh: '测试',
+    impactOnScore: '测试',
+    suggestion: '测试'
+  }, blocks[1], 'task2')
+  assert.equal(otherParagraph.start, essay.lastIndexOf('Many people'))
+})
+
+test('Unmatched block annotations remain visible as unresolved', () => {
+  const annotation = locateBlockAnnotation({
+    originalText: 'not in this block',
+    occurrence: 1,
+    category: 'unclear-expression',
+    severity: 'low',
+    scoreCriterion: 'Coherence and Cohesion',
+    explanationZh: '测试',
+    impactOnScore: '测试',
+    suggestion: '测试'
+  }, { index: 0, text: 'Actual text.', baseOffset: 0 }, 'task2')
+  assert.equal(annotation.unresolved, true)
+  assert.equal(annotation.start, -1)
+  assert.equal(annotation.end, -1)
+})
+
+function annotation(overrides: Partial<EssayAnnotation>): EssayAnnotation {
+  return {
+    id: 'base',
+    start: 0,
+    end: 1,
+    originalText: 'a',
+    replacement: 'A',
+    category: 'grammar',
+    severity: 'medium',
+    scoreCriterion: 'Grammatical Range and Accuracy',
+    explanationZh: '测试',
+    impactOnScore: '测试',
+    suggestion: '测试',
+    unresolved: false,
+    ...overrides
+  }
+}
+
+test('Annotations dedupe exact duplicates but keep different categories at one position', () => {
+  const deduped = dedupeAndSortAnnotations([
+    annotation({ id: 'one' }),
+    annotation({ id: 'duplicate' }),
+    annotation({ id: 'vocabulary', category: 'vocabulary', scoreCriterion: 'Lexical Resource' })
+  ])
+  assert.equal(deduped.length, 2)
+})
+
+test('Corrected essay applies replacements backwards and resolves overlaps deterministically', () => {
+  const essay = 'I has a apple.'
+  const corrected = buildCorrectedEssay(essay, [
+    annotation({ id: 'article', start: 6, end: 7, originalText: 'a', replacement: 'an', severity: 'medium' }),
+    annotation({ id: 'verb', start: 2, end: 5, originalText: 'has', replacement: 'have', severity: 'high' })
+  ])
+  assert.equal(corrected, 'I have an apple.')
+
+  const overlap = buildCorrectedEssay('abcdef', [
+    annotation({ id: 'low-long', start: 1, end: 5, originalText: 'bcde', replacement: 'X', severity: 'low' }),
+    annotation({ id: 'high-short', start: 2, end: 4, originalText: 'cd', replacement: 'Y', severity: 'high' })
+  ])
+  assert.equal(overlap, 'abYef')
+
+  const sameSeverity = buildCorrectedEssay('abcdef', [
+    annotation({ id: 'short', start: 2, end: 4, originalText: 'cd', replacement: 'Y', severity: 'medium' }),
+    annotation({ id: 'long', start: 1, end: 5, originalText: 'bcde', replacement: 'X', severity: 'medium' })
+  ])
+  assert.equal(sameSeverity, 'aXf')
+})
+
+test('Evaluation cache separates phase, grading version, and model', () => {
+  const base = { essay: 'Essay text', taskType: 'task2', prompt: 'Prompt', promptVersion: 'p1' }
+  const quick = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'quick' })
+  const full = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'full' })
+  const otherModel = getEvaluationCacheKey({ ...base, model: 'model-b', phase: 'full' })
+  const oldRubric = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'full', gradingVersion: 'old' })
+  const differentWhitespace = getEvaluationCacheKey({ ...base, essay: 'Essay  text', model: 'model-a', phase: 'full' })
+  assert.notEqual(quick, full)
+  assert.notEqual(full, otherModel)
+  assert.notEqual(full, oldRubric)
+  assert.notEqual(full, differentWhitespace)
+})
+
+test('Task 1 letter rubric does not require an Academic overview', () => {
+  const letterRubric = officialTaskRubric('task1', 'letter')
+  assert.match(letterRubric, /Do not require a chart overview/)
+  assert.match(letterRubric, /bullet point/)
+  assert.doesNotMatch(letterRubric, /main trends, differences or stages/)
 })
 
 test('Question bank covers required IELTS task types', () => {
@@ -432,6 +655,8 @@ test('Stored legacy evaluations normalize into the new result shape', () => {
   })
   assert.equal(normalized?.overallBand, '6.5')
   assert.equal(normalized?.summary, '旧记录评价。')
+  assert.deepEqual(normalized?.criteria?.taskAchievement?.evidence, undefined)
+  assert.equal(normalized?.criteria?.taskAchievement?.whyNotHigher, undefined)
   assert.deepEqual(normalized?.nextSteps, [])
   assert.deepEqual(normalized?.suggestions, ['写清 overview'])
 })
