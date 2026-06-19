@@ -85,34 +85,27 @@ function StageIcon({ stageIndex, label }: { stageIndex: number; label: string })
     }
   }
 
-  // Generic icons for non-recycled-paper process diagrams
   const genericIcons = [
-    // Stage 1: Start/input
     <svg key={0} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="20" cy="20" r="13" stroke="currentColor" strokeWidth="1.8" fill="none" />
       <path d="M15 20l10-6v12L15 20z" fill="currentColor" opacity="0.7" />
     </svg>,
-    // Stage 2: Process/filter
     <svg key={1} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M8 10h24l-8 10v10l-8-2V20L8 10z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" fill="none" />
     </svg>,
-    // Stage 3: Mixing/container
     <svg key={2} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <ellipse cx="20" cy="30" rx="12" ry="5" stroke="currentColor" strokeWidth="1.8" fill="none" />
       <path d="M8 30V16c0-3 3-6 5-6h14c2 0 5 3 5 6v14" stroke="currentColor" strokeWidth="1.8" fill="none" />
     </svg>,
-    // Stage 4: Cleaning/water
     <svg key={3} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M20 8c-6 8-10 12-10 18a10 10 0 0020 0c0-6-4-10-10-18z" stroke="currentColor" strokeWidth="1.8" fill="none" />
     </svg>,
-    // Stage 5: Mechanical/pressure
     <svg key={4} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="14" cy="18" r="8" stroke="currentColor" strokeWidth="1.8" fill="none" />
       <circle cx="28" cy="18" r="8" stroke="currentColor" strokeWidth="1.8" fill="none" />
       <circle cx="14" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
       <circle cx="28" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.2" fill="none" />
     </svg>,
-    // Stage 6: Output/complete
     <svg key={5} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect x="8" y="10" width="24" height="22" rx="2" stroke="currentColor" strokeWidth="1.8" fill="none" />
       <polyline points="15,22 19,26 27,17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />

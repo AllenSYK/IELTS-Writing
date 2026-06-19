@@ -1,72 +1,36 @@
-# License Admin Guide
+# 管理后台
 
-The admin console is available at `/admin` and is separate from the student writing UI. Login is verified by the `admin-license` Supabase Edge Function, then protected locally by an HTTP-only signed session cookie.
+管理后台位于 `/admin`，使用 Supabase Auth 登录，并要求账号在 `profiles.role` 中标记为 `admin`。
 
-## Create Licenses
+## 激活码管理
 
-The console supports:
+管理员可以：
 
-- Single license generation.
-- Bulk license generation.
-- Plan name.
-- 1, 7, 30, 90, 180, 365 day durations.
-- Permanent and custom-day durations.
-- First-activation start.
-- Max device count.
-- Max activation count.
-- Auto-update permission.
-- Admin notes.
+- 单个或批量生成激活码；
+- 设置套餐、有效期和最大激活次数；
+- 搜索、筛选和导出激活码；
+- 禁用、恢复、撤销或删除激活码；
+- 查看激活次数和剩余次数。
 
-Full activation codes are displayed only immediately after creation. After refresh, only masked values remain.
+完整激活码只在生成成功后返回。后续页面默认显示脱敏内容。
 
-## Operate Licenses
+## 邮箱绑定
 
-From the table, an administrator can:
+绑定页面用于查看用户、邮箱与激活码之间的关系，并支持：
 
-- Search by masked key, plan, or note.
-- Filter by status.
-- Export visible rows as CSV.
-- Suspend visible rows in bulk.
-- Revoke visible rows in bulk.
-- Set a single key active, suspended, or revoked.
-- Edit expiry with an ISO date/time.
-- Deactivate a device.
-- Reset all active devices for a key.
+- 延长有效期；
+- 暂停或恢复权限；
+- 解绑邮箱；
+- 查看最近使用时间。
 
-## Publish Releases
+解绑不会删除用户账号或历史记录。
 
-The release form writes to `app_releases`. The update Edge Function returns the newest published release matching:
+## 用户管理
 
-- channel: `stable` or `beta`
-- platform: `win32` or `darwin`
-- architecture: `x64` or `arm64`
+用户页面用于查看账号角色、邮箱验证状态和授权状态。管理员可以调整角色、暂停账号权限、发送密码重置邮件，以及查看当前绑定。
 
-Set `mandatory` for forced updates. Release assets should be uploaded by `npm run release:mac -- <version>`, which asks `admin-license` for signed Supabase Storage upload URLs and then writes the `app_releases` row.
+## 管理设置
 
-## Required Secrets
+设置页维护激活码默认值、到期提醒窗口、列表页容量和时间显示偏好。
 
-Browser code must not contain service role keys, admin edge secrets, database passwords, license private keys, GitHub tokens, Apple credentials, or AI API keys.
-
-Supabase Edge Function secrets:
-
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `LICENSE_TOKEN_PRIVATE_KEY_PEM`
-- `LICENSE_KEY_PEPPER`
-- `ADMIN_PASSWORD` or `ADMIN_PASSWORD_SHA256`
-- `ADMIN_EDGE_SECRET`
-- `RELEASE_BUCKET`
-
-Next.js server/admin proxy:
-
-- `ADMIN_SESSION_SECRET`
-- `ADMIN_LICENSE_FUNCTION_URL`
-- `ADMIN_EDGE_SECRET`
-
-Release machine only, in `.env.release.local`:
-
-- `ADMIN_LICENSE_FUNCTION_URL`
-- `ADMIN_EDGE_SECRET`
-- `RELEASE_CHANNEL`
-- `RELEASE_ARCHITECTURE`
-- `MINIMUM_SUPPORTED_VERSION`
-- `RELEASE_NOTES`
+服务端管理接口使用 Supabase service role key。该密钥只能配置在服务端环境变量中，不能使用 `NEXT_PUBLIC_` 前缀。

@@ -76,7 +76,7 @@ export default function LoginPage() {
         <header className="auth-copy">
           <p className="auth-kicker">IELTS Writing</p>
           <h1>欢迎回来</h1>
-          <p>登录后系统会自动判断管理员、普通用户和激活状态。</p>
+          <p>登录后将进入对应的账号页面。</p>
         </header>
 
         <form className="auth-form auth-form-modern" onSubmit={handleSubmit}>
@@ -124,7 +124,7 @@ export default function LoginPage() {
 
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-          <button className="stitch-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
+          <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
             {loading ? <Loader2 className="admin-spin" size={18} /> : <LogIn size={18} />}
             {loading ? '正在登录' : '登录'}
           </button>

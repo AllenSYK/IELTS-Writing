@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   TaskTypeLabels,
@@ -25,7 +25,7 @@ type RangeFilter = '7' | '30' | 'year' | 'all'
 type SortFilter = 'newest' | 'oldest' | 'score-high' | 'score-low'
 type ScoreFilter = 'all' | 'below6' | '6to7' | 'above7'
 
-const HistoryFilterStorageKey = 'aerowrite-history-filters-v1'
+const HistoryFilterStorageKey = 'ielts-writing-history-filters-v1'
 
 function inDateRange(record: WritingRecord, range: RangeFilter) {
   if (range === 'all') return true
@@ -66,22 +66,22 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
   const criteria = criterionBrief(record)
 
   return (
-    <article className={`history-card stitch-hover-glow ${removing ? 'is-removing' : ''}`}>
+    <article className={`history-card ui-hover-glow ${removing ? 'is-removing' : ''}`}>
       <div className="history-card-main">
         <div className="history-card-meta">
           <span className="task-badge">{TaskTypeLabels[record.taskType]}</span>
-          <span className="stitch-label history-date">
+          <span className="ui-label history-date">
             <MaterialIcon name="calendar_today" size={16} />
             {formatDate(record.submittedAt)}
           </span>
         </div>
-        <h2 className="stitch-title-md">{record.title}</h2>
+        <h2 className="ui-title-md">{record.title}</h2>
         <div className="history-card-stats">
-          <span className="stitch-body-md">
+          <span className="ui-body-md">
             <MaterialIcon name="notes" size={20} />
             {record.wordCount} 词
           </span>
-          <span className="stitch-body-md">
+          <span className="ui-body-md">
             <MaterialIcon name="timer" size={20} />
             {formatDuration(record.durationSeconds)}
           </span>
@@ -96,7 +96,7 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
           ))}
         </div>
         <div className="history-buttons">
-          <Link className="stitch-primary-button" href={`/result?id=${record.id}`}>
+          <Link className="ui-primary-button" href={`/result?id=${record.id}`}>
             查看详情
           </Link>
           <button className="danger-link history-delete" type="button" aria-label="删除记录" onClick={() => onDelete(record)}>
@@ -210,7 +210,7 @@ export default function HistoryPage() {
   if (!preferencesLoaded || isLoading) return <PageSkeleton />
 
   return (
-    <main className="stitch-page" data-main-content tabIndex={-1}>
+    <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="history-main">
         <div className="history-toolbar">
           <label className="history-search">
@@ -226,21 +226,21 @@ export default function HistoryPage() {
           <select className="filter-select" value={sortFilter} onChange={(event) => setSortFilter(event.target.value as SortFilter)} aria-label="排序方式">
             <option value="newest">Newest first</option>
             <option value="oldest">Oldest first</option>
-            <option value="score-high">Score high to low</option>
-            <option value="score-low">Score low to high</option>
+            <option value="score-high">分数从高到低</option>
+            <option value="score-low">分数从低到高</option>
           </select>
-          <span className="stitch-label">{visibleRecords.length} / {records.length}</span>
+          <span className="ui-label">{visibleRecords.length} / {records.length}</span>
         </div>
 
         <aside>
           <GlassPanel className="history-filters">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--primary)' }}>
               <MaterialIcon name="tune" />
-              <h2 className="stitch-title-md">Filters</h2>
+              <h2 className="ui-title-md">筛选条件</h2>
             </div>
 
             <div className="filter-group">
-              <h3 className="stitch-label">Test Type</h3>
+              <h3 className="ui-label">考试类型</h3>
               {filterOptions.map((option) => (
                 <button
                   key={option.id}
@@ -257,17 +257,17 @@ export default function HistoryPage() {
             </div>
 
             <div className="filter-group">
-              <h3 className="stitch-label">Date Range</h3>
+              <h3 className="ui-label">时间范围</h3>
               <select className="filter-select" value={rangeFilter} onChange={(event) => setRangeFilter(event.target.value as RangeFilter)}>
-                <option value="7">Last 7 Days</option>
-                <option value="30">Last 30 Days</option>
-                <option value="year">This Year</option>
-                <option value="all">All Time</option>
+                <option value="7">最近 7 天</option>
+                <option value="30">最近 30 天</option>
+                <option value="year">今年</option>
+                <option value="all">全部时间</option>
               </select>
             </div>
 
             <div className="filter-group">
-              <h3 className="stitch-label">Score Range</h3>
+              <h3 className="ui-label">分数范围</h3>
               <div className="score-range-row">
                 {scoreOptions.map((option) => (
                   <button
@@ -290,7 +290,7 @@ export default function HistoryPage() {
               <HistoryCard key={record.id} record={record} removing={removingId === record.id} onDelete={setPendingDelete} />
             ))
           ) : (
-            <EmptyState title="暂无匹配的真实记录" message="调整搜索或筛选条件，或完成一次 AI 批改后再查看。" href="/practice" action="开始练习" />
+            <EmptyState title="暂无匹配记录" message="请调整搜索或筛选条件，或完成一次批改后再查看。" href="/practice" action="开始练习" />
           )}
         </div>
       </section>

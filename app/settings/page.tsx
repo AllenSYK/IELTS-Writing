@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ProfileAvatar } from '@/components/layout/ProfileAvatar'
 import { AsyncButton, ConfirmDialog, useMotionPreference, useToast } from '@/components/interaction-system'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
+import { LogoutButton } from '@/app/dashboard/LogoutButton'
 import {
   EnglishLevelLabels,
   IELTS_BAND_OPTIONS,
@@ -18,52 +19,21 @@ import {
 } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { belongsToUserStorageKey } from '@/lib/user-storage'
+import { belongsToUserStorageKey, removeStorageValue } from '@/lib/user-storage'
 
 type LicenseInfo = {
-  status: string
+  status: 'loading' | 'active' | 'inactive' | 'error'
   plan?: string
   expiresAt?: string
-  lastValidatedAt?: string
-}
-
-type UpdateState = {
-  status: string
-  checking: boolean
-  message: string
-  currentVersion?: string
-  latestVersion?: string
-  channel?: string
-  updateAvailable?: boolean
-  downloaded?: boolean
-  mandatory?: boolean
-  minimumSupportedVersion?: string | null
-  releaseNotes?: string
-  publishedAt?: string | null
-  fileSize?: number
-  manualUpdateOnly?: boolean
-  autoUpdateDownloadEnabled?: boolean
-  developerContactAvailable?: boolean
-  percent?: number
-  transferred?: number
-  total?: number
-  bytesPerSecond?: number
-  lastCheckedAt?: string | null
-  error?: string | null
-  aiRequestsInFlight?: number
-}
-
-type DeviceInfo = {
-  platform: string
-  arch: string
-  hostname: string
+  lastUsedAt?: string
 }
 
 type ProfileSaveStatus = 'clean' | 'dirty' | 'saving' | 'success' | 'error'
 
 function formatDateTime(value?: string | null) {
-  if (!value) return '尚未检查'
-  return new Date(value).toLocaleString()
+  if (!value) return '暂无'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '暂无' : date.toLocaleString('zh-CN')
 }
 
 export default function SettingsPage() {
@@ -74,13 +44,8 @@ export default function SettingsPage() {
   const [draftProfile, setDraftProfile] = useState<UserProfile>(() => profile)
   const [profileSaveStatus, setProfileSaveStatus] = useState<ProfileSaveStatus>('clean')
   const [attemptedProfileSave, setAttemptedProfileSave] = useState(false)
-  const [version, setVersion] = useState('Desktop only')
-  const [license, setLicense] = useState<LicenseInfo>({ status: 'browser-preview' })
-  const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle', checking: false, message: 'Ready', channel: 'stable' })
+  const [license, setLicense] = useState<LicenseInfo>({ status: 'loading' })
   const [refreshingLicense, setRefreshingLicense] = useState(false)
-  const [cacheMessage, setCacheMessage] = useState('')
-  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>({ platform: 'browser', arch: 'preview', hostname: 'Not available' })
-  const [confirmClearCache, setConfirmClearCache] = useState(false)
   const [confirmResetLayout, setConfirmResetLayout] = useState(false)
 
   const profileErrors = useMemo(() => validateUserProfile(draftProfile), [draftProfile])
@@ -108,67 +73,42 @@ export default function SettingsPage() {
     }
   }, [profileDirty, profileSaveStatus])
 
-  useEffect(() => {
-    window.desktopApp?.getVersion().then(setVersion).catch(() => undefined)
-    window.desktopApp?.getDeviceInfo?.().then(setDeviceInfo).catch(() => undefined)
-    window.desktopLicense?.getInfo().then(setLicense).catch(() => undefined)
-    window.desktopUpdater?.getState?.().then((state) => setUpdateState((current) => ({ ...current, ...state }))).catch(() => undefined)
-    const removeStatus = window.desktopUpdater?.onStatus?.((state) => {
-      setUpdateState((current) => ({ ...current, ...state }))
-    })
-    return () => {
-      removeStatus?.()
-    }
-  }, [])
-
-  async function checkForUpdates() {
-    setUpdateState((current) => ({ ...current, checking: true, status: 'checking-for-update', message: '正在检查更新...' }))
-    try {
-      const result = await window.desktopUpdater?.checkForUpdates()
-      setUpdateState((current) => ({ ...current, ...(result?.state || {}), checking: false, message: result?.message || current.message }))
-      pushToast({ kind: result?.ok === false ? 'warning' : 'success', title: result?.message || '更新检查完成' })
-    } catch {
-      setUpdateState((current) => ({ ...current, checking: false, status: 'error', message: '暂时无法检查更新，请稍后重试。' }))
-      pushToast({ kind: 'error', title: '暂时无法检查更新，请稍后重试。' })
-    }
-  }
-
-  async function clearCache() {
-    try {
-      const result = await window.desktopApp?.clearCache()
-      setCacheMessage(result?.message || 'Cache cleanup is available in the desktop app.')
-      pushToast({ kind: result?.ok === false ? 'warning' : 'success', title: result?.message || '缓存处理完成' })
-    } catch (error) {
-      setCacheMessage(error instanceof Error ? error.message : 'Cache cleanup failed.')
-      pushToast({ kind: 'error', title: '清除缓存失败', message: error instanceof Error ? error.message : '请稍后重试。' })
-    }
-  }
-
-  async function refreshLicense() {
+  const refreshLicense = useCallback(async (showResult = true) => {
     setRefreshingLicense(true)
     try {
-      const next = await window.desktopLicense?.getInfo()
-      if (next) setLicense(next)
-      pushToast({ kind: 'success', title: '授权状态已刷新' })
-    } catch (error) {
-      pushToast({ kind: 'error', title: '授权刷新失败', message: error instanceof Error ? error.message : '请检查网络或稍后重试。' })
+      const response = await fetch('/api/license/status', { cache: 'no-store' })
+      const data = await response.json().catch(() => ({}))
+      setLicense({
+        status: data.licenseActive ? 'active' : 'inactive',
+        plan: data.license?.plan,
+        expiresAt: data.activation?.expires_at,
+        lastUsedAt: data.activation?.last_used_at
+      })
+      if (showResult) pushToast({ kind: 'success', title: '授权状态已刷新' })
+    } catch {
+      setLicense({ status: 'error' })
+      if (showResult) pushToast({ kind: 'error', title: '授权状态读取失败', message: '请稍后重试。' })
     } finally {
       setRefreshingLicense(false)
     }
-  }
+  }, [pushToast])
+
+  useEffect(() => {
+    window.queueMicrotask(() => void refreshLicense(false))
+  }, [refreshLicense])
 
   function resetLayout() {
     if (!userId) return
     Object.keys(window.localStorage)
       .filter((key) => belongsToUserStorageKey(key, userId) && (
-        key.startsWith('aerowrite-editor-position-') ||
-        key.startsWith('aerowrite-editor-split-') ||
-        key.startsWith('aerowrite-history-filters-v1')
+        key.startsWith('ielts-writing-editor-position-') ||
+        key.startsWith('ielts-writing-editor-split-') ||
+        key.startsWith('ielts-writing-history-filters-v1')
       ))
-      .forEach((key) => window.localStorage.removeItem(key))
+      .forEach((key) => removeStorageValue(window.localStorage, key))
     Object.keys(window.sessionStorage)
-      .filter((key) => belongsToUserStorageKey(key, userId) && key.startsWith('aerowrite-scroll:'))
-      .forEach((key) => window.sessionStorage.removeItem(key))
+      .filter((key) => belongsToUserStorageKey(key, userId) && key.startsWith('ielts-writing-scroll:'))
+      .forEach((key) => removeStorageValue(window.sessionStorage, key))
     setConfirmResetLayout(false)
     pushToast({ kind: 'success', title: '布局已重置', message: '作文历史和草稿未被清除。' })
   }
@@ -212,14 +152,14 @@ export default function SettingsPage() {
   return (
     <main className="settings-page" data-main-content tabIndex={-1}>
       <section className="settings-main">
-        <GlassPanel className="settings-profile-card stitch-hover-glow">
+        <GlassPanel className="settings-profile-card ui-hover-glow">
           <ProfileAvatar profile={draftProfile} size="lg" label="个人资料头像" />
           <div>
-            <h1 className="stitch-title-headline">{draftProfile.fullName}</h1>
-            <p className="stitch-body-md" style={{ marginTop: 8 }}>
+            <h1 className="ui-title-headline">{draftProfile.fullName}</h1>
+            <p className="ui-body-md" style={{ marginTop: 8 }}>
               目标总分 {formatBandOption(draftProfile.targetOverall)} · Task 1 {formatBandOption(draftProfile.task1Target)} · Task 2 {formatBandOption(draftProfile.task2Target)}
             </p>
-            <p className="stitch-body-md" style={{ marginTop: 8 }}>{draftProfile.bio}</p>
+            <p className="ui-body-md" style={{ marginTop: 8 }}>{draftProfile.bio}</p>
           </div>
         </GlassPanel>
 
@@ -227,7 +167,7 @@ export default function SettingsPage() {
           <GlassPanel className="settings-section">
             <form className="profile-form" onSubmit={savePersonalProfile}>
               <div className="settings-section-header">
-              <h2 className="stitch-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <MaterialIcon name="person" filled className="text-primary" />
                 个人资料
               </h2>
@@ -345,7 +285,7 @@ export default function SettingsPage() {
                 <p className="settings-message">
                   {profileSaveStatus === 'error'
                     ? '保存失败时不会丢失当前填写内容，请修正后重试。'
-                    : '保存后 Home、Analytics 和右上角头像会立即同步。'}
+                    : '保存后，账号中心、分析页和头像会同步更新。'}
                 </p>
                 <AsyncButton
                   icon="save"
@@ -363,9 +303,9 @@ export default function SettingsPage() {
 
           <GlassPanel className="settings-section">
             <div className="settings-section-header">
-              <h2 className="stitch-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <MaterialIcon name="lock" filled className="text-primary" />
-                账号与安全 (Account & Security)
+                账号与安全
               </h2>
             </div>
 
@@ -376,11 +316,19 @@ export default function SettingsPage() {
                     <MaterialIcon name="verified_user" />
                   </span>
                   <div>
-                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>授权状态</p>
-                    <p className="stitch-label">{license.status}</p>
+                    <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>授权状态</p>
+                    <p className="ui-label">
+                      {license.status === 'loading'
+                        ? '正在读取'
+                        : license.status === 'active'
+                          ? '已激活'
+                          : license.status === 'error'
+                            ? '读取失败'
+                            : '未激活'}
+                    </p>
                   </div>
                 </div>
-                <AsyncButton className="stitch-secondary-button" icon="refresh" loading={refreshingLicense} onClick={refreshLicense}>
+                <AsyncButton className="ui-secondary-button" icon="refresh" loading={refreshingLicense} onClick={refreshLicense}>
                   刷新
                 </AsyncButton>
               </div>
@@ -391,96 +339,22 @@ export default function SettingsPage() {
                     <MaterialIcon name="license" />
                   </span>
                   <div>
-                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>License</p>
-                    <p className="stitch-label">Plan: {license.plan || 'Unknown'} • Expires: {license.expiresAt || 'Not available'}</p>
+                    <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>授权详情</p>
+                    <p className="ui-label">套餐：{license.plan || '暂无'} · 到期时间：{formatDateTime(license.expiresAt)}</p>
                   </div>
                 </div>
-                <span className="stitch-label">Last verified: {license.lastValidatedAt || 'Not available'}</span>
-              </div>
-
-              <div className="account-row">
-                <div className="account-main">
-                  <span className="account-icon">
-                    <MaterialIcon name="computer" />
-                  </span>
-                  <div>
-                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>Device</p>
-                    <p className="stitch-label">{deviceInfo.hostname} • {deviceInfo.platform} • {deviceInfo.arch}</p>
-                  </div>
-                </div>
-                <span className="stitch-label">Desktop runtime</span>
-              </div>
-
-              <div className="account-row">
-                <div className="account-main">
-                  <span className="account-icon">
-                    <MaterialIcon name="deployed_code_update" />
-                  </span>
-	                  <div>
-	                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>当前版本 {updateState.currentVersion || version}</p>
-	                    <p className="stitch-label">
-	                      最新版本 {updateState.latestVersion || updateState.currentVersion || version} • 上次检查 {formatDateTime(updateState.lastCheckedAt)}
-	                    </p>
-	                  </div>
-	                </div>
-	                <AsyncButton icon="refresh" loading={updateState.checking} onClick={checkForUpdates}>
-	                  检查更新
-	                </AsyncButton>
-	              </div>
-
-	              <div className={`update-panel ${updateState.mandatory ? 'is-mandatory' : ''}`}>
-	                <div className="update-panel-header">
-	                  <div>
-	                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>
-	                      {updateState.updateAvailable ? '发现新版本' : updateState.message}
-	                    </p>
-	                    <p className="stitch-label">
-	                      当前版本 {updateState.currentVersion || version} • 最新版本 {updateState.latestVersion || updateState.currentVersion || version}
-	                      {updateState.minimumSupportedVersion ? ` • 最低支持 ${updateState.minimumSupportedVersion}` : ''}
-	                    </p>
-	                  </div>
-	                  <span className={`status ${updateState.status === 'error' || updateState.mandatory ? 'bad' : ''}`}>
-	                    {updateState.mandatory ? '强制提示' : updateState.updateAvailable ? '联系开发者更新' : updateState.status}
-	                  </span>
-	                </div>
-
-	                {updateState.releaseNotes ? <p className="settings-message">{updateState.releaseNotes}</p> : null}
-
-	                <div className="meta-row" style={{ marginTop: 14 }}>
-	                  <span className="stitch-label">更新方式：联系开发者更新</span>
-	                  {updateState.publishedAt ? <span className="stitch-label">发布时间：{formatDateTime(updateState.publishedAt)}</span> : null}
-	                </div>
-	                {updateState.error ? <p className="settings-message">{updateState.error}</p> : null}
-	                {updateState.aiRequestsInFlight ? <p className="settings-message">AI evaluation is still running.</p> : null}
-              </div>
-
-              <div className="account-row">
-                <div className="account-main">
-                  <span className="account-icon">
-                    <MaterialIcon name="cleaning_services" />
-                  </span>
-                  <div>
-                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>Cache</p>
-                    <p className="stitch-label">{cacheMessage || 'Temporary files are stored in the Electron user data area.'}</p>
-                  </div>
-                </div>
-                <button className="stitch-secondary-button" type="button" onClick={() => setConfirmClearCache(true)}>
-                  Clear Cache
-                </button>
+                <span className="ui-label">最近使用：{formatDateTime(license.lastUsedAt)}</span>
               </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
-              <button className="danger-link" type="button" onClick={() => window.close()}>
-                <MaterialIcon name="logout" size={18} />
-                退出登录
-              </button>
+              <LogoutButton />
             </div>
           </GlassPanel>
 
           <GlassPanel className="settings-section">
             <div className="settings-section-header">
-              <h2 className="stitch-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <MaterialIcon name="keyboard_command_key" className="text-primary" />
                 交互偏好与快捷键
               </h2>
@@ -489,8 +363,8 @@ export default function SettingsPage() {
             <div style={{ marginTop: 16 }}>
               <div className="settings-toggle-row">
                 <div>
-                  <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>减弱动效</p>
-                  <p className="stitch-label">开启后页面过渡、Toast 和面板动画会缩短。</p>
+                  <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>减弱动效</p>
+                  <p className="ui-label">开启后页面过渡和通知动画会缩短。</p>
                 </div>
                 <button
                   className={`switch-button ${motion.enabled ? 'is-on' : ''}`}
@@ -517,7 +391,7 @@ export default function SettingsPage() {
                 ['/', '聚焦历史搜索']
               ].map(([shortcut, label]) => (
                 <div key={shortcut} className="shortcut-row">
-                  <span className="stitch-body-md">{label}</span>
+                  <span className="ui-body-md">{label}</span>
                   <kbd>{shortcut}</kbd>
                 </div>
               ))}
@@ -528,30 +402,18 @@ export default function SettingsPage() {
                     <MaterialIcon name="restart_alt" />
                   </span>
                   <div>
-                    <p className="stitch-body-md" style={{ color: 'var(--on-surface)' }}>Reset layout</p>
-                    <p className="stitch-label">仅重置分栏、滚动位置和筛选条件，不删除作文历史。</p>
+                    <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>重置布局</p>
+                    <p className="ui-label">仅重置分栏、滚动位置和筛选条件，不删除作文历史。</p>
                   </div>
                 </div>
-                <button className="stitch-secondary-button" type="button" onClick={() => setConfirmResetLayout(true)}>
-                  Reset
+                <button className="ui-secondary-button" type="button" onClick={() => setConfirmResetLayout(true)}>
+                  重置
                 </button>
               </div>
             </div>
           </GlassPanel>
         </div>
       </section>
-      <ConfirmDialog
-        open={confirmClearCache}
-        title="清除缓存？"
-        message="这只会清理 Electron 临时缓存，不会删除作文历史、草稿或授权信息。"
-        confirmLabel="清除"
-        cancelLabel="取消"
-        onCancel={() => setConfirmClearCache(false)}
-        onConfirm={() => {
-          setConfirmClearCache(false)
-          void clearCache()
-        }}
-      />
       <ConfirmDialog
         open={confirmResetLayout}
         title="重置布局偏好？"

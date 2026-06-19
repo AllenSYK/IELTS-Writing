@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import type { PracticeRecommendation } from '@/lib/learning-analytics'
 
 export function PracticePlan({ recommendations }: { recommendations: PracticeRecommendation[] }) {
@@ -12,8 +12,8 @@ export function PracticePlan({ recommendations }: { recommendations: PracticeRec
           <MaterialIcon name="auto_awesome" size={30} />
         </span>
         <div>
-          <h2 className="stitch-title-headline">个性化练习计划</h2>
-          <p className="stitch-body-md">根据真实错误分布，优先练习最影响分数的薄弱项。</p>
+          <h2 className="ui-title-headline">个性化练习计划</h2>
+          <p className="ui-body-md">根据真实错误分布，优先练习最影响分数的薄弱项。</p>
         </div>
       </div>
 
@@ -27,10 +27,10 @@ export function PracticePlan({ recommendations }: { recommendations: PracticeRec
             {recommendations.map((item) => (
               <article className="practice-card" key={item.key}>
                 <div className="practice-card-top">
-                  <h3 className="stitch-title-md">{item.title}</h3>
+                  <h3 className="ui-title-md">{item.title}</h3>
                   <span className="status">{item.status}</span>
                 </div>
-                <p className="stitch-body-md">推荐原因：{item.reason}</p>
+                <p className="ui-body-md">推荐原因：{item.reason}</p>
                 <dl className="practice-meta-list">
                   <div>
                     <dt>预计用时</dt>
@@ -45,7 +45,7 @@ export function PracticePlan({ recommendations }: { recommendations: PracticeRec
                     <dd>0%</dd>
                   </div>
                 </dl>
-                <Link className="stitch-primary-button" href={item.href}>
+                <Link className="ui-primary-button" href={item.href}>
                   开始练习
                   <MaterialIcon name="arrow_forward" size={16} />
                 </Link>

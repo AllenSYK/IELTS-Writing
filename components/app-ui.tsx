@@ -34,7 +34,7 @@ export function GlassPanel({
   style?: CSSProperties
 }) {
   return (
-    <section className={`stitch-glass stitch-glass-${level} ${className}`} style={style}>
+    <section className={`ui-glass ui-glass-${level} ${className}`} style={style}>
       {children}
     </section>
   )

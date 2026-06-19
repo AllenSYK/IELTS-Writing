@@ -122,18 +122,20 @@ test('writing records remain isolated when switching between user accounts', () 
 test('user cache keys include the authenticated identity', () => {
   const first = userWritingRecordsCacheKey(UserRouteCacheKeys.history, 'user-a')
   const second = userWritingRecordsCacheKey(UserRouteCacheKeys.history, 'user-b')
+  const analytics = userWritingRecordsCacheKey(UserRouteCacheKeys.analytics, 'user-a')
   assert.notDeepEqual(first, second)
   assert.deepEqual(first, ['user-writing-records', 'question_history', 'user-a'])
+  assert.deepEqual(analytics, ['user-writing-records', 'question_analytics', 'user-a'])
 })
 
 test('logout cleanup removes only the active user ephemeral state', () => {
   const { localStorage, sessionStorage } = installBrowserStorage()
   const userA = 'user-a'
   const userB = 'user-b'
-  const aDraft = userScopedStorageKey('aerowrite-draft-task2', userA)
-  const bDraft = userScopedStorageKey('aerowrite-draft-task2', userB)
+  const aDraft = userScopedStorageKey('ielts-writing-draft-task2', userA)
+  const bDraft = userScopedStorageKey('ielts-writing-draft-task2', userB)
   const aHistory = userScopedStorageKey(WritingRecordsStorageKey, userA)
-  const aPromptSelection = userScopedStorageKey('aerowrite-prompt-selection-v1', userA)
+  const aPromptSelection = userScopedStorageKey('ielts-writing-prompt-selection-v1', userA)
 
   localStorage.setItem(aDraft, 'draft-a')
   localStorage.setItem(bDraft, 'draft-b')
@@ -189,4 +191,3 @@ test('history page keeps one title source and uses a non-stretching card grid', 
   assert.match(css, /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(280px,\s*340px\)\)/)
   assert.match(css, /\.history-card\s*\{[\s\S]*?max-width:\s*340px;[\s\S]*?height:\s*286px;/)
 })
-

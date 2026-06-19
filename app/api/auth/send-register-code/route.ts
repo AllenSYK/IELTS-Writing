@@ -145,6 +145,7 @@ export async function POST(request: Request) {
     return json({
       success: true,
       maskedEmail: maskEmail(email),
+      serverTime: now.toISOString(),
       expiresAt: expiresAt.toISOString(),
       cooldownSeconds: REGISTER_CODE_RESEND_SECONDS
     })

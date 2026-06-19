@@ -20,7 +20,6 @@ import {
 } from '@/lib/writing-options'
 import {
   Task1ChartSpecSchema,
-  createChartSpecLog,
   normalizeTask1ChartSpec,
   prepareTask1ChartSpec,
   type Task1ChartKind
@@ -107,49 +106,23 @@ function createPerfLog(essay: string, taskType: string, model: string, provider:
 }
 
 function logPerf(log: PerformanceLog, stage: string, extra?: Record<string, unknown>) {
+  if (stage !== 'error') return
   const elapsed = Date.now() - log.requestStartAt
-  const parts = [
-    `[ai-evaluate]`,
-    `requestId=${log.requestId}`,
-    `stage=${stage}`,
-    `taskType=${log.taskType}`,
-    `wordCount=${log.wordCount}`,
-    `model=${log.model}`,
-    `provider=${log.provider}`,
-    `phase=${log.phase}`,
-    `elapsedMs=${elapsed}`
-  ]
-  if (log.promptTokens !== undefined) parts.push(`promptTokens=${log.promptTokens}`)
-  if (log.completionTokens !== undefined) parts.push(`completionTokens=${log.completionTokens}`)
-  if (log.totalTokens !== undefined) parts.push(`totalTokens=${log.totalTokens}`)
-  if (log.firstByteAt) parts.push(`firstByteMs=${log.firstByteAt - log.requestStartAt}`)
-  if (log.providerDurationMs !== undefined) parts.push(`providerDurationMs=${log.providerDurationMs}`)
-  if (log.parseDurationMs !== undefined) parts.push(`parseDurationMs=${log.parseDurationMs}`)
-  if (log.saveDurationMs !== undefined) parts.push(`saveDurationMs=${log.saveDurationMs}`)
-  if (log.totalDurationMs !== undefined) parts.push(`totalDurationMs=${log.totalDurationMs}`)
-  if (log.retryCount > 0) parts.push(`retryCount=${log.retryCount}`)
-  if (log.retryReason) parts.push(`retryReason=${log.retryReason}`)
-  if (log.finishReason) parts.push(`finishReason=${log.finishReason}`)
-  if (log.cacheHit) parts.push(`cacheHit=true`)
-  if (log.duplicateRequestBlocked) parts.push(`duplicateRequestBlocked=true`)
-  if (log.containsMarkdown !== undefined) parts.push(`containsMarkdown=${log.containsMarkdown}`)
-  if (log.wasTruncated !== undefined) parts.push(`wasTruncated=${log.wasTruncated}`)
-  if (log.jsonParseErrorPosition) parts.push(`jsonParseErrorPosition=${log.jsonParseErrorPosition}`)
-  if (log.jsonFixed !== undefined) parts.push(`jsonFixed=${log.jsonFixed}`)
-  if (log.responseChars !== undefined) parts.push(`responseChars=${log.responseChars}`)
-  if (log.annotationCount !== undefined) parts.push(`annotationCount=${log.annotationCount}`)
-  if (extra) {
-    for (const [k, v] of Object.entries(extra)) {
-      parts.push(`${k}=${v}`)
-    }
-  }
-  console.info(parts.join(' '))
+  console.error('[ai-evaluate]', {
+    requestId: log.requestId,
+    stage,
+    taskType: log.taskType,
+    model: log.model,
+    provider: log.provider,
+    phase: log.phase,
+    elapsedMs: elapsed,
+    retryCount: log.retryCount,
+    error: typeof extra?.error === 'string' ? extra.error : 'unknown'
+  })
 }
 
 function logJsonParseDetails(log: PerformanceLog, rawText: string, error?: Error) {
   const textLength = rawText.length
-  const first100 = rawText.slice(0, 100)
-  const last100 = rawText.slice(-100)
   const containsMarkdown = /```(?:json|JSON)?\s*[\s\S]*?\s*```/.test(rawText) || rawText.includes('```')
   const wasTruncated = rawText.length > 0 && !rawText.trimEnd().endsWith('}')
 
@@ -157,24 +130,18 @@ function logJsonParseDetails(log: PerformanceLog, rawText: string, error?: Error
   log.wasTruncated = wasTruncated
   log.responseChars = textLength
 
-  const details = [
-    `[ai-json-details]`,
-    `requestId=${log.requestId}`,
-    `model=${log.model}`,
-    `responseChars=${textLength}`,
-    `first100=${JSON.stringify(first100)}`,
-    `last100=${JSON.stringify(last100)}`,
-    `containsMarkdown=${containsMarkdown}`,
-    `wasTruncated=${wasTruncated}`
-  ]
-
   if (error) {
     const errorPosition = extractJsonErrorPosition(error.message)
     log.jsonParseErrorPosition = errorPosition
-    details.push(`parseErrorPosition=${errorPosition}`)
+    console.warn('[ai-json-invalid]', {
+      requestId: log.requestId,
+      model: log.model,
+      responseChars: textLength,
+      containsMarkdown,
+      wasTruncated,
+      parseErrorPosition: errorPosition
+    })
   }
-
-  console.warn(details.join(' '))
 }
 
 function extractJsonErrorPosition(errorMessage: string): string {
@@ -357,12 +324,6 @@ function getAiConfig(): AiConfig {
   }
 }
 
-function taskName(taskType: WritingTaskType) {
-  if (taskType === 'task1') return 'IELTS Academic Writing Task 1'
-  if (taskType === 'task2') return 'IELTS Academic Writing Task 2'
-  return 'IELTS Writing'
-}
-
 function buildQuickEvaluationPrompt(input: EssayEvaluationInput) {
   const { essay, taskType, prompt, questionType } = input
   const firstCriterion = taskType === 'task1' ? 'taskAchievement' : 'taskResponse'
@@ -412,14 +373,6 @@ function buildDetailedEvaluationPrompt(input: EssayEvaluationInput, quickResult:
   parts.push('Essay:', essay)
 
   return parts.join('\n')
-}
-
-function inputPromptBlock(taskType: WritingTaskType, prompt?: string, questionType?: string) {
-  const lines = ['Question context:']
-  lines.push(`Task type: ${taskType}`)
-  if (questionType) lines.push(`Question subtype: ${questionType}`)
-  if (prompt) lines.push(`Prompt: ${prompt}`)
-  return lines.join('\n')
 }
 
 function essayHash(essay: string): string {
@@ -749,34 +702,6 @@ function buildPromptGenerationPrompt(input: PromptGenerationInput) {
   ].join('\n')
 }
 
-function extractAssistantText(payload: unknown) {
-  if (!payload || typeof payload !== 'object') {
-    throw new AiProviderError('AI provider returned an invalid response.')
-  }
-
-  const choices = (payload as { choices?: unknown }).choices
-  if (!Array.isArray(choices)) {
-    throw new AiProviderError('AI provider response did not include choices.')
-  }
-
-  const firstChoice = choices[0]
-  if (!firstChoice || typeof firstChoice !== 'object') {
-    throw new AiProviderError('AI provider response did not include a completion.')
-  }
-
-  const message = (firstChoice as { message?: unknown }).message
-  if (!message || typeof message !== 'object') {
-    throw new AiProviderError('AI provider response did not include a message.')
-  }
-
-  const content = (message as { content?: unknown }).content
-  if (typeof content !== 'string' || content.trim().length === 0) {
-    throw new AiProviderError('AI provider response did not include text content.')
-  }
-
-  return content.trim()
-}
-
 function parseJsonObject(text: string, perfLog?: PerformanceLog) {
   const cleaned = sanitizeJsonText(text)
 
@@ -803,7 +728,7 @@ function parseJsonObject(text: string, perfLog?: PerformanceLog) {
     }
 
     throw new AiProviderError(
-      'AI返回格式异常，作文已保留。你可以重新批改。',
+      '批改结果格式异常，作文已保留。你可以重新批改。',
       undefined,
       'ai_json_parse_error'
     )
@@ -813,28 +738,21 @@ function parseJsonObject(text: string, perfLog?: PerformanceLog) {
 function sanitizeJsonText(text: string): string {
   let result = text.trim()
 
-  // Remove BOM
   result = result.replace(/^\uFEFF/, '')
 
-  // Strip markdown code fences
   result = stripMarkdownCodeFences(result)
 
-  // Remove text before first { or [
   result = result.replace(/^[^{[]*([{[])/, '$1')
 
-  // Remove trailing commas
   result = result.replace(/,\s*([}\]])/g, '$1')
 
-  // Replace smart quotes
   result = result.replace(/[\u201C\u201D]/g, '"')
   result = result.replace(/[\u2018\u2019]/g, "'")
 
-  // Fix unescaped newlines in strings
   result = result.replace(/(?<=": ")[^"]*?\n[^"]*?(?=")/g, (match) => {
     return match.replace(/\n/g, '\\n')
   })
 
-  // Remove control characters except \n, \r, \t
   result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
 
   return result
@@ -866,39 +784,30 @@ function attemptJsonRepair(text: string): unknown | null {
   try {
     return JSON.parse(text)
   } catch {
-    // continue with repair attempts
   }
 
   let repaired = text
 
-  // Remove trailing commas
   repaired = repaired.replace(/,\s*([}\]])/g, '$1')
 
-  // Add quotes to unquoted keys
   repaired = repaired.replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
 
-  // Replace single quotes with double quotes
   repaired = repaired.replace(/'/g, '"')
 
-  // Replace undefined with null
   repaired = repaired.replace(/:\s*undefined/g, ': null')
 
-  // Fix common JSON errors
   repaired = repaired.replace(/:\s*NaN/g, ': null')
   repaired = repaired.replace(/:\s*Infinity/g, ': null')
   repaired = repaired.replace(/:\s*-Infinity/g, ': null')
 
-  // Remove comments
   repaired = repaired.replace(/\/\/.*$/gm, '')
   repaired = repaired.replace(/\/\*[\s\S]*?\*\//g, '')
 
   try {
     return JSON.parse(repaired)
   } catch {
-    // Try more aggressive repair
   }
 
-  // Try to fix missing closing braces
   const openBraces = (repaired.match(/{/g) || []).length
   const closeBraces = (repaired.match(/}/g) || []).length
   if (openBraces > closeBraces) {
@@ -906,11 +815,9 @@ function attemptJsonRepair(text: string): unknown | null {
     try {
       return JSON.parse(repaired)
     } catch {
-      // continue
     }
   }
 
-  // Try to fix missing closing brackets
   const openBrackets = (repaired.match(/\[/g) || []).length
   const closeBrackets = (repaired.match(/]/g) || []).length
   if (openBrackets > closeBrackets) {
@@ -1304,9 +1211,10 @@ function validateQuickEvaluation(value: unknown, taskType: Exclude<WritingTaskTy
   const normalized = normalizeEvaluationObject(value)
   const parsed = AiQuickEvaluationSchema.safeParse(normalized)
   if (!parsed.success) {
-    console.error('[ai-quick] Validation failed. Input:', JSON.stringify(value, null, 2))
-    console.error('[ai-quick] Normalized:', JSON.stringify(normalized, null, 2))
-    console.error('[ai-quick] Errors:', JSON.stringify(parsed.error.errors, null, 2))
+    console.error('[ai-quick-schema]', parsed.error.issues.map((issue) => ({
+      path: issue.path.join('.'),
+      code: issue.code
+    })))
     throw new AiProviderError('AI 返回的快速评分格式不正确。', undefined, 'ai_quick_schema_error')
   }
   if (taskType === 'task1' && !parsed.data.taskAchievement) {
@@ -1322,9 +1230,10 @@ function validateDetailedEvaluation(value: unknown) {
   const normalized = normalizeEvaluationObject(value)
   const parsed = AiDetailedEvaluationSchema.safeParse(normalized)
   if (!parsed.success) {
-    console.error('[ai-detailed] Validation failed. Input:', JSON.stringify(value, null, 2))
-    console.error('[ai-detailed] Normalized:', JSON.stringify(normalized, null, 2))
-    console.error('[ai-detailed] Errors:', JSON.stringify(parsed.error.errors, null, 2))
+    console.error('[ai-detailed-schema]', parsed.error.issues.map((issue) => ({
+      path: issue.path.join('.'),
+      code: issue.code
+    })))
     throw new AiProviderError('AI 返回的详细分析格式不正确。', undefined, 'ai_detailed_schema_error')
   }
   return parsed.data
@@ -1444,7 +1353,12 @@ Required JSON structure:
         logPerf(perfLog, 'done', { phase: 'full', cached: true })
         return result
       } catch (detailedError) {
-        console.warn('[ai-evaluate] Detailed phase failed, using quick result only:', detailedError)
+        console.warn('[ai-evaluate]', {
+          requestId: perfLog.requestId,
+          phase: 'detailed',
+          fallback: 'quick',
+          error: detailedError instanceof Error ? detailedError.message : 'unknown'
+        })
         const result = normalizeQuickEvaluation(quickResult, config.provider, config.model, input.taskType, input.essay)
         setCachedEvaluation(cacheKey, result)
         perfLog.totalDurationMs = Date.now() - perfLog.requestStartAt
@@ -1637,8 +1551,6 @@ export async function generateWritingPromptWithAi(input: PromptGenerationInput):
     }
   ]
 
-  console.info(`[task1-gen] requestId=${requestId} taskType=${input.taskType} selectedTask1Type=${input.selection.task1ChartType} resolvedTask1Type=${input.selection.task1ChartType === 'random' ? 'random' : input.selection.task1ChartType}`)
-
   let text = ''
   let data: z.infer<typeof AiPromptSchema> | null = null
   let lastValidationError: unknown
@@ -1667,7 +1579,6 @@ export async function generateWritingPromptWithAi(input: PromptGenerationInput):
       })
     }
 
-    console.info(`[task1-gen] requestId=${requestId} attempt=${attempt + 1} rawResponse length=${text.length} preview=${text.substring(0, 500)}`)
     try {
       data = parseAndValidateGeneratedPrompt(text, input, requestId)
       break
@@ -1689,9 +1600,6 @@ export async function generateWritingPromptWithAi(input: PromptGenerationInput):
   }
 
   const questionType = data.questionType
-  const chartLog = createChartSpecLog(data.chartSpec)
-  console.info(`[task1-gen] requestId=${requestId} rawResponseHasChartSpec=${Boolean(data.chartSpec)} chartKind=${chartLog.chartKind} categoryCount=${chartLog.categoryCount} seriesCount=${chartLog.seriesCount} dataPointCount=${chartLog.dataPointCount}`)
-
   const now = Date.now().toString(36)
   const question: WritingQuestion = {
     id: `ai-${input.taskType}-${questionType}-${now}`,
@@ -1711,6 +1619,5 @@ export async function generateWritingPromptWithAi(input: PromptGenerationInput):
     mapSpec: data.mapSpec
   } as WritingQuestion
 
-  console.info(`[task1-gen] requestId=${requestId} fallbackUsed=false rendererSelected=${questionType}`)
   return question
 }

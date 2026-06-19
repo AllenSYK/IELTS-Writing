@@ -84,7 +84,7 @@ export default function ForgotPasswordPage() {
           {message ? <p className="auth-success" role="status">{message}</p> : null}
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-          <button className="stitch-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
+          <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
             {loading ? <Loader2 className="admin-spin" size={18} /> : <Send size={18} />}
             {loading ? '正在发送' : '发送重置邮件'}
           </button>

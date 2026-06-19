@@ -1,7 +1,7 @@
 'use client'
 
 import type { CSSProperties } from 'react'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import { buildGoalStatus } from '@/lib/learning-analytics'
 import { formatBandNumber } from '@/lib/ielts-scoring'
 import type { UserProfile } from '@/lib/user-profile'
@@ -23,8 +23,8 @@ export function GoalStatusPanel({
     <section className={`goal-status-panel ${compact ? 'is-compact' : ''}`} aria-label="目标状态">
       <div className="goal-status-header">
         <div>
-          <span className="stitch-label">目标状态</span>
-          <h2 className="stitch-title-md">当前进度 {status.progressPercent}%</h2>
+          <span className="ui-label">目标状态</span>
+          <h2 className="ui-title-md">当前进度 {status.progressPercent}%</h2>
         </div>
         <span className="goal-progress-ring" style={{ '--goal-progress': `${status.progressPercent}%` } as CSSProperties}>
           <strong>{formatBandNumber(status.targetOverall)}</strong>

@@ -1,5 +1,5 @@
 import { prepareTask1ChartSpec, type Task1ChartKind } from '@/lib/task1-chart-schema'
-import { userScopedStorageKey } from '@/lib/user-storage'
+import { readStorageValue, userScopedStorageKey } from '@/lib/user-storage'
 
 export type WritingTaskType = 'task1' | 'task2' | 'mock'
 
@@ -152,11 +152,11 @@ export type WritingRecord = {
   imageUrl?: string
 }
 
-export const WritingRecordsStorageKey = 'aerowrite-writing-records-v1'
-export const WritingRecordsDedupeMigrationKey = 'aerowrite-writing-records-dedupe-v2'
-export const MistakeBookStorageKey = 'aerowrite-mistake-book-v1'
-export const LocalDeviceStorageKey = 'aerowrite-local-device-id-v1'
-export const WritingRecordsUpdatedEvent = 'aerowrite:writing-records-updated'
+export const WritingRecordsStorageKey = 'ielts-writing-writing-records-v1'
+export const WritingRecordsDedupeMigrationKey = 'ielts-writing-writing-records-dedupe-v2'
+export const MistakeBookStorageKey = 'ielts-writing-mistake-book-v1'
+export const LocalDeviceStorageKey = 'ielts-writing-local-device-id-v1'
+export const WritingRecordsUpdatedEvent = 'ielts-writing:writing-records-updated'
 
 export const TaskTypeLabels: Record<WritingTaskType, string> = {
   task1: 'IELTS Task 1',
@@ -448,7 +448,7 @@ export function createRecordId() {
 
 export function getLocalDeviceId() {
   if (typeof window === 'undefined') return 'server'
-  const existing = window.localStorage.getItem(LocalDeviceStorageKey)
+  const existing = readStorageValue(window.localStorage, LocalDeviceStorageKey)
   if (existing) return existing
   const id = createRecordId().replace(/^record-/, 'device-')
   window.localStorage.setItem(LocalDeviceStorageKey, id)

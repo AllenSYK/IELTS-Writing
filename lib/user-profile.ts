@@ -29,7 +29,7 @@ export type UserProfile = {
 
 export type UserProfileValidationError = Partial<Record<keyof UserProfile, string>>
 
-export const UserProfileStorageKey = 'aerowrite-user-profile-v1'
+export const UserProfileStorageKey = 'ielts-writing-user-profile-v1'
 
 export const IELTS_BAND_OPTIONS: IELTSBand[] = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9]
 
@@ -171,7 +171,7 @@ export function saveUserProfile(userId: string, profile: UserProfile): UserProfi
   const normalized = normalizeUserProfile({ ...profile, updatedAt: new Date().toISOString() })
   if (typeof window !== 'undefined') {
     window.localStorage.setItem(userScopedStorageKey(UserProfileStorageKey, userId), JSON.stringify(normalized))
-    window.dispatchEvent(new CustomEvent('aerowrite:user-profile-updated', { detail: { userId, profile: normalized } }))
+    window.dispatchEvent(new CustomEvent('ielts-writing:user-profile-updated', { detail: { userId, profile: normalized } }))
   }
   return normalized
 }

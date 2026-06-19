@@ -6,15 +6,15 @@ import { Sidebar } from './Sidebar'
 import type { ReactNode } from 'react'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string; subtitle: string }> = [
-  { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心', subtitle: 'Home' },
-  { match: (pathname) => pathname === '/practice', title: 'IELTS Writing', subtitle: 'Practice' },
-  { match: (pathname) => pathname.startsWith('/history'), title: '练习记录', subtitle: 'History' },
-  { match: (pathname) => pathname.startsWith('/analytics') || pathname.startsWith('/level0'), title: '学习分析', subtitle: 'Analytics' },
-  { match: (pathname) => pathname.startsWith('/result'), title: '批改结果', subtitle: 'Result' },
-  { match: (pathname) => pathname.startsWith('/settings'), title: '设置', subtitle: 'Settings' },
-  { match: (pathname) => pathname.startsWith('/support'), title: '支持中心', subtitle: 'Support' },
-  { match: (pathname) => pathname.startsWith('/terms'), title: '服务条款', subtitle: 'Terms of Service' },
-  { match: (pathname) => pathname.startsWith('/privacy'), title: '隐私政策', subtitle: 'Privacy Policy' }
+  { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心', subtitle: '练习概览与近期进度' },
+  { match: (pathname) => pathname === '/practice', title: 'IELTS Writing', subtitle: '选择题型并开始写作' },
+  { match: (pathname) => pathname.startsWith('/history'), title: '练习记录', subtitle: '查看已提交作文和批改结果' },
+  { match: (pathname) => pathname.startsWith('/analytics'), title: '学习分析', subtitle: '查看分数趋势和练习建议' },
+  { match: (pathname) => pathname.startsWith('/result'), title: '批改结果', subtitle: '查看评分和修改建议' },
+  { match: (pathname) => pathname.startsWith('/settings'), title: '设置', subtitle: '管理账号和使用偏好' },
+  { match: (pathname) => pathname.startsWith('/support'), title: '支持中心', subtitle: '查看常见问题或提交反馈' },
+  { match: (pathname) => pathname.startsWith('/terms'), title: '服务条款', subtitle: '了解服务规则和使用限制' },
+  { match: (pathname) => pathname.startsWith('/privacy'), title: '隐私政策', subtitle: '了解数据的收集和处理方式' }
 ]
 
 function pageMeta(pathname: string) {

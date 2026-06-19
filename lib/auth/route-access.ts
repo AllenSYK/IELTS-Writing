@@ -1,6 +1,6 @@
 const authEntryRoutes = ['/login', '/register']
 const loginOnlyRoutes = ['/activate']
-const activeLicenseRoutes = ['/dashboard', '/practice', '/history', '/write', '/result', '/analytics', '/level0']
+const activeLicenseRoutes = ['/dashboard', '/practice', '/history', '/write', '/result', '/analytics']
 const userRoutes = [...loginOnlyRoutes, ...activeLicenseRoutes]
 
 function startsWithRoute(pathname: string, routes: string[]) {

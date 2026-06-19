@@ -14,10 +14,6 @@ assert.ok(migrationName, 'Missing reconcile_admin_portal_schema migration')
 
 const migration = fs.readFileSync(path.join(migrationDirectory, migrationName), 'utf8')
 const settingsRoute = fs.readFileSync(path.join(root, 'app', 'api', 'admin', 'settings', 'route.ts'), 'utf8')
-const adminLicenseFunction = fs.readFileSync(
-  path.join(root, 'supabase', 'functions', 'admin-license', 'index.ts'),
-  'utf8'
-)
 
 const requiredColumns = {
   admin_settings: ['id', 'setting_key', 'setting_value', 'description', 'created_at', 'updated_at'],
@@ -67,12 +63,10 @@ assert.match(migration, /create unique index if not exists admin_settings_id_rec
 assert.doesNotMatch(migration, /\badmin_settings\s*\([^)]*\bvalue\b/i)
 assert.doesNotMatch(migration, /\bset\s+value\s*=/i)
 
-for (const source of [settingsRoute, adminLicenseFunction]) {
-  assert.match(source, /setting_value/)
-  assert.doesNotMatch(source, /\.select\(['"`]value(?:,|['"`])/)
-  assert.doesNotMatch(source, /\.update\(\{\s*value\s*:/)
-  assert.doesNotMatch(source, /\.upsert\(\{[^}]*\bvalue\s*:/s)
-}
+assert.match(settingsRoute, /setting_value/)
+assert.doesNotMatch(settingsRoute, /\.select\(['"`]value(?:,|['"`])/)
+assert.doesNotMatch(settingsRoute, /\.update\(\{\s*value\s*:/)
+assert.doesNotMatch(settingsRoute, /\.upsert\(\{[^}]*\bvalue\s*:/s)
 
 const apiContracts = {
   'app/api/admin/licenses/route.ts': [
@@ -171,4 +165,4 @@ for (const [relativePath, fields] of Object.entries(apiContracts)) {
   }
 }
 
-console.log(`Static migration check passed: ${migrationName}`)
+process.stdout.write(`Static migration check passed: ${migrationName}\n`)

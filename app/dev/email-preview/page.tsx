@@ -15,11 +15,11 @@ export default async function EmailPreviewPage() {
   const resetHtml = await render(<PasswordResetEmail resetUrl={`${getSiteUrl()}/reset-password?code=preview`} />)
 
   return (
-    <main className="stitch-page email-preview-page" data-main-content tabIndex={-1}>
+    <main className="ui-page email-preview-page" data-main-content tabIndex={-1}>
       <section className="email-preview-shell">
         <header className="email-preview-header">
           <div>
-            <p className="stitch-label">Email Preview</p>
+            <p className="ui-label">Email Preview</p>
             <h1>邮件模板预览</h1>
           </div>
           <span>模拟验证码 438291</span>

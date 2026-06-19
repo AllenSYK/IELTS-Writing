@@ -17,11 +17,6 @@ export function apiError(error: unknown, fallback = '请求失败。') {
   if (error instanceof ZodError) {
     return json({ error: 'invalid_input', details: error.flatten() }, { status: 400 })
   }
-  if (error instanceof Error && error.name === 'AdminEdgeError') {
-    const status = typeof (error as Error & { status?: unknown }).status === 'number' ? (error as Error & { status: number }).status : 502
-    const data = (error as Error & { data?: unknown }).data
-    return json(typeof data === 'object' && data !== null ? data : { error: 'admin_edge_error', message: error.message }, { status: status >= 400 ? status : 502 })
-  }
   if (error instanceof Error) {
     console.error('[api-error]', error.name, error.message)
     const status = error.message.includes('Supabase service configuration') ? 503 : 500

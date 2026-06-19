@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { AsyncButton, useToast } from '@/components/interaction-system'
 import { FaqDialog } from '@/components/support/FaqDialog'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import {
   SupportFaqs,
   SupportFeedbackCategories,
@@ -15,15 +15,6 @@ import {
 type DeviceInfo = {
   platform: string
   arch: string
-  hostname?: string
-}
-
-type UpdateState = {
-  status?: string
-  currentVersion?: string
-  latestVersion?: string
-  lastCheckedAt?: string | null
-  error?: string | null
 }
 
 type FeedbackResult = {
@@ -32,14 +23,14 @@ type FeedbackResult = {
   createdAt: string
 }
 
-const supportEmail = 'qgyxzq@gmail.com'
+const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@ieltswriting.online'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.ieltswriting.online'
 
 export default function SupportPage() {
   const { pushToast } = useToast()
   const feedbackRef = useRef<HTMLFormElement>(null)
-  const [version, setVersion] = useState(process.env.NEXT_PUBLIC_APP_VERSION || '浏览器预览')
-  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>({ platform: 'browser', arch: 'preview' })
-  const [updateState, setUpdateState] = useState<UpdateState>({})
+  const version = process.env.NEXT_PUBLIC_APP_VERSION || '未标注'
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>({ platform: '浏览器', arch: '未知' })
   const [issueType, setIssueType] = useState<SupportFeedbackCategory>(SupportFeedbackCategories[2])
   const [subject, setSubject] = useState('')
   const [description, setDescription] = useState('')
@@ -51,19 +42,22 @@ export default function SupportPage() {
   const [selectedFaq, setSelectedFaq] = useState<SupportFaq | null>(null)
 
   useEffect(() => {
-    window.desktopApp?.getVersion().then(setVersion).catch(() => undefined)
-    window.desktopApp?.getDeviceInfo?.().then(setDeviceInfo).catch(() => undefined)
-    window.desktopUpdater?.getState?.().then(setUpdateState).catch(() => undefined)
+    window.queueMicrotask(() => {
+      setDeviceInfo({
+        platform: navigator.platform || '浏览器',
+        arch: 'Web'
+      })
+    })
   }, [])
 
   const diagnostics = useMemo(
     () => ({
-      appVersion: updateState.currentVersion || version,
+      appVersion: version,
       platform: `${deviceInfo.platform} ${deviceInfo.arch}`,
       osVersion: typeof navigator === 'undefined' ? '未提供' : navigator.userAgent || '未提供',
-      recentErrorCode: updateState.error || updateState.status || '无'
+      recentErrorCode: '无'
     }),
-    [deviceInfo.arch, deviceInfo.platform, updateState.currentVersion, updateState.error, updateState.status, version]
+    [deviceInfo.arch, deviceInfo.platform, version]
   )
 
   const diagnosticsText = useMemo(
@@ -127,14 +121,14 @@ export default function SupportPage() {
   }
 
   return (
-    <main className="stitch-page" data-main-content tabIndex={-1}>
+    <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="support-main">
         <header className="page-section-header">
           <div>
-            <h1 className="stitch-title-headline">支持中心</h1>
-            <p className="stitch-body-lg">先查看常见问题，或提交反馈让管理员在后台处理。</p>
+            <h1 className="ui-title-headline">支持中心</h1>
+            <p className="ui-body-lg">先查看常见问题，或提交反馈让管理员在后台处理。</p>
           </div>
-          <a className="stitch-primary-button" href={`mailto:${supportEmail}?subject=${encodeURIComponent('IELTS Writing 使用反馈')}`}>
+          <a className="ui-primary-button" href={`mailto:${supportEmail}?subject=${encodeURIComponent('IELTS Writing 使用反馈')}`}>
             <MaterialIcon name="mail" size={18} />
             联系开发者
           </a>
@@ -142,7 +136,7 @@ export default function SupportPage() {
 
         <GlassPanel className="settings-section">
           <div className="settings-section-header">
-            <h2 className="stitch-title-md">常见问题</h2>
+            <h2 className="ui-title-md">常见问题</h2>
           </div>
           <ul className="faq-list">
             {SupportFaqs.map((item) => (
@@ -160,7 +154,7 @@ export default function SupportPage() {
         <GlassPanel className="settings-section">
           <form ref={feedbackRef} className="feedback-form" onSubmit={submitFeedback}>
             <div className="settings-section-header">
-              <h2 className="stitch-title-md">提交反馈</h2>
+              <h2 className="ui-title-md">提交反馈</h2>
               {result ? <span className="feedback-ticket">反馈编号：{result.displayId}</span> : null}
             </div>
             <div className="profile-form-grid">
@@ -208,24 +202,24 @@ export default function SupportPage() {
         <div className="support-grid">
           <GlassPanel className="settings-section">
             <div className="settings-section-header">
-              <h2 className="stitch-title-md">联系开发者</h2>
+              <h2 className="ui-title-md">联系开发者</h2>
             </div>
             <dl className="diagnostic-list">
               <div><dt>联系邮箱</dt><dd><a href={`mailto:${supportEmail}`}>{supportEmail}</a></dd></div>
-              <div><dt>官方网站</dt><dd>https://nightwish.ai</dd></div>
+              <div><dt>官方网站</dt><dd><a href={siteUrl}>{siteUrl}</a></dd></div>
             </dl>
           </GlassPanel>
 
           <GlassPanel className="settings-section">
             <div className="settings-section-header">
-              <h2 className="stitch-title-md">应用信息</h2>
+              <h2 className="ui-title-md">应用信息</h2>
             </div>
             <dl className="diagnostic-list">
               <div><dt>应用版本</dt><dd>{diagnostics.appVersion}</dd></div>
               <div><dt>系统平台</dt><dd>{diagnostics.platform}</dd></div>
               <div><dt>最近错误码</dt><dd>{diagnostics.recentErrorCode}</dd></div>
             </dl>
-            <button className="stitch-secondary-button" type="button" onClick={() => copyText('诊断信息', diagnosticsText)}>
+            <button className="ui-secondary-button" type="button" onClick={() => copyText('诊断信息', diagnosticsText)}>
               <MaterialIcon name="content_copy" size={18} />
               复制脱敏诊断信息
             </button>

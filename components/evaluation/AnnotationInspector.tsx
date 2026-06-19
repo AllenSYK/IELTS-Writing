@@ -1,6 +1,6 @@
 'use client'
 
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import {
   EssayAnnotationCriterionLabels,
   EssayAnnotationLabels,
@@ -60,8 +60,8 @@ export function AnnotationInspector({
         <div className="annotation-empty-icon">
           <MaterialIcon name="rule" size={22} />
         </div>
-        <h2 className="stitch-title-md">原文标注</h2>
-        <p className="stitch-body-md">{emptyMessage}</p>
+        <h2 className="ui-title-md">原文标注</h2>
+        <p className="ui-body-md">{emptyMessage}</p>
       </aside>
     )
   }
@@ -111,30 +111,30 @@ export function AnnotationInspector({
       </div>
 
       <div className="annotation-nav-row">
-        <button className="stitch-secondary-button" type="button" onClick={() => move(-1)}>
+        <button className="ui-secondary-button" type="button" onClick={() => move(-1)}>
           <MaterialIcon name="arrow_upward" size={17} />
           上一个
         </button>
-        <button className="stitch-secondary-button" type="button" onClick={() => move(1)}>
+        <button className="ui-secondary-button" type="button" onClick={() => move(1)}>
           <MaterialIcon name="arrow_downward" size={17} />
           下一个
         </button>
       </div>
 
       <div className="annotation-action-grid">
-        <button className="stitch-primary-button" type="button" onClick={() => onAccept(annotation)} disabled={!canAccept} title={!annotation.replacement ? '此建议没有可直接替换的文本' : accepted ? '此建议已接受' : ignored ? '此建议已忽略' : undefined}>
+        <button className="ui-primary-button" type="button" onClick={() => onAccept(annotation)} disabled={!canAccept} title={!annotation.replacement ? '此建议没有可直接替换的文本' : accepted ? '此建议已接受' : ignored ? '此建议已忽略' : undefined}>
           <MaterialIcon name={accepted ? 'check_circle' : 'done'} size={17} />
           接受修改
         </button>
-        <button className="stitch-secondary-button" type="button" onClick={() => onIgnore(annotation)} disabled={ignored || accepted}>
+        <button className="ui-secondary-button" type="button" onClick={() => onIgnore(annotation)} disabled={ignored || accepted}>
           <MaterialIcon name="visibility_off" size={17} />
           忽略
         </button>
-        <button className="stitch-secondary-button" type="button" onClick={onUndo} disabled={!canUndo}>
+        <button className="ui-secondary-button" type="button" onClick={onUndo} disabled={!canUndo}>
           <MaterialIcon name="undo" size={17} />
           撤销
         </button>
-        <button className="stitch-secondary-button" type="button" onClick={onResetAll} disabled={!canUndo}>
+        <button className="ui-secondary-button" type="button" onClick={onResetAll} disabled={!canUndo}>
           <MaterialIcon name="restart_alt" size={17} />
           重置全部
         </button>

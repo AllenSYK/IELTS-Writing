@@ -9,7 +9,7 @@ import {
 
 export const UserRouteCacheKeys = {
   history: 'question_history',
-  level0: 'question_level0'
+  analytics: 'question_analytics'
 } as const
 
 export type UserRouteCacheKey = (typeof UserRouteCacheKeys)[keyof typeof UserRouteCacheKeys]
@@ -22,7 +22,7 @@ type CacheMutator = (
 
 const recordCacheKeys = [
   UserRouteCacheKeys.history,
-  UserRouteCacheKeys.level0
+  UserRouteCacheKeys.analytics
 ] as const
 
 const cachedRecords = new Map<string, WritingRecord[]>()
@@ -77,7 +77,7 @@ export function clearUserRouteMemoryCaches(userId?: string) {
 }
 
 export function useUserWritingRecords(
-  key: typeof UserRouteCacheKeys.history | typeof UserRouteCacheKeys.level0,
+  key: typeof UserRouteCacheKeys.history | typeof UserRouteCacheKeys.analytics,
   userId: string | null
 ) {
   const result = useSWR<WritingRecord[]>(

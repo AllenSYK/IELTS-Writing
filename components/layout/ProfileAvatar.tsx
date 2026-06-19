@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { initialsFromProfile, type UserProfile } from '@/lib/user-profile'
 
 export function ProfileAvatar({
@@ -16,7 +17,7 @@ export function ProfileAvatar({
   if (profile.avatarUrl) {
     return (
       <span className={`profile-avatar profile-avatar-${size}`} aria-label={label}>
-        <img alt="" src={profile.avatarUrl} />
+        <Image alt="" src={profile.avatarUrl} width={96} height={96} unoptimized />
       </span>
     )
   }

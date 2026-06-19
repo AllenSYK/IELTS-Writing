@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { AiConfigurationError, AiProviderError, generateWritingPromptWithAi } from '@/lib/ai'
 import { apiError, json } from '@/lib/http'
-import { verifyLicenseToken } from '@/lib/license/token'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense, type WebLicenseCheck } from '@/lib/web-license/auth'
 import {
@@ -34,49 +33,6 @@ const GeneratePromptSchema = z.object({
 })
 
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : ''
-  const deviceId = request.headers.get('x-device-id') || ''
-
-  if (token && deviceId) {
-    return handleDesktopPromptGeneration(request, token)
-  }
-
-  return handleWebPromptGeneration(request)
-}
-
-async function handleDesktopPromptGeneration(request: Request, token: string) {
-  try {
-    const payload = await verifyLicenseToken(token)
-    if (payload.status !== 'active') return json({ error: 'license_inactive' }, { status: 403 })
-
-    const body = GeneratePromptSchema.parse(await request.json())
-    const selection = {
-      ...DefaultPromptSelection,
-      task1ChartType: normalizeTask1ChartType(body.selection.task1ChartType),
-      task1Subtype: normalizeTask1Subtype(body.selection.task1Subtype),
-      task2EssayType: normalizeTask2EssayType(body.selection.task2EssayType),
-      task2Topic: normalizeTask2Topic(body.selection.task2Topic)
-    }
-    const question = await generateWritingPromptWithAi({
-      taskType: body.taskType,
-      selection,
-      excludePromptSummaries: body.excludePromptSummaries
-    })
-
-    return json({ ok: true, question })
-  } catch (error) {
-    if (error instanceof AiConfigurationError) {
-      return json({ error: 'ai_not_configured', missing: error.missing }, { status: 503 })
-    }
-    if (error instanceof AiProviderError) {
-      return json({ error: error.code, message: error.message, providerStatus: error.status }, { status: 502 })
-    }
-    return apiError(error, 'AI prompt generation failed.')
-  }
-}
-
-async function handleWebPromptGeneration(request: Request) {
   const check = await requireActiveWebLicense()
   if (!check.ok) {
     return json(

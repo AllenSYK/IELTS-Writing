@@ -29,16 +29,16 @@ export default async function DashboardPage() {
   if (!check.ok) redirect('/activate')
 
   return (
-    <main className="stitch-page dashboard-page" data-main-content tabIndex={-1}>
+    <main className="ui-page dashboard-page" data-main-content tabIndex={-1}>
       <section className="dashboard-main">
         <header className="dashboard-header">
           <div>
-            <p className="stitch-label">Web Dashboard</p>
+            <p className="ui-label">练习概览</p>
             <h1>账号中心</h1>
-            <p className="stitch-body-md">{user.email}</p>
+            <p className="ui-body-md">{user.email}</p>
           </div>
           <div className="dashboard-actions">
-            <Link className="stitch-primary-button" href="/practice">
+            <Link className="ui-primary-button" href="/practice">
               <PenLine size={16} />
               进入练习
             </Link>

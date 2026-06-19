@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import {
   DefaultPromptSelection,
   Task1ChartLabels,
@@ -97,7 +97,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
   const [selection, setSelection] = useState<PromptSelection>(() => {
     if (typeof window === 'undefined' || !userId) return DefaultPromptSelection
     try {
-      return { ...DefaultPromptSelection, ...JSON.parse(window.sessionStorage.getItem(userScopedStorageKey('aerowrite-prompt-selection-v1', userId)) || '{}') }
+      return { ...DefaultPromptSelection, ...JSON.parse(window.sessionStorage.getItem(userScopedStorageKey('ielts-writing-prompt-selection-v1', userId)) || '{}') }
     } catch {
       return DefaultPromptSelection
     }
@@ -113,7 +113,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
         ...patch,
         task1Subtype: patch.task1ChartType && !(selectedTask1SubtypeOptions(patch.task1ChartType) as readonly string[]).includes(current.task1Subtype) ? 'random' : (patch.task1Subtype ?? current.task1Subtype)
       }
-      if (userId) window.sessionStorage.setItem(userScopedStorageKey('aerowrite-prompt-selection-v1', userId), JSON.stringify(next))
+      if (userId) window.sessionStorage.setItem(userScopedStorageKey('ielts-writing-prompt-selection-v1', userId), JSON.stringify(next))
       return next
     })
   }
@@ -134,14 +134,14 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
             onPointerEnter={() => prefetchMode(mode.mode)}
             onFocus={() => prefetchMode(mode.mode)}
           >
-            <GlassPanel className={`mode-card stitch-hover-glow stitch-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}>
+            <GlassPanel className={`mode-card ui-hover-glow ui-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}>
               <header>
                 <span className="mode-icon">
                   <MaterialIcon name={mode.icon} filled={mode.featured} size={28} />
                 </span>
                 <span className="mode-badge">
                   <MaterialIcon name="schedule" size={16} />
-                  <span className="stitch-label">{mode.minutes}</span>
+                  <span className="ui-label">{mode.minutes}</span>
                 </span>
               </header>
               <h2>{mode.title}</h2>
@@ -159,7 +159,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
                   <MaterialIcon name="description" size={18} />
                   {mode.words}
                 </span>
-                <span className={mode.featured ? 'stitch-dark-button' : mode.primary ? 'stitch-primary-button' : 'stitch-secondary-button'}>
+                <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
                   {mode.action}
                 </span>
               </div>
@@ -171,15 +171,15 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
       <GlassPanel level={2} className="prompt-choice-panel">
         <div className="settings-section-header">
           <div>
-            <h2 className="stitch-title-md">练习设置</h2>
-            <p className="stitch-body-md">可选配置；直接点击上方卡片时，未选择的项目会自动随机。</p>
+            <h2 className="ui-title-md">练习设置</h2>
+            <p className="ui-body-md">可选配置；直接点击上方卡片时，未选择的项目会自动随机。</p>
           </div>
           <div className="prompt-choice-actions">
-            <button className="stitch-secondary-button" type="button" onClick={() => setShowAdvanced((value) => !value)}>
+            <button className="ui-secondary-button" type="button" onClick={() => setShowAdvanced((value) => !value)}>
               <MaterialIcon name={showAdvanced ? 'expand_less' : 'tune'} size={18} />
               {showAdvanced ? '收起高级' : '高级选项'}
             </button>
-            <button className="stitch-secondary-button" type="button" onClick={() => updateSelection(DefaultPromptSelection)}>
+            <button className="ui-secondary-button" type="button" onClick={() => updateSelection(DefaultPromptSelection)}>
               <MaterialIcon name="casino" size={18} />
               全部随机
             </button>
@@ -188,7 +188,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
 
         <div className="prompt-choice-list">
           <section className="prompt-choice-row" aria-label="练习模式">
-            <h3 className="stitch-label">练习模式</h3>
+            <h3 className="ui-label">练习模式</h3>
             <div className="choice-chip-row">
               {modes.map((mode) => (
                 <Link
@@ -206,7 +206,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
           </section>
 
           <section className="prompt-choice-row" aria-label="Task 1 题型">
-            <h3 className="stitch-label">Task 1 题型</h3>
+            <h3 className="ui-label">Task 1 题型</h3>
             <div className="choice-chip-row">
               {[...primaryTask1Types, ...(showAdvanced ? advancedTask1Types : [])].map((type) => (
                 <Chip
@@ -233,7 +233,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
           </section>
 
           <section className="prompt-choice-row" aria-label="Task 2 题型">
-            <h3 className="stitch-label">Task 2 题型</h3>
+            <h3 className="ui-label">Task 2 题型</h3>
             <div className="choice-chip-row">
               {[...primaryTask2Types, ...(showAdvanced ? advancedTask2Types : [])].map((type) => (
                 <Chip
@@ -247,7 +247,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
           </section>
 
           <section className="prompt-choice-row" aria-label="Task 2 主题">
-            <h3 className="stitch-label">Task 2 主题</h3>
+            <h3 className="ui-label">Task 2 主题</h3>
             <div className="choice-chip-row">
               {[...primaryTopics, ...(showAdvanced ? advancedTopics : [])].map((topic) => (
                 <Chip

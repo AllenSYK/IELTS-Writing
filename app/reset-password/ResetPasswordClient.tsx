@@ -143,7 +143,7 @@ export function ResetPasswordClient() {
         {message ? <p className="auth-success" role="status"><CheckCircle2 size={16} />{message}</p> : null}
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-        <button className="stitch-primary-button auth-submit auth-main-button" type="submit" disabled={checking || loading || !ready}>
+        <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={checking || loading || !ready}>
           {loading ? <Loader2 className="admin-spin" size={18} /> : <CheckCircle2 size={18} />}
           {loading ? '正在保存' : '保存新密码'}
         </button>

@@ -1,54 +1,24 @@
-.DS_Store
-.env
-.env.*
-.env.release.local
-!.env.example
-.next/
 node_modules/
-release/
+.next/
 dist/
 out/
-supabase/.temp/
-*.log
-.logs/
-*.pem
-*.p12
-*.cer
-*.key
 coverage/
-secrets/
-*.app
-*.app.bak
-release/
-dist/
-out/
-node_modules/
-.next/
-.env
-.env.*
-!.env.example
-
-# Dependencies and builds
-node_modules/
-.next/
-dist/
-release/
-out/
-
-# Electron packaged apps
-*.app
-*.app.bak
-IELTS Writing.app*
-*.dmg
-*.asar
+*.tsbuildinfo
 
 # Secrets
 .env
 .env.*
 !.env.example
+secrets/
+*.pem
+*.p12
+*.cer
+*.key
 
 # macOS
 .DS_Store
 
-# Logs
+# Local tooling
+supabase/.temp/
+.logs/
 *.log

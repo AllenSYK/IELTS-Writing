@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import type { RadarMetric } from '@/lib/learning-analytics'
 import { formatBandNumber } from '@/lib/ielts-scoring'
 

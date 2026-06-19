@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import type { SupportFaq } from '@/lib/support-feedback'
 
 export function FaqDialog({
@@ -29,16 +29,16 @@ export function FaqDialog({
       footer={
         <>
           {faq.actions.map((action) => action.kind === 'feedback' ? (
-            <button key={action.label} className="stitch-primary-button" type="button" onClick={() => onUseFeedback(faq)}>
+            <button key={action.label} className="ui-primary-button" type="button" onClick={() => onUseFeedback(faq)}>
               <MaterialIcon name="send" size={18} />
               {action.label}
             </button>
           ) : action.href ? (
-            <Link key={action.label} className="stitch-secondary-button" href={action.href} onClick={onClose}>
+            <Link key={action.label} className="ui-secondary-button" href={action.href} onClick={onClose}>
               {action.label}
             </Link>
           ) : null)}
-          <button className="stitch-secondary-button" type="button" onClick={onClose}>
+          <button className="ui-secondary-button" type="button" onClick={onClose}>
             关闭
           </button>
         </>

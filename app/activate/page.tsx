@@ -79,19 +79,19 @@ export default function ActivatePage() {
         <div className="auth-heading">
           <span className="auth-icon"><KeyRound size={22} /></span>
           <div>
-            <p className="stitch-label">{checking ? '正在读取登录状态' : email}</p>
-            <h1>输入软件激活码</h1>
+            <p className="ui-label">{checking ? '正在读取登录状态' : email}</p>
+            <h1>输入账号激活码</h1>
           </div>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit} aria-busy={loading}>
           <label>
-            <span>软件激活码</span>
+            <span>账号激活码</span>
             <input value={code} onChange={(event) => setCode(event.target.value)} placeholder="IELTS-ABCD-EFGH-1234" autoCapitalize="characters" required disabled={checking} />
           </label>
           {message ? <p className="auth-success" role="status"><CheckCircle2 size={16} />{message}</p> : null}
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
-          <button className="stitch-primary-button auth-submit" type="submit" disabled={loading || checking}>
+          <button className="ui-primary-button auth-submit" type="submit" disabled={loading || checking}>
             {loading ? <Loader2 className="admin-spin" size={18} /> : <KeyRound size={18} />}
             激活
           </button>

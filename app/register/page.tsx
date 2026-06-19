@@ -9,6 +9,7 @@ type SendCodeResponse = {
   success?: boolean
   message?: string
   maskedEmail?: string
+  serverTime?: string
   expiresAt?: string
   cooldownSeconds?: number
 }
@@ -131,11 +132,13 @@ export default function RegisterPage() {
         return
       }
 
+      const requestedAt = data.serverTime ? new Date(data.serverTime).getTime() : Number.NaN
+      const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Number.NaN
       setCodeEmail(normalized)
       setMaskedEmail(data.maskedEmail || normalized)
       setDigits(['', '', '', '', '', ''])
-      setExpiresAt(data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 10 * 60 * 1000)
-      setCooldownUntil(Date.now() + (data.cooldownSeconds || 60) * 1000)
+      setExpiresAt(Number.isFinite(expiresAt) ? expiresAt : null)
+      setCooldownUntil(Number.isFinite(requestedAt) ? requestedAt + (data.cooldownSeconds || 60) * 1000 : null)
       setStep('code')
       setMessage('邮箱验证码已发送')
       window.setTimeout(() => codeRefs.current[0]?.focus(), 80)
@@ -259,7 +262,7 @@ export default function RegisterPage() {
             <p className="auth-kicker">邮箱验证成功</p>
             <h1>您的账号已创建</h1>
             <p>{message || '现在可以登录，并使用软件激活码开通网站使用权限。'}</p>
-            <Link className="stitch-primary-button auth-main-button" href="/login">前往登录</Link>
+            <Link className="ui-primary-button auth-main-button" href="/login">前往登录</Link>
           </div>
         ) : null}
 
@@ -329,7 +332,7 @@ export default function RegisterPage() {
 
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-              <button className="stitch-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading)}>
+              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading)}>
                 {loading === 'send' ? <Loader2 className="admin-spin" size={18} /> : <UserPlus size={18} />}
                 {loading === 'send' ? '正在发送' : '发送邮箱验证码'}
               </button>
@@ -380,7 +383,7 @@ export default function RegisterPage() {
               {message ? <p className="auth-success" role="status">{message}</p> : null}
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-              <button className="stitch-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0}>
+              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0}>
                 {loading === 'verify' ? <Loader2 className="admin-spin" size={18} /> : <ShieldCheck size={18} />}
                 {loading === 'verify' ? '正在创建账号' : '验证并创建账号'}
               </button>

@@ -26,7 +26,7 @@ function UserCacheSynchronizer({ userId }: { userId: string | null }) {
       replaceCachedUserWritingRecords(userId, records)
       void Promise.all([
         mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.history, userId), records, { revalidate: false }),
-        mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.level0, userId), records, { revalidate: false })
+        mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.analytics, userId), records, { revalidate: false })
       ])
     })
   }, [mutate, userId])

@@ -9,7 +9,7 @@ import { EvaluationLayout } from '@/components/evaluation/EvaluationLayout'
 import { ScoreSummary } from '@/components/evaluation/ScoreSummary'
 import { ConfirmDialog, useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { Task1Visual } from '@/components/task1/Task1Visual'
 import { criterionKeysForTask } from '@/lib/ielts-scoring'
@@ -122,12 +122,12 @@ function AnnotationFilterBar({
 
 function EmptyResult() {
   return (
-    <main className="stitch-page" tabIndex={-1}>
+    <main className="ui-page" tabIndex={-1}>
       <section className="result-main">
         <GlassPanel level={2} className="empty-state">
-          <h1 className="stitch-title-headline">暂无真实批改结果</h1>
-          <p className="stitch-body-md">提交一篇作文并完成 AI 批改后，这里会展示总分、四项评分、逐句错误和改写内容。</p>
-          <Link className="stitch-primary-button" href="/practice" style={{ marginTop: 24 }}>
+          <h1 className="ui-title-headline">暂无真实批改结果</h1>
+          <p className="ui-body-md">提交作文并完成批改后，这里会展示总分、四项评分、逐句问题和改写建议。</p>
+          <Link className="ui-primary-button" href="/practice" style={{ marginTop: 24 }}>
             开始写作
           </Link>
         </GlassPanel>
@@ -165,7 +165,7 @@ export default function ResultPage() {
       if (nextRecord) {
         setAcceptedChanges(nextRecord.acceptedChanges ?? [])
         setIgnoredIds(new Set())
-        const storedTab = window.localStorage.getItem(userScopedStorageKey(`aerowrite-result-tab-${nextRecord.id}`, userId)) as ResultTab | null
+        const storedTab = window.localStorage.getItem(userScopedStorageKey(`ielts-writing-result-tab-${nextRecord.id}`, userId)) as ResultTab | null
         if (storedTab === 'original' || storedTab === 'corrected' || storedTab === 'revised' || storedTab === 'model') {
           setTab(storedTab)
         }
@@ -175,7 +175,7 @@ export default function ResultPage() {
   }, [userId])
 
   useEffect(() => {
-    if (record && userId) window.localStorage.setItem(userScopedStorageKey(`aerowrite-result-tab-${record.id}`, userId), tab)
+    if (record && userId) window.localStorage.setItem(userScopedStorageKey(`ielts-writing-result-tab-${record.id}`, userId), tab)
   }, [record, tab, userId])
 
   const sentenceErrors = useMemo(() => record?.evaluation.sentenceAnnotations ?? record?.evaluation.sentenceErrors ?? [], [record])
@@ -238,7 +238,7 @@ export default function ResultPage() {
   function saveToMistakes() {
     if (!record || !userId) return
     saveMistakeRecord(userId, record)
-    pushToast({ kind: 'success', title: '已保存到错题本', message: '可在本机记录中继续复盘。' })
+    pushToast({ kind: 'success', title: '已保存到错题本', message: '可在历史记录中继续复盘。' })
   }
 
   function persistAcceptedChanges(nextChanges: AcceptedAnnotationChange[]) {
@@ -311,35 +311,35 @@ export default function ResultPage() {
   }
 
   return (
-    <main className="stitch-page" data-main-content tabIndex={-1}>
+    <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="result-main">
         <header className="result-header">
           <div className="result-header-copy">
-            <p className="stitch-label" style={{ color: 'var(--primary)' }}>
+            <p className="ui-label" style={{ color: 'var(--primary)' }}>
               Assessment Result
             </p>
-            <h1 className="stitch-title-display">{record.title}</h1>
-            <p className="stitch-body-md">
+            <h1 className="ui-title-display">{record.title}</h1>
+            <p className="ui-body-md">
               Submitted on {formatDate(record.submittedAt)} • {record.wordCount} Words • {TaskTypeLabels[record.taskType]}
             </p>
           </div>
         </header>
 
         <div className="result-actions-row">
-          <Link className="stitch-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="基于原题重写一篇新作文">
+          <Link className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="基于原题重写一篇新作文">
             <MaterialIcon name="edit_note" size={18} />
             基于原题重写
           </Link>
-          <Link className="stitch-secondary-button" href={`/write/${record.taskType}`}>
+          <Link className="ui-secondary-button" href={`/write/${record.taskType}`}>
             <MaterialIcon name="replay" size={18} />
             重新练习
           </Link>
-          <button className="stitch-secondary-button" type="button" onClick={saveToMistakes}>
+          <button className="ui-secondary-button" type="button" onClick={saveToMistakes}>
             <MaterialIcon name="bookmark_add" size={18} />
             保存到错题本
           </button>
           <button
-            className="stitch-secondary-button"
+            className="ui-secondary-button"
             type="button"
             onClick={() => copyText('当前内容', tab === 'model' ? modelEssay || '' : tab === 'revised' ? (acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || '') : tab === 'corrected' ? (acceptedChanges.length > 0 ? modifiedEssay : correctedEssay || originalEssay) : originalEssay)}
           >
@@ -392,7 +392,7 @@ export default function ResultPage() {
                   改写版本
                 </button>
                 <button className={`result-tab ${tab === 'model' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'model'} onClick={() => setTab('model')}>
-                  <MaterialIcon name="auto_awesome" size={16} /> AI 范文
+                  <MaterialIcon name="auto_awesome" size={16} /> 高分范文
                 </button>
               </div>
 
@@ -423,7 +423,7 @@ export default function ResultPage() {
                     {acceptedChanges.length > 0 ? (
                       <section className="modified-essay-preview" aria-label="修改后版本">
                         <div className="modified-essay-header">
-                          <span className="stitch-label">修改后版本</span>
+                          <span className="ui-label">修改后版本</span>
                           <span>已接受 {acceptedChanges.length} 处修改</span>
                         </div>
                         <p>{modifiedEssay}</p>
@@ -432,7 +432,7 @@ export default function ResultPage() {
                     {unresolvedAnnotations.length > 0 ? (
                       <section className="unresolved-annotations" aria-label="未定位建议">
                         <div className="unresolved-header">
-                          <h3 className="stitch-title-md">
+                          <h3 className="ui-title-md">
                             <MaterialIcon name="lightbulb" size={18} />
                             其他建议（{unresolvedAnnotations.length} 条）
                           </h3>
@@ -451,9 +451,9 @@ export default function ResultPage() {
                     ) : null}
                   </div>
                 ) : tab === 'revised' ? (
-                  acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || 'AI 本次未返回修改版作文。您可以接受标注中的修改来生成修改版本。'
+                  acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || '本次未返回修改版作文。您可以接受标注中的修改来生成修改版本。'
                 ) : (
-                  modelEssay || 'AI 本次未返回高分范文。这是正常情况，并非每次批改都会生成范文。'
+                  modelEssay || '本次未返回高分范文，并非每次批改都会生成范文。'
                 )}
               </article>
             </GlassPanel>

@@ -1,5 +1,5 @@
 import { WritingModeSelector } from '@/components/practice/WritingModeSelector'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 
 type PracticeFocus = 'grammar' | 'lexical' | 'cohesion' | 'task'
 
@@ -57,8 +57,8 @@ export default async function PracticePage({
     <main className="mode-page" data-main-content tabIndex={-1}>
       <section className="mode-main">
         <header className="mode-header">
-          <h1 className="stitch-title-display">IELTS Writing</h1>
-          <p className="stitch-body-lg">Choose your practice session. Focus, breathe, and write with clarity.</p>
+          <h1 className="ui-title-display">IELTS Writing</h1>
+          <p className="ui-body-lg">选择练习模式，按考试时间完成写作。</p>
         </header>
 
         {focus ? (
@@ -67,9 +67,9 @@ export default async function PracticePage({
               <MaterialIcon name={focusLabels[focus].icon} size={24} />
             </span>
             <div>
-              <span className="stitch-label">推荐练习重点</span>
-              <h2 className="stitch-title-md">{focusLabels[focus].title}</h2>
-              <p className="stitch-body-md">{focusLabels[focus].description}</p>
+              <span className="ui-label">推荐练习重点</span>
+              <h2 className="ui-title-md">{focusLabels[focus].title}</h2>
+              <p className="ui-body-md">{focusLabels[focus].description}</p>
             </div>
           </GlassPanel>
         ) : null}

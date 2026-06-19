@@ -1,6 +1,6 @@
 export default function DashboardLoading() {
   return (
-    <main className="stitch-page dashboard-page" tabIndex={-1} aria-busy="true">
+    <main className="ui-page dashboard-page" tabIndex={-1} aria-busy="true">
       <section className="dashboard-main dashboard-skeleton">
         <div className="dashboard-header">
           <div className="skeleton-line dashboard-skeleton-title" />

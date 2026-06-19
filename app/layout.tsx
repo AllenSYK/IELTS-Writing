@@ -9,7 +9,7 @@ import './admin.css'
 
 export const metadata: Metadata = {
   title: '空与梦 IELTS Writing',
-  description: 'IELTS writing practice and AI feedback desktop app.'
+  description: 'IELTS writing practice, feedback, progress tracking, and account management.'
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

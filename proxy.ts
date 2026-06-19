@@ -16,7 +16,6 @@ export const config = {
     '/write/:path*',
     '/result/:path*',
     '/analytics/:path*',
-    '/level0/:path*',
     '/admin',
     '/admin/:path*'
   ]

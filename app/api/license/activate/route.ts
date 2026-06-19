@@ -21,7 +21,6 @@ const failureMessages: Record<string, string> = {
 }
 
 export async function POST(request: Request) {
-  let userId: string | null = null
   let licenseCodePrefix: string | null = null
 
   try {
@@ -29,8 +28,6 @@ export async function POST(request: Request) {
     if (!user) {
       return json({ success: false, code: 'NOT_AUTHENTICATED', message: failureMessages.NOT_AUTHENTICATED }, { status: 401 })
     }
-    userId = user.id
-
     const body = ActivateSchema.parse(await request.json())
     const normalized = normalizeWebLicenseCode(body.code)
     licenseCodePrefix = getWebLicenseCodePrefix(normalized)
@@ -46,22 +43,12 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[license-activate] RPC error', {
-        rpcError: error,
-        rpcData: data,
+        code: error.code,
         errorCode,
-        userId,
         licenseCodePrefix
       })
       return json({ success: false, code: 'INTERNAL_ERROR', message: failureMessages.INTERNAL_ERROR }, { status: 500 })
     }
-
-    console.info('[license-activate] RPC result', {
-      rpcError: null,
-      rpcData: data,
-      errorCode,
-      userId,
-      licenseCodePrefix
-    })
 
     if (!result?.success) {
       const code = result?.error_code || 'LICENSE_INVALID'
@@ -80,8 +67,7 @@ export async function POST(request: Request) {
       return json({ success: false, code: 'LICENSE_INVALID', message: '请输入有效激活码' }, { status: 400 })
     }
     console.error('[license-activate] request failed', {
-      error,
-      userId,
+      error: error instanceof Error ? error.message : 'unknown',
       licenseCodePrefix
     })
     return json({ success: false, code: 'INTERNAL_ERROR', message: failureMessages.INTERNAL_ERROR }, { status: 500 })

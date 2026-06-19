@@ -1,6 +1,5 @@
 import type { WritingTaskType } from '@/lib/writing-records'
 import {
-  Task1ChartLabels,
   Task2EssayLabels,
   Task2TopicLabels,
   type PromptSelection,

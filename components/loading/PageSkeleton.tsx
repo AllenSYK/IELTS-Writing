@@ -28,8 +28,8 @@ export function PageSkeleton({ variant = 'cards' }: { variant?: PageSkeletonVari
   }
 
   return (
-    <main className="stitch-page route-content-skeleton" tabIndex={-1} aria-busy="true">
-      <section className="stitch-container skeleton-page" aria-label="正在加载页面内容">
+    <main className="ui-page route-content-skeleton" tabIndex={-1} aria-busy="true">
+      <section className="ui-container skeleton-page" aria-label="正在加载页面内容">
         <QuestionSkeleton />
         {variant === 'chart' ? <ChartSkeleton /> : null}
         <div className={`skeleton-grid ${variant}`}>

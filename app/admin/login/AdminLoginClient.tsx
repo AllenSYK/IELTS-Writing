@@ -126,7 +126,7 @@ export function AdminLoginClient({
         <header className="auth-copy">
           <p className="auth-kicker">IELTS Writing Admin</p>
           <h1>管理员登录</h1>
-          <p>管理端使用独立入口，并在登录后重新验证管理员角色。</p>
+          <p>请使用管理员账号登录。</p>
         </header>
 
         {isNotAdmin ? (
@@ -186,7 +186,7 @@ export function AdminLoginClient({
 
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-              <button className="stitch-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
+              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
                 {loading ? <Loader2 className="admin-spin" size={18} /> : <LogIn size={18} />}
                 {loading ? '正在验证管理员身份' : '登录管理后台'}
               </button>
@@ -198,12 +198,12 @@ export function AdminLoginClient({
 
         <div className="admin-login-actions">
           {isNotAdmin ? (
-            <button className="stitch-primary-button" type="button" onClick={switchAccount} disabled={switching}>
+            <button className="ui-primary-button" type="button" onClick={switchAccount} disabled={switching}>
               {switching ? <Loader2 className="admin-spin" size={17} /> : <LogOut size={17} />}
               {switching ? '正在退出当前账号' : '退出并切换管理员账号'}
             </button>
           ) : null}
-          <Link className="stitch-secondary-button" href="/">
+          <Link className="ui-secondary-button" href="/">
             <ArrowLeft size={17} />
             返回用户端
           </Link>

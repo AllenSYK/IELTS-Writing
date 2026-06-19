@@ -29,7 +29,7 @@ export type PromptDuplicateResult = {
   matched?: GeneratedPromptHistoryEntry
 }
 
-export const GeneratedPromptHistoryStorageKey = 'aerowrite-generated-prompt-history-v1'
+export const GeneratedPromptHistoryStorageKey = 'ielts-writing-generated-prompt-history-v1'
 
 const YEAR_PATTERN = /\b(?:19|20)\d{2}\b/g
 const NUMBER_PATTERN = /\b\d+(?:[.,]\d+)?\b/g

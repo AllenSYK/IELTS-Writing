@@ -58,9 +58,9 @@ async function requestJson(path, init, cookieJar) {
 }
 
 const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-const adminEmail = `codex-license-admin-${suffix}@example.com`
-const userEmail = `codex-license-user-${suffix}@example.com`
-const password = `Codex!${suffix}Aa9`
+const adminEmail = `license-admin-${suffix}@example.com`
+const userEmail = `license-user-${suffix}@example.com`
+const password = `Verify!${suffix}Aa9`
 let adminUserId
 let userId
 let licenseId
@@ -105,7 +105,7 @@ try {
       plan: 'standard',
       durationDays: 30,
       maxActivations: 1,
-      note: 'Codex license activation E2E verification'
+      note: 'License activation end-to-end verification'
     })
   }, adminCookies)
   assert.equal(generated.response.status, 200)
@@ -174,7 +174,7 @@ try {
   assert.equal(duplicate.response.status, 409)
   assert.equal(duplicate.data.code, 'USER_ALREADY_ACTIVE')
 
-  console.log(JSON.stringify({
+  process.stdout.write(`${JSON.stringify({
     success: true,
     adminLogin: adminLogin.response.status,
     generatedLicenseStatus: generatedLicense.status,
@@ -186,7 +186,7 @@ try {
     profileLicenseStatus: profile.license_status,
     duplicateCode: duplicate.data.code,
     licenseCodePrefix: license.code_prefix
-  }, null, 2))
+  }, null, 2)}\n`)
 } finally {
   if (licenseId) {
     const { error } = await service.from('license_codes').delete().eq('id', licenseId)

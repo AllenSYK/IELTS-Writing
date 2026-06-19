@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { AsyncButton, ConfirmDialog, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import { Task1Visual } from '@/components/task1/Task1Visual'
 import {
   buildLocalGeneratedQuestion,
@@ -85,7 +85,7 @@ type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'analyzing' | 'organizing
 const mockTaskOrder: MockTaskType[] = ['task1', 'task2']
 const evaluationStages = [
   '正在保存作文',
-  '正在请求AI评分',
+  '正在请求评分',
   '正在解析评分结果',
   '初步评分已完成',
   '正在补充详细批改',
@@ -111,19 +111,19 @@ function formatTime(seconds: number) {
 }
 
 function singleDraftKey(userId: string, mode: WritingTaskType) {
-  return userScopedStorageKey(`aerowrite-draft-${mode}`, userId)
+  return userScopedStorageKey(`ielts-writing-draft-${mode}`, userId)
 }
 
 function mockDraftKey(userId: string, taskType: MockTaskType) {
-  return userScopedStorageKey(`aerowrite-draft-mock-${taskType}`, userId)
+  return userScopedStorageKey(`ielts-writing-draft-mock-${taskType}`, userId)
 }
 
 function timerKeyFor(userId: string, mode: WritingTaskType) {
-  return userScopedStorageKey(`aerowrite-timer-${mode}`, userId)
+  return userScopedStorageKey(`ielts-writing-timer-${mode}`, userId)
 }
 
 function questionCacheKey(userId: string, taskType: MockTaskType, selection: PromptSelection) {
-  return userScopedStorageKey(`aerowrite-question-cache:${taskType}:${JSON.stringify(selection)}`, userId)
+  return userScopedStorageKey(`ielts-writing-question-cache:${taskType}:${JSON.stringify(selection)}`, userId)
 }
 
 function readCachedQuestion(userId: string, taskType: MockTaskType, selection: PromptSelection) {
@@ -157,7 +157,6 @@ function rememberQuestion(userId: string, taskType: MockTaskType, selection: Pro
   try {
     window.sessionStorage.setItem(key, JSON.stringify({ question, cachedAt }))
   } catch {
-    // Memory cache still prevents duplicate loading when session storage is unavailable.
   }
   return question
 }
@@ -291,9 +290,7 @@ function readTimerEnd(timerKey: string, durationMinutes: number) {
     const parsed: unknown = JSON.parse(window.localStorage.getItem(timerKey) || '{}')
     if (parsed && typeof parsed === 'object' && 'endAt' in parsed && typeof parsed.endAt === 'number') {
       const endAt = parsed.endAt
-      // 检查 timer 是否已经过期
       if (endAt <= Date.now()) {
-        // Timer 已过期，创建一个新的 timer
         const newEndAt = Date.now() + durationMs
         window.localStorage.setItem(timerKey, JSON.stringify({ endAt: newEndAt, durationMs, startedAt: Date.now() }))
         return newEndAt
@@ -301,7 +298,6 @@ function readTimerEnd(timerKey: string, durationMinutes: number) {
       return endAt
     }
   } catch {
-    // Start a fresh timer below.
   }
   const endAt = Date.now() + durationMs
   window.localStorage.setItem(timerKey, JSON.stringify({ endAt, durationMs, startedAt: Date.now() }))
@@ -343,7 +339,7 @@ async function evaluateInBrowser(payload: EvaluatePayload) {
           ? '请先登录后再使用批改功能。'
           : response.status === 403
             ? data.message || '请先激活账号后再使用批改功能。'
-            : data.message || data.error || 'AI 批改失败。'
+            : data.message || data.error || '批改失败，请稍后重试。'
     }
   }
   return { ok: true, data: data as EssayEvaluation }
@@ -374,7 +370,7 @@ function combineMockEvaluation(task1: EssayEvaluation, task2: EssayEvaluation, t
   const task1Band = parseBand(task1.overallBand || task1.bandEstimate)
   const task2Band = parseBand(task2.overallBand || task2.bandEstimate)
   if (task1Band === null || task2Band === null) {
-    throw new Error('AI 返回的模考分数无法计算。请重试批改。')
+    throw new Error('模考评分结果无法计算，请重新批改。')
   }
   const overall = formatBandNumber(calculateWritingOverall(task1Band, task2Band))
   const taskAchievement = criterionFrom(task1, 'taskAchievement')
@@ -487,8 +483,8 @@ export default function WritePage() {
         ? `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
         : `${Task1ChartLabels[promptSelection.task1ChartType]} + ${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
   const timerKey = userId ? timerKeyFor(userId, mode) : ''
-  const positionKey = userId ? userScopedStorageKey(`aerowrite-editor-position-${mode}-${activeTaskType}`, userId) : ''
-  const splitKey = userId ? userScopedStorageKey(`aerowrite-editor-split-${mode}`, userId) : ''
+  const positionKey = userId ? userScopedStorageKey(`ielts-writing-editor-position-${mode}-${activeTaskType}`, userId) : ''
+  const splitKey = userId ? userScopedStorageKey(`ielts-writing-editor-split-${mode}`, userId) : ''
 
   const saveAllDrafts = useCallback(
     (showToast = false) => {
@@ -725,7 +721,6 @@ export default function WritePage() {
     return () => {
       cancelled = true
     }
-    // Question generation must only run for the current route/session seed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, splitKey, timerKey, userId])
 
@@ -773,12 +768,6 @@ export default function WritePage() {
   }, [saveStatus])
 
   const saveNow = useCallback(() => saveAllDrafts(true), [saveAllDrafts])
-
-  useEffect(() => {
-    const handleUpdateInstall = () => saveAllDrafts(false)
-    window.addEventListener('aerowrite:save-drafts-before-update', handleUpdateInstall)
-    return () => window.removeEventListener('aerowrite:save-drafts-before-update', handleUpdateInstall)
-  }, [saveAllDrafts])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -829,19 +818,16 @@ export default function WritePage() {
 
   async function evaluateEssay(payload: EvaluatePayload, dedupeKey?: string) {
     if (dedupeKey && pendingEvaluations.has(dedupeKey)) {
-      console.info('[evaluate] dedup: reusing pending evaluation for', dedupeKey.slice(0, 20))
       return pendingEvaluations.get(dedupeKey)!
     }
 
     const evaluationPromise = (async () => {
       try {
-        const result = window.desktopAi
-          ? await timeoutPromise(window.desktopAi.evaluateEssay(payload), AI_EVALUATION_TIMEOUT_MS, 'AI服务响应超时，请检查网络后重试。')
-          : await timeoutPromise(evaluateInBrowser(payload), AI_EVALUATION_TIMEOUT_MS, 'AI服务响应超时，请检查网络后重试。')
+        const result = await timeoutPromise(evaluateInBrowser(payload), AI_EVALUATION_TIMEOUT_MS, '批改服务响应超时，请检查网络后重试。')
         if (!result.ok || !result.data) {
-          const message = 'message' in result ? result.message : undefined
-          const resultError = 'error' in result ? result.error : undefined
-          throw new Error(message || resultError || 'AI 批改失败。')
+          const message = 'message' in result && typeof result.message === 'string' ? result.message : undefined
+          const resultError = 'error' in result && typeof result.error === 'string' ? result.error : undefined
+          throw new Error(message || resultError || '批改失败，请稍后重试。')
         }
         return result.data
       } finally {
@@ -860,12 +846,6 @@ export default function WritePage() {
     if (existing) return existing
 
     const request = (async () => {
-      if (window.desktopAi?.generatePrompt) {
-        const result = await timeoutPromise(window.desktopAi.generatePrompt(payload), 130000, 'AI 题目生成超时，已改用本地题库。')
-        if (result.ok && result.question) return normalizeGeneratedQuestion(result.question)
-        throw new Error(result.message || result.error || 'AI 题目生成失败。')
-      }
-
       const response = await fetch('/api/ai/generate-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -873,7 +853,7 @@ export default function WritePage() {
       })
       const data = (await response.json().catch(() => ({}))) as { question?: WritingQuestion; error?: string; message?: string }
       if (!response.ok || !data.question) {
-        throw new Error(data.message || data.error || 'AI 题目生成失败。')
+        throw new Error(data.message || data.error || '题目生成失败，请稍后重试。')
       }
       return normalizeGeneratedQuestion(data.question)
     })().finally(() => {
@@ -913,7 +893,7 @@ export default function WritePage() {
         }
       } catch (caught) {
         if (attempt === 0) {
-          setPromptGenerationNotice(caught instanceof Error ? caught.message : 'AI 题目生成失败，已使用本地题库。')
+          setPromptGenerationNotice(caught instanceof Error ? caught.message : '题目生成失败，已改用本地题库。')
         }
       }
     }
@@ -1058,7 +1038,7 @@ export default function WritePage() {
       pushToast({ kind: 'success', title: '批改完成', message: '正在打开结果页。' })
       router.push(`/result?id=${record.id}`)
     } catch (caught) {
-      const errorMessage = caught instanceof Error ? caught.message : 'AI 批改失败。'
+      const errorMessage = caught instanceof Error ? caught.message : '批改失败，请稍后重试。'
       let userFriendlyError = errorMessage
       let errorTitle = '批改失败'
 
@@ -1067,10 +1047,10 @@ export default function WritePage() {
         errorTitle = '已取消'
         pushToast({ kind: 'info', title: '已取消', message: '批改已取消。' })
       } else if (errorMessage.includes('ai_json_parse_error') || errorMessage.includes('JSON')) {
-        userFriendlyError = 'AI返回格式异常，作文已保存，请重新批改。'
+        userFriendlyError = '批改结果格式异常，作文已保存，请重新批改。'
         errorTitle = '格式异常'
       } else if (errorMessage.includes('timeout') || errorMessage.includes('超时')) {
-        userFriendlyError = 'AI服务响应超时，请检查网络后重试。'
+        userFriendlyError = '批改服务响应超时，请检查网络后重试。'
         errorTitle = '响应超时'
       } else if (errorMessage.includes('network') || errorMessage.includes('网络') || errorMessage.includes('fetch')) {
         userFriendlyError = '网络连接失败，请检查网络后重试。作文已保存在本地。'
@@ -1079,13 +1059,13 @@ export default function WritePage() {
         userFriendlyError = '请求过于频繁，请稍后重试。'
         errorTitle = '请求限制'
       } else if (errorMessage.includes('503') || errorMessage.includes('不可用')) {
-        userFriendlyError = 'AI服务暂时不可用，请稍后重试。'
+        userFriendlyError = '批改服务暂时不可用，请稍后重试。'
         errorTitle = '服务不可用'
       } else if (errorMessage.includes('license') || errorMessage.includes('激活')) {
         userFriendlyError = '许可证验证失败，请检查激活状态。'
         errorTitle = '许可证错误'
       } else if (errorMessage.includes('length') || errorMessage.includes('截断')) {
-        userFriendlyError = 'AI输出被截断，请减少作文长度后重试。'
+        userFriendlyError = '批改结果不完整，请减少作文长度后重试。'
         errorTitle = '输出截断'
       }
 
@@ -1106,7 +1086,7 @@ export default function WritePage() {
   function cancelEvaluation() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
-      pushToast({ kind: 'info', title: '正在取消', message: '正在取消批改...' })
+      pushToast({ kind: 'info', title: '正在取消', message: '正在取消批改，请稍候。' })
     }
   }
 
@@ -1239,7 +1219,7 @@ export default function WritePage() {
       pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
       router.push(`/result?id=${record.id}`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'AI 批改失败。')
+      setError(caught instanceof Error ? caught.message : '批改失败，请稍后重试。')
       setSubmitStatus('error')
       pushToast({ kind: 'error', title: '批改失败', message: caught instanceof Error ? caught.message : '两篇作文已保留，可重试。' })
     } finally {
@@ -1307,8 +1287,8 @@ export default function WritePage() {
       <header className="exam-topbar">
         <div className="exam-brand-row">
           <span className="exam-ielts-mark">IELTS</span>
-          <span className="stitch-body-md">|</span>
-          <span className="stitch-body-md">{mode === 'mock' ? `Mock · ${activeMockTask === 'task1' ? 'Task 1' : 'Task 2'}` : activeQuestion.taskType === 'task1' ? 'Task 1' : 'Task 2'}</span>
+          <span className="ui-body-md">|</span>
+          <span className="ui-body-md">{mode === 'mock' ? `Mock · ${activeMockTask === 'task1' ? 'Task 1' : 'Task 2'}` : activeQuestion.taskType === 'task1' ? 'Task 1' : 'Task 2'}</span>
         </div>
 
         <div className="exam-info-pill">
@@ -1336,7 +1316,7 @@ export default function WritePage() {
           </div>
           <div className="exam-divider" />
           <div className="exam-info-item">
-            <span className="stitch-label">Words</span>
+            <span className="ui-label">Words</span>
             <span 
               className={`exam-word-count ${wordCount >= wordTarget ? 'word-count-good' : wordCount >= wordTarget * 0.8 ? 'word-count-medium' : wordCount < wordTarget * 0.5 ? 'word-count-low' : ''}`}
               title="字数统计按空格分词计算，与 IELTS 官方标准可能略有差异"
@@ -1416,18 +1396,18 @@ export default function WritePage() {
             ) : null}
 
             <div className="exam-section-header">
-              <h1 className="stitch-title-headline">{activeQuestion.title}</h1>
-              <p className="stitch-body-md">
+              <h1 className="ui-title-headline">{activeQuestion.title}</h1>
+              <p className="ui-body-md">
                 You should spend about {activeQuestion.durationMinutes} minutes on this task.
                 {mode === 'mock' ? ' The full test timer remains 60 minutes.' : ''}
               </p>
             </div>
 
             <div className="exam-prompt-box">
-              <p className="stitch-body-lg" style={{ color: 'var(--on-surface)', fontWeight: 500 }}>
+              <p className="ui-body-lg" style={{ color: 'var(--on-surface)', fontWeight: 500 }}>
                 {activeQuestion.promptLead}
               </p>
-              <p className="stitch-body-md">{activeQuestion.promptDetail}</p>
+              <p className="ui-body-md">{activeQuestion.promptDetail}</p>
             </div>
 
             {activeQuestion.taskType === 'task1' && (activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
@@ -1550,7 +1530,7 @@ export default function WritePage() {
             {loading ? (
               <section className="editor-progress-panel" role="status" aria-live="polite">
                 <div className="progress-header">
-                  <h2 className="stitch-title-md">AI 批改处理中</h2>
+                  <h2 className="ui-title-md">正在批改作文</h2>
                   <button className="cancel-button" type="button" onClick={cancelEvaluation}>
                     取消
                   </button>
@@ -1564,8 +1544,8 @@ export default function WritePage() {
                   ))}
                 </ol>
                 <div className="progress-footer">
-                  <p className="stitch-body-md" style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
-                    {stageIndex < 3 ? '正在等待 AI 响应...' : '详细批改正在后台生成，不影响初步评分展示'}
+                  <p className="ui-body-md" style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>
+                    {stageIndex < 3 ? '正在等待批改结果…' : '详细批改仍在处理，不影响初步评分展示'}
                   </p>
                   <p className="elapsed-time" style={{ fontSize: 12, color: 'var(--on-surface-variant)', marginTop: 4 }}>
                     已用时：{elapsedTime} 秒
@@ -1593,7 +1573,7 @@ export default function WritePage() {
       <ConfirmDialog
         open={showSubmitConfirm}
         title="提交当前作文？"
-        message="AI 批改期间会保留本地草稿，请确认当前内容已经准备好提交。"
+        message="批改期间会保留本地草稿，请确认当前内容已经准备好提交。"
         confirmLabel="提交批改"
         cancelLabel="继续写"
         onCancel={() => setShowSubmitConfirm(false)}

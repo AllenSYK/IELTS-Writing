@@ -43,7 +43,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     window.queueMicrotask(() => {
       if (!cancelled) setProfile(loadUserProfile(userId))
     })
-    const storageKey = userScopedStorageKey('aerowrite-user-profile-v1', userId)
+    const storageKey = userScopedStorageKey('ielts-writing-user-profile-v1', userId)
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key === storageKey) {
@@ -57,11 +57,11 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     }
 
     window.addEventListener('storage', handleStorage)
-    window.addEventListener('aerowrite:user-profile-updated', handleProfileEvent)
+    window.addEventListener('ielts-writing:user-profile-updated', handleProfileEvent)
     return () => {
       cancelled = true
       window.removeEventListener('storage', handleStorage)
-      window.removeEventListener('aerowrite:user-profile-updated', handleProfileEvent)
+      window.removeEventListener('ielts-writing:user-profile-updated', handleProfileEvent)
     }
   }, [userId])
 

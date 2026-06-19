@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { useSWRConfig } from 'swr'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
@@ -23,17 +23,17 @@ type SidebarItem = {
 }
 
 const mainItems: SidebarItem[] = [
-  { id: 'home', href: '/dashboard', label: 'Home', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
+  { id: 'home', href: '/dashboard', label: '账号中心', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
   { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') },
-  { id: 'history', href: '/history', label: 'History', icon: 'history', cacheKey: UserRouteCacheKeys.history, match: (pathname) => pathname.startsWith('/history') },
-  { id: 'analytics', href: '/analytics', label: 'Analytics', icon: 'analytics', cacheKey: UserRouteCacheKeys.level0, match: (pathname) => pathname.startsWith('/analytics') || pathname.startsWith('/level0') },
-  { id: 'settings', href: '/settings', label: 'Settings', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
+  { id: 'history', href: '/history', label: '历史记录', icon: 'history', cacheKey: UserRouteCacheKeys.history, match: (pathname) => pathname.startsWith('/history') },
+  { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', cacheKey: UserRouteCacheKeys.analytics, match: (pathname) => pathname.startsWith('/analytics') },
+  { id: 'settings', href: '/settings', label: '设置', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
 ]
 
 const supportItems: SidebarItem[] = [
-  { id: 'support', href: '/support', label: 'Support', icon: 'contact_support', match: (pathname) => pathname.startsWith('/support') },
-  { id: 'terms', href: '/terms', label: 'Terms of Service', icon: 'contract', match: (pathname) => pathname.startsWith('/terms') },
-  { id: 'privacy', href: '/privacy', label: 'Privacy Policy', icon: 'privacy_tip', match: (pathname) => pathname.startsWith('/privacy') }
+  { id: 'support', href: '/support', label: '帮助与反馈', icon: 'contact_support', match: (pathname) => pathname.startsWith('/support') },
+  { id: 'terms', href: '/terms', label: '服务条款', icon: 'contract', match: (pathname) => pathname.startsWith('/terms') },
+  { id: 'privacy', href: '/privacy', label: '隐私政策', icon: 'privacy_tip', match: (pathname) => pathname.startsWith('/privacy') }
 ]
 
 function useOnlineLabel() {
@@ -119,7 +119,7 @@ export function Sidebar() {
           ))}
         </nav>
 
-        <p className="sidebar-copyright">© 2026 NightWish AI. All rights reserved.</p>
+        <p className="sidebar-copyright">© 2026 IELTS Writing</p>
       </div>
     </aside>
   )

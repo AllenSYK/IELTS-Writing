@@ -7,7 +7,7 @@ import { GoalStatusPanel } from '@/components/analytics/GoalStatusPanel'
 import { IeltsRadarChart } from '@/components/analytics/IeltsRadarChart'
 import { PracticePlan } from '@/components/analytics/PracticePlan'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
-import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   buildErrorDistribution,
@@ -50,7 +50,7 @@ function buildTrend(records: WritingRecord[]) {
 export default function AnalyticsPage() {
   const { userId } = useUserSession()
   const { profile } = useUserProfile()
-  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.level0, userId)
+  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.analytics, userId)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [range, setRange] = useState<AnalyticsRange>('30')
   const [now, setNow] = useState(0)
@@ -58,14 +58,14 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (!userId) return
     window.queueMicrotask(() => {
-      setRange((window.localStorage.getItem(userScopedStorageKey('aerowrite-analytics-range', userId)) as AnalyticsRange | null) || '30')
+      setRange((window.localStorage.getItem(userScopedStorageKey('ielts-writing-analytics-range', userId)) as AnalyticsRange | null) || '30')
       setNow(Date.now())
       setPreferencesLoaded(true)
     })
   }, [userId])
 
   useEffect(() => {
-    if (preferencesLoaded && userId) window.localStorage.setItem(userScopedStorageKey('aerowrite-analytics-range', userId), range)
+    if (preferencesLoaded && userId) window.localStorage.setItem(userScopedStorageKey('ielts-writing-analytics-range', userId), range)
   }, [preferencesLoaded, range, userId])
 
   const scopedRecords = useMemo(() => {
@@ -96,10 +96,10 @@ export default function AnalyticsPage() {
   ]
 
   return (
-    <main className="stitch-page" data-main-content tabIndex={-1}>
+    <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="analytics-main">
         <header className="page-section-header">
-          <p className="stitch-body-lg analytics-intro">基于本机真实批改记录统计，不使用示例趋势。</p>
+          <p className="ui-body-lg analytics-intro">根据当前账号的真实批改记录生成。</p>
           <div className="filter-chip-row" role="toolbar" aria-label="分析时间范围">
             {rangeOptions.map((option) => (
               <button
@@ -116,14 +116,14 @@ export default function AnalyticsPage() {
         </header>
 
         <section className="analytics-kpi-grid">
-          <GlassPanel className="analytics-card stitch-hover-glow">
+          <GlassPanel className="analytics-card ui-hover-glow">
             <header>
-              <span className="stitch-title-md">平均分数</span>
+              <span className="ui-title-md">平均分数</span>
               <MaterialIcon name="trending_up" className="text-primary" />
             </header>
             <div className="analytics-value">
               <strong>{average === null ? '—' : average.toFixed(1)}</strong>
-              <span className="stitch-label">
+              <span className="ui-label">
                 {scopedRecords.length > 0
                   ? `T1 ${task1Average === null ? '—' : task1Average.toFixed(1)} · T2 ${task2Average === null ? '—' : task2Average.toFixed(1)}`
                   : '暂无数据'}
@@ -131,36 +131,36 @@ export default function AnalyticsPage() {
             </div>
           </GlassPanel>
 
-          <GlassPanel className="analytics-card stitch-hover-glow">
+          <GlassPanel className="analytics-card ui-hover-glow">
             <header>
-              <span className="stitch-title-md">练习次数</span>
+              <span className="ui-title-md">练习次数</span>
               <MaterialIcon name="edit_document" className="text-primary" />
             </header>
             <div className="analytics-value">
               <strong>{scopedRecords.length}</strong>
-              <span className="stitch-label">{scopedRecords.length > 0 ? '真实记录' : '暂无数据'}</span>
+              <span className="ui-label">{scopedRecords.length > 0 ? '真实记录' : '暂无数据'}</span>
             </div>
           </GlassPanel>
 
-          <GlassPanel className="analytics-card stitch-hover-glow">
+          <GlassPanel className="analytics-card ui-hover-glow">
             <header>
-              <span className="stitch-title-md">当前弱项</span>
+              <span className="ui-title-md">当前弱项</span>
               <MaterialIcon name="warning" className="text-error" />
             </header>
             <div className="analytics-value is-text">
               <strong>{weakest ? weakest.shortLabel : '暂无'}</strong>
-              <span className="stitch-label">{weakest ? weakest.label : '完成批改后生成'}</span>
+              <span className="ui-label">{weakest ? weakest.label : '完成批改后生成'}</span>
             </div>
           </GlassPanel>
         </section>
 
-        <GlassPanel className="target-analytics-card stitch-hover-glow">
+        <GlassPanel className="target-analytics-card ui-hover-glow">
           <GoalStatusPanel records={scopedRecords} profile={profile} />
         </GlassPanel>
 
         <section className="charts-grid">
-          <GlassPanel className="chart-card stitch-hover-glow">
-            <h2 className="stitch-title-md">IELTS 平均分数 (最近7次)</h2>
+          <GlassPanel className="chart-card ui-hover-glow">
+            <h2 className="ui-title-md">IELTS 平均分数 (最近7次)</h2>
             <div className="line-chart">
               {trend.line ? (
                 <svg preserveAspectRatio="none" viewBox="0 0 100 50">
@@ -192,7 +192,7 @@ export default function AnalyticsPage() {
                 </svg>
               ) : (
                 <GlassPanel className="empty-state">
-                  <p className="stitch-body-md">至少完成两次真实批改后显示趋势。</p>
+                  <p className="ui-body-md">至少完成两次真实批改后显示趋势。</p>
                 </GlassPanel>
               )}
               <div className="chart-axis">
@@ -204,21 +204,21 @@ export default function AnalyticsPage() {
             </div>
           </GlassPanel>
 
-          <GlassPanel className="chart-card radar-card stitch-hover-glow">
-            <h2 className="stitch-title-md">标准表现</h2>
+          <GlassPanel className="chart-card radar-card ui-hover-glow">
+            <h2 className="ui-title-md">标准表现</h2>
             <IeltsRadarChart metrics={radarMetrics} />
           </GlassPanel>
         </section>
 
-        <GlassPanel className="chart-card stitch-hover-glow">
-          <h2 className="stitch-title-md">错误分布</h2>
+        <GlassPanel className="chart-card ui-hover-glow">
+          <h2 className="ui-title-md">错误分布</h2>
           <ErrorDistributionBars items={errorDistribution} />
         </GlassPanel>
 
         <GlassPanel level={2} className="plan-card">
           <PracticePlan recommendations={recommendations} />
           {recommendations.length === 0 ? (
-            <Link className="stitch-secondary-button" href="/practice" style={{ marginTop: 18 }}>
+            <Link className="ui-secondary-button" href="/practice" style={{ marginTop: 18 }}>
               先完成一篇练习
               <MaterialIcon name="arrow_forward" size={16} />
             </Link>

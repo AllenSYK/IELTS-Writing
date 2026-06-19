@@ -19,7 +19,7 @@ export function LogoutButton() {
   }
 
   return (
-    <button className="stitch-secondary-button" type="button" onClick={logout}>
+    <button className="ui-secondary-button" type="button" onClick={logout}>
       <LogOut size={16} />
       退出登录
     </button>

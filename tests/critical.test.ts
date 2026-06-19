@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict'
-import { generateKeyPairSync } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { generateWritingPromptWithAi, parseAiEvaluationText } from '../lib/ai'
 import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts-questions'
 import { calculateWritingOverall, isExpiredAt, roundToHalfBand } from '../lib/ielts-scoring'
-import { isValidPublicKey } from '../lib/license/token'
 import { countWords, normalizeEvaluation } from '../lib/writing-records'
 import { resolveAuthRedirect } from '../lib/auth/route-access'
 import {
@@ -15,6 +13,7 @@ import {
 } from '../lib/web-license/admin-license-data'
 import { prepareTask1ChartSpec, validateChartSpec } from '../lib/task1-chart-schema'
 import { getFallbackQuestionsByType } from '../lib/task1-fallback-questions'
+import { readStorageValue } from '../lib/user-storage'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -29,7 +28,7 @@ test('Writing mock score weights Task 2 about twice Task 1', () => {
   assert.equal(calculateWritingOverall(5.5, 7.5), 7)
 })
 
-test('AI JSON parser accepts required Task 2 structure', () => {
+test('批改响应解析器接受完整的 Task 2 结构', () => {
   const parsed = parseAiEvaluationText(
     JSON.stringify({
       overallBand: '7.0',
@@ -49,7 +48,7 @@ test('AI JSON parser accepts required Task 2 structure', () => {
   assert.equal(parsed.summary, '整体回应清楚。')
 })
 
-test('AI annotations use exact UTF-16 offsets and mark unresolved mismatches', () => {
+test('批改标注使用准确的 UTF-16 偏移并标记无法定位的文本', () => {
   const essay = 'Many people is interested in study abroad. Many people also think it is expencive.'
   const parsed = parseAiEvaluationText(
     JSON.stringify({
@@ -101,7 +100,7 @@ test('AI annotations use exact UTF-16 offsets and mark unresolved mismatches', (
   assert.equal(parsed.annotations?.[1]?.unresolved, true)
 })
 
-test('AI JSON parser rejects missing task-specific criterion', () => {
+test('批改响应解析器拒绝缺少任务评分项的数据', () => {
   assert.throws(() =>
     parseAiEvaluationText(
       JSON.stringify({
@@ -270,7 +269,7 @@ function restoreAiEnv(original: { key?: string; baseUrl?: string; model?: string
   else process.env.AI_MODEL = original.model
 }
 
-test('Mixed Chart generation retries once after incomplete AI data', async () => {
+test('Mixed Chart 数据不完整时重试一次', async () => {
   const originalFetch = globalThis.fetch
   const originalEnv = {
     key: process.env.AI_API_KEY,
@@ -328,7 +327,7 @@ test('Mixed Chart generation retries once after incomplete AI data', async () =>
   }
 })
 
-test('Mixed Chart generation falls back after two invalid AI responses', async () => {
+test('Mixed Chart 连续两次无效响应后使用备用题目', async () => {
   const originalFetch = globalThis.fetch
   const originalEnv = {
     key: process.env.AI_API_KEY,
@@ -379,13 +378,47 @@ test('Expiry date parser rejects past licenses', () => {
   assert.equal(isExpiredAt('2026-12-01T00:00:00.000Z', new Date('2026-06-15T00:00:00.000Z').getTime()), false)
 })
 
-test('License verifier accepts bare SPKI base64 public keys', () => {
-  const { publicKey } = generateKeyPairSync('ec', {
-    namedCurve: 'P-256',
-    publicKeyEncoding: { type: 'spki', format: 'der' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
-  })
-  assert.equal(isValidPublicKey(publicKey.toString('base64')), true)
+test('legacy browser storage values migrate without deleting the original value', () => {
+  const values = new Map<string, string>([['aerowrite-writing-records-v1:user:user-a', '[{"id":"record-1"}]']])
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+    removeItem: (key: string) => values.delete(key),
+    clear: () => values.clear(),
+    key: (index: number) => [...values.keys()][index] ?? null,
+    get length() {
+      return values.size
+    }
+  } as Storage
+
+  const currentKey = 'ielts-writing-writing-records-v1:user:user-a'
+  assert.equal(readStorageValue(storage, currentKey), '[{"id":"record-1"}]')
+  assert.equal(storage.getItem(currentKey), '[{"id":"record-1"}]')
+  assert.equal(storage.getItem('aerowrite-writing-records-v1:user:user-a'), '[{"id":"record-1"}]')
+})
+
+test('grading and question routes expose only the authenticated web flow', async () => {
+  const [evaluationRoute, promptRoute] = await Promise.all([
+    readFile(new URL('../app/api/ai/evaluate/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/ai/generate-prompt/route.ts', import.meta.url), 'utf8')
+  ])
+
+  for (const source of [evaluationRoute, promptRoute]) {
+    assert.match(source, /requireActiveWebLicense/)
+    assert.doesNotMatch(source, /x-device-id|desktop|licenseToken|LICENSE_SERVER_URL/i)
+  }
+})
+
+test('settings and support pages use browser services only', async () => {
+  const [settingsPage, supportPage] = await Promise.all([
+    readFile(new URL('../app/settings/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/support/page.tsx', import.meta.url), 'utf8')
+  ])
+
+  for (const source of [settingsPage, supportPage]) {
+    assert.doesNotMatch(source, /desktopApp|desktopLicense|desktopUpdater|nativeBridge/i)
+  }
+  assert.match(settingsPage, /\/api\/license\/status/)
 })
 
 test('Stored legacy evaluations normalize into the new result shape', () => {

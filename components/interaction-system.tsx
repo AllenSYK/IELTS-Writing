@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { userScopedStorageKey } from '@/lib/user-storage'
+import { readStorageValue, userScopedStorageKey } from '@/lib/user-storage'
 import {
   createContext,
   useCallback,
@@ -15,7 +15,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 import type { WritingTaskType } from '@/lib/writing-records'
 
 type ToastKind = 'success' | 'error' | 'warning' | 'info' | 'loading'
@@ -32,21 +32,6 @@ type Toast = {
 
 type ToastInput = Omit<Toast, 'id'>
 
-type DesktopUpdateState = {
-  status: string
-  checking: boolean
-  currentVersion?: string
-  latestVersion?: string
-  updateAvailable?: boolean
-  mandatory?: boolean
-  minimumSupportedVersion?: string | null
-  releaseNotes?: string
-  publishedAt?: string | null
-  lastCheckedAt?: string | null
-  message?: string
-  developerContactAvailable?: boolean
-}
-
 type ToastContextValue = {
   pushToast: (toast: ToastInput) => string
   dismissToast: (id: string) => void
@@ -54,8 +39,8 @@ type ToastContextValue = {
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
-const ReducedMotionStorageKey = 'aerowrite-reduced-motion'
-const CommandRecentsStorageKey = 'aerowrite-command-recents-v1'
+const ReducedMotionStorageKey = 'ielts-writing-reduced-motion'
+const CommandRecentsStorageKey = 'ielts-writing-command-recents-v1'
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -69,12 +54,12 @@ function isTypingTarget(target: EventTarget | null) {
 
 function saveScrollPosition(routeKey: string) {
   if (typeof window === 'undefined') return
-  window.sessionStorage.setItem(`aerowrite-scroll:${routeKey}`, String(window.scrollY))
+  window.sessionStorage.setItem(`ielts-writing-scroll:${routeKey}`, String(window.scrollY))
 }
 
 function useScrollAndFocusRestoration(routeKey: string) {
   useEffect(() => {
-    const stored = window.sessionStorage.getItem(`aerowrite-scroll:${routeKey}`)
+    const stored = readStorageValue(window.sessionStorage, `ielts-writing-scroll:${routeKey}`)
     window.requestAnimationFrame(() => {
       if (stored) {
         window.scrollTo({ top: Number(stored), behavior: 'instant' as ScrollBehavior })
@@ -117,7 +102,7 @@ function useReducedMotionPreference() {
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const stored = window.localStorage.getItem(ReducedMotionStorageKey)
+    const stored = readStorageValue(window.localStorage, ReducedMotionStorageKey)
     const update = () => {
       const next = stored === 'true' || (stored === null && media.matches)
       setEnabled(next)
@@ -225,13 +210,13 @@ type CommandAction = {
 function getDraftMode(userId: string | null): WritingTaskType {
   if (!userId) return 'task2'
   const modes: WritingTaskType[] = ['task2', 'task1', 'mock']
-  const found = modes.find((mode) => window.localStorage.getItem(userScopedStorageKey(`aerowrite-draft-${mode}`, userId))?.trim())
+  const found = modes.find((mode) => window.localStorage.getItem(userScopedStorageKey(`ielts-writing-draft-${mode}`, userId))?.trim())
   return found ?? 'task2'
 }
 
 function readRecents() {
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(CommandRecentsStorageKey) || '[]')
+    const parsed: unknown = JSON.parse(readStorageValue(window.localStorage, CommandRecentsStorageKey) || '[]')
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
   } catch {
     return []
@@ -246,7 +231,6 @@ function writeRecent(id: string) {
 function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
   const { userId } = useUserSession()
-  const { pushToast, dismissToast } = useToast()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -259,7 +243,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
       { id: 'mock', title: '开始完整模考', subtitle: '60 分钟 Task 1 + Task 2', icon: 'timer', href: '/write/mock', keywords: 'mock test 完整 模考' },
       { id: 'history', title: '查看历史', subtitle: '搜索和筛选真实批改记录', icon: 'history', href: '/history', keywords: 'history 历史 records' },
       { id: 'analytics', title: '查看分析', subtitle: '分数趋势与错误分布', icon: 'analytics', href: '/analytics', keywords: 'analytics stats analysis 分析' },
-      { id: 'settings', title: '打开设置', subtitle: '授权、更新、快捷键和偏好', icon: 'settings', href: '/settings', keywords: 'settings preference 设置' },
+      { id: 'settings', title: '打开设置', subtitle: '账号、快捷键和偏好', icon: 'settings', href: '/settings', keywords: 'settings preference 设置' },
       {
         id: 'draft',
         title: '查看当前草稿',
@@ -267,24 +251,6 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         icon: 'draft',
         run: () => router.push(`/write/${getDraftMode(userId)}`),
         keywords: 'draft 草稿 current'
-      },
-      {
-        id: 'update',
-        title: '检查更新',
-        subtitle: '在桌面版中检查可用更新',
-        icon: 'deployed_code_update',
-        run: async () => {
-          const id = pushToast({ kind: 'loading', title: '正在检查更新', durationMs: 30000 })
-          try {
-            const result = await window.desktopUpdater?.checkForUpdates()
-            pushToast({ kind: result?.ok === false ? 'warning' : 'success', title: result?.message || '浏览器预览中不可用' })
-          } catch (error) {
-            pushToast({ kind: 'error', title: '检查更新失败', message: error instanceof Error ? error.message : '请稍后重试。' })
-          } finally {
-            dismissToast(id)
-          }
-        },
-        keywords: 'update version 检查 更新'
       },
       {
         id: 'search-history',
@@ -295,7 +261,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         keywords: 'search history 搜索 历史'
       }
     ],
-    [dismissToast, pushToast, query, router, userId]
+    [query, router, userId]
   )
 
   const recents = useMemo(() => (open ? readRecents() : []), [open])
@@ -472,113 +438,6 @@ function NetworkBanner({ online }: { online: boolean }) {
   )
 }
 
-function formatUpdateDate(value?: string | null) {
-  if (!value) return '未提供'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN')
-}
-
-function GlobalUpdatePrompt() {
-  const { pushToast } = useToast()
-  const [updateState, setUpdateState] = useState<DesktopUpdateState | null>(null)
-  const [dismissedKey, setDismissedKey] = useState('')
-  const [contacting, setContacting] = useState(false)
-
-  useEffect(() => {
-    window.desktopUpdater?.getState?.().then(setUpdateState).catch(() => undefined)
-    const removeStatus = window.desktopUpdater?.onStatus?.((state) => {
-      setUpdateState(state)
-    })
-    return () => removeStatus?.()
-  }, [])
-
-  const updateKey = updateState?.latestVersion ? `${updateState.currentVersion || ''}->${updateState.latestVersion}` : ''
-  const open = Boolean(updateState?.updateAvailable && updateKey && dismissedKey !== updateKey)
-  const promptText = updateState?.mandatory
-    ? '当前版本已停止维护，请联系开发者获取最新版本。'
-    : updateState?.developerContactAvailable
-      ? '请联系开发者获取最新版本'
-      : '请联系软件开发者获取最新版本。'
-
-  const closePrompt = useCallback(() => {
-    setDismissedKey(updateKey)
-    const dismiss = window.desktopUpdater?.dismissUpdate?.()
-    dismiss?.catch(() => undefined)
-  }, [updateKey])
-
-  useEffect(() => {
-    if (!open) return
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') closePrompt()
-    }
-    document.body.classList.add('modal-open')
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.body.classList.remove('modal-open')
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [closePrompt, open])
-
-  async function contactDeveloper() {
-    setContacting(true)
-    try {
-      const result = await window.desktopUpdater?.contactDeveloper?.()
-      if (result?.ok === false) {
-        pushToast({ kind: 'warning', title: result.message || '请联系软件开发者获取最新版本。' })
-        return
-      }
-      closePrompt()
-    } catch (error) {
-      pushToast({ kind: 'error', title: '无法打开联系方式', message: error instanceof Error ? error.message : '请稍后重试。' })
-    } finally {
-      setContacting(false)
-    }
-  }
-
-  if (!open || !updateState) return null
-
-  return (
-    <div className="dialog-layer" role="presentation" onMouseDown={closePrompt}>
-      <section
-        className={`confirm-dialog update-dialog ${updateState.mandatory ? 'is-mandatory' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="update-dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <span className={`confirm-icon ${updateState.mandatory ? 'danger' : 'default'}`}>
-          <MaterialIcon name={updateState.mandatory ? 'priority_high' : 'deployed_code_update'} size={22} />
-        </span>
-        <div className="update-dialog-content">
-          <h2 id="update-dialog-title" className="stitch-title-md">发现新版本</h2>
-          <dl className="update-dialog-meta">
-            <div><dt>当前版本</dt><dd>{updateState.currentVersion || '未知'}</dd></div>
-            <div><dt>最新版本</dt><dd>{updateState.latestVersion || '未知'}</dd></div>
-            <div><dt>发布时间</dt><dd>{formatUpdateDate(updateState.publishedAt)}</dd></div>
-          </dl>
-          <div className="update-dialog-notes">
-            <p className="stitch-label">更新说明</p>
-            <p>{updateState.releaseNotes || '暂无更新说明'}</p>
-          </div>
-          <p className={`update-dialog-prompt ${updateState.mandatory ? 'is-mandatory' : ''}`}>{promptText}</p>
-        </div>
-        <div className="confirm-actions">
-          <button className="stitch-secondary-button" type="button" onClick={closePrompt}>
-            我知道了
-          </button>
-          {updateState.developerContactAvailable ? (
-            <button className="stitch-primary-button" type="button" onClick={contactDeveloper} disabled={contacting}>
-              <MaterialIcon name={contacting ? 'progress_activity' : 'contact_support'} size={18} />
-              联系开发者
-            </button>
-          ) : null}
-        </div>
-      </section>
-    </div>
-  )
-}
-
 export function AppInteractionProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const routeKey = pathname
@@ -628,7 +487,6 @@ export function AppInteractionProvider({ children }: { children: ReactNode }) {
         <div className="route-stage" data-route-key={routeKey}>
           {children}
         </div>
-        <GlobalUpdatePrompt />
         <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
         <ToastViewport toasts={toasts} dismissToast={dismissToast} />
       </MotionContext.Provider>
@@ -689,20 +547,20 @@ export function ConfirmDialog({
           <MaterialIcon name={tone === 'danger' ? 'warning' : 'info'} size={22} />
         </span>
         <div>
-          <h2 id="confirm-title" className="stitch-title-md">
+          <h2 id="confirm-title" className="ui-title-md">
             {title}
           </h2>
-          <p id="confirm-message" className="stitch-body-md">
+          <p id="confirm-message" className="ui-body-md">
             {message}
           </p>
         </div>
         <div className="confirm-actions">
-          <button className="stitch-secondary-button" type="button" onClick={onCancel}>
+          <button className="ui-secondary-button" type="button" onClick={onCancel}>
             {cancelLabel}
           </button>
           <button
             ref={confirmRef}
-            className={tone === 'danger' ? 'danger-action-button' : 'stitch-primary-button'}
+            className={tone === 'danger' ? 'danger-action-button' : 'ui-primary-button'}
             type="button"
             onClick={onConfirm}
           >
@@ -721,7 +579,7 @@ export function AsyncButton({
   success,
   error,
   disabledReason,
-  className = 'stitch-primary-button',
+  className = 'ui-primary-button',
   onClick,
   type = 'button',
   disabled
@@ -765,10 +623,10 @@ export function EmptyState({ title, message, href, action }: { title: string; me
   return (
     <section className="empty-state refined-empty" aria-live="polite">
       <MaterialIcon name="inbox" size={28} />
-      <h2 className="stitch-title-md">{title}</h2>
-      <p className="stitch-body-md">{message}</p>
+      <h2 className="ui-title-md">{title}</h2>
+      <p className="ui-body-md">{message}</p>
       {href && action ? (
-        <Link className="stitch-primary-button" href={href}>
+        <Link className="ui-primary-button" href={href}>
           {action}
         </Link>
       ) : null}

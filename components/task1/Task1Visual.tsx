@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec, Task1ChartRenderer } from '@/lib/task1-chart-schema'
+import { useEffect, useRef, useState } from 'react'
+import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec } from '@/lib/task1-chart-schema'
 import { resolveChartRenderer } from '@/lib/task1-chart-schema'
 import { LineChartQuestion } from './LineChartQuestion'
 import { BarChartQuestion } from './BarChartQuestion'
@@ -20,7 +20,7 @@ type Task1VisualProps = {
   className?: string
 }
 
-export function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, title, className }: Task1VisualProps) {
+export function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, className }: Task1VisualProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(() => (typeof window !== 'undefined' ? Math.min(window.innerWidth * 0.45, 600) : 600))
 

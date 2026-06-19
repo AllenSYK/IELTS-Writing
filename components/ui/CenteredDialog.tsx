@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { MaterialIcon } from '@/components/stitch-ui'
+import { MaterialIcon } from '@/components/app-ui'
 
 type CenteredDialogProps = {
   open: boolean
@@ -92,10 +92,10 @@ export function CenteredDialog({
       >
         <header className="centered-dialog-header">
           <div>
-            <h2 id={titleId} className="stitch-title-md">{title}</h2>
-            {description ? <p id={descriptionId} className="stitch-body-md">{description}</p> : null}
+            <h2 id={titleId} className="ui-title-md">{title}</h2>
+            {description ? <p id={descriptionId} className="ui-body-md">{description}</p> : null}
           </div>
-          <button ref={closeRef} className="stitch-icon-button" type="button" aria-label={closeLabel} onClick={onClose}>
+          <button ref={closeRef} className="ui-icon-button" type="button" aria-label={closeLabel} onClick={onClose}>
             <MaterialIcon name="close" size={18} />
           </button>
         </header>

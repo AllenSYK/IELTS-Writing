@@ -1,54 +1,52 @@
-# IELTS Writing Desktop
+# IELTS Writing Web
 
-This repository packages an IELTS writing interface as an Electron desktop app with:
+Next.js Web 应用，提供 IELTS 写作练习、作文批改、历史记录、学习分析、账号激活和管理后台。
 
-- Next.js app shell for the writing UI, settings page, and separate admin console.
-- Electron activation window shown before the main app.
-- Supabase PostgreSQL migration for license keys, devices, events, releases, and rate limits.
-- Supabase Edge Functions for activation, validation, deactivation, admin key generation, and app update checks.
-- electron-builder configuration for Windows installer, Windows portable build, and macOS Apple Silicon DMG.
-- electron-updater integration for stable/beta release channels.
+## 技术栈
 
-The original visual baseline is recorded in `docs/frontend-baseline.md`. The supplied `screen.png` contains the text `<FIFE Image failed to fetch>` and is kept as-is.
+- Next.js App Router
+- React and TypeScript
+- Supabase Auth and PostgreSQL
+- Resend and React Email
+- Recharts
+- Vercel
 
-## Commands
+## 本地运行
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
-npm run electron:dev
-npm run build
-npm run dist:win
-npm run dist:portable
-npm run dist:mac
-npm run release
-npm run supabase:migrate
-npm run supabase:functions:deploy
 ```
 
-## Required Configuration
+浏览器打开 `http://localhost:3000`。
 
-Copy `.env.example` to `.env.local` for local web/server work and configure the same secrets in Supabase Edge Function secrets for production.
+环境变量说明见 [.env.example](.env.example)。不要提交 Supabase service role key、邮件服务密钥或模型服务密钥。
 
-Generate ES256 token keys with:
+## 常用命令
 
 ```bash
-node scripts/generate-signing-keys.mjs
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm run migration:check
 ```
 
-Never commit the private key, Supabase service role key, code signing certificates, or AI provider keys.
+数据库 migration 位于 `supabase/migrations/`。已执行的 migration 只追加修复，不应修改或删除。
 
-## Desktop Startup
+## 核心模块
 
-On startup Electron:
+- 注册、登录和密码重置
+- 激活码生成、绑定、解绑和状态管理
+- Task 1、Task 2 和完整模考
+- 作文保存、提交和批改
+- 历史记录、学习分析和写作热力图
+- 用户账号中心和支持反馈
+- Web 管理后台
 
-1. Enforces a single app instance.
-2. Validates the encrypted local license token with the configured license server.
-3. Shows the independent activation window if no valid license exists.
-4. Starts the bundled Next.js server on `127.0.0.1` using an available port after validation.
-5. Opens the main writing UI.
-6. Revalidates every 6 hours and checks updates after successful validation.
+## 部署
 
-## Important Limits
+Vercel 可直接识别 Next.js 项目。部署前配置 `.env.example` 中列出的环境变量，并确认 Supabase schema 已完成迁移。
 
-The local environment used to prepare this project did not include `npm`, `pnpm`, `yarn`, or the Supabase CLI in PATH, so dependencies and desktop installers could not be built locally here. The source, scripts, and GitHub Actions are prepared for a normal Node/npm environment.
+第三方依赖和本地字体的许可证信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
