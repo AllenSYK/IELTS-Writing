@@ -1,4 +1,5 @@
 import { prepareTask1ChartSpec, type Task1ChartKind } from '@/lib/task1-chart-schema'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 export type WritingTaskType = 'task1' | 'task2' | 'mock'
 
@@ -126,6 +127,7 @@ export type WritingRecordComponent = {
 
 export type WritingRecord = {
   id: string
+  ownerUserId?: string
   deviceId: string
   taskType: WritingTaskType
   title: string
@@ -510,24 +512,26 @@ export function dedupeWritingRecords(records: WritingRecord[]) {
   return unique
 }
 
-function persistDedupeMigration(records: WritingRecord[], originalCount: number) {
+function persistDedupeMigration(userId: string, records: WritingRecord[], originalCount: number) {
   if (typeof window === 'undefined') return
-  const migrated = window.localStorage.getItem(WritingRecordsDedupeMigrationKey)
+  const storageKey = userScopedStorageKey(WritingRecordsStorageKey, userId)
+  const migrationKey = userScopedStorageKey(WritingRecordsDedupeMigrationKey, userId)
+  const migrated = window.localStorage.getItem(migrationKey)
   const shouldPersist = migrated !== 'done' || records.length !== originalCount
   if (!shouldPersist) return
-  window.localStorage.setItem(WritingRecordsStorageKey, JSON.stringify(records.slice(0, 100)))
-  window.localStorage.setItem(WritingRecordsDedupeMigrationKey, 'done')
+  window.localStorage.setItem(storageKey, JSON.stringify(records.slice(0, 100)))
+  window.localStorage.setItem(migrationKey, 'done')
 }
 
-function notifyWritingRecordsUpdated() {
+function notifyWritingRecordsUpdated(userId: string) {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(WritingRecordsUpdatedEvent))
+    window.dispatchEvent(new CustomEvent(WritingRecordsUpdatedEvent, { detail: { userId } }))
   }
 }
 
-export function loadWritingRecords(): WritingRecord[] {
+export function loadWritingRecords(userId: string): WritingRecord[] {
   if (typeof window === 'undefined') return []
-  const raw = window.localStorage.getItem(WritingRecordsStorageKey)
+  const raw = window.localStorage.getItem(userScopedStorageKey(WritingRecordsStorageKey, userId))
   if (!raw) return []
 
   try {
@@ -536,9 +540,10 @@ export function loadWritingRecords(): WritingRecord[] {
     const records = parsed
       .filter(isWritingRecord)
       .map(normalizeWritingRecord)
+      .filter((record) => record.ownerUserId === userId)
       .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
     const deduped = dedupeWritingRecords(records)
-    persistDedupeMigration(deduped, parsed.length)
+    persistDedupeMigration(userId, deduped, parsed.length)
     return deduped
   } catch {
     return []
@@ -596,16 +601,17 @@ function normalizeComponents(value: unknown): WritingRecord['components'] {
   return Object.keys(output).length > 0 ? output : undefined
 }
 
-export function saveWritingRecord(record: WritingRecord) {
+export function saveWritingRecord(userId: string, record: WritingRecord) {
   if (typeof window === 'undefined') return
-  const records = loadWritingRecords().filter((item) => !sharesDedupKey(item, record))
+  const records = loadWritingRecords(userId).filter((item) => !sharesDedupKey(item, record))
   const evaluation = normalizeEvaluation(record.evaluation) || record.evaluation
   const normalizedRecord = normalizeWritingRecord({
     ...record,
+    ownerUserId: userId,
     evaluation
   })
   window.localStorage.setItem(
-    WritingRecordsStorageKey,
+    userScopedStorageKey(WritingRecordsStorageKey, userId),
     JSON.stringify([
       {
         ...normalizedRecord,
@@ -617,50 +623,51 @@ export function saveWritingRecord(record: WritingRecord) {
       ...records
     ].slice(0, 100))
   )
-  notifyWritingRecordsUpdated()
+  notifyWritingRecordsUpdated(userId)
 }
 
-export function replaceWritingRecords(records: WritingRecord[]) {
+export function replaceWritingRecords(userId: string, records: WritingRecord[]) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(
-    WritingRecordsStorageKey,
+    userScopedStorageKey(WritingRecordsStorageKey, userId),
     JSON.stringify(
-      dedupeWritingRecords(records)
+      dedupeWritingRecords(records.map((record) => ({ ...record, ownerUserId: userId })))
         .sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime())
         .slice(0, 100)
     )
   )
-  notifyWritingRecordsUpdated()
+  notifyWritingRecordsUpdated(userId)
 }
 
-export function deleteWritingRecord(id: string) {
-  const records = loadWritingRecords()
+export function deleteWritingRecord(userId: string, id: string) {
+  const records = loadWritingRecords(userId)
   const deleted = records.find((record) => record.id === id) ?? null
   if (!deleted) return null
-  replaceWritingRecords(records.filter((record) => record.id !== id))
+  replaceWritingRecords(userId, records.filter((record) => record.id !== id))
   return deleted
 }
 
-export function restoreWritingRecord(record: WritingRecord) {
-  saveWritingRecord(record)
+export function restoreWritingRecord(userId: string, record: WritingRecord) {
+  saveWritingRecord(userId, record)
 }
 
-export function getWritingRecord(id: string | null) {
-  const records = loadWritingRecords()
+export function getWritingRecord(userId: string, id: string | null) {
+  const records = loadWritingRecords(userId)
   if (!id) return records[0] ?? null
   return records.find((record) => record.id === id) ?? null
 }
 
-export function saveMistakeRecord(record: WritingRecord) {
+export function saveMistakeRecord(userId: string, record: WritingRecord) {
   if (typeof window === 'undefined') return
+  const storageKey = userScopedStorageKey(MistakeBookStorageKey, userId)
   let existing: string[] = []
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(MistakeBookStorageKey) || '[]')
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(storageKey) || '[]')
     existing = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
   } catch {
     existing = []
   }
-  window.localStorage.setItem(MistakeBookStorageKey, JSON.stringify([record.id, ...existing.filter((id) => id !== record.id)].slice(0, 100)))
+  window.localStorage.setItem(storageKey, JSON.stringify([record.id, ...existing.filter((id) => id !== record.id)].slice(0, 100)))
 }
 
 export function scoreValue(score: string | undefined) {

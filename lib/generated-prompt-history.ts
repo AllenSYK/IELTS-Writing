@@ -2,6 +2,7 @@ import { buildPrompt, type WritingQuestion } from '@/lib/ielts-questions'
 import type { WritingTaskType } from '@/lib/writing-records'
 import type { PromptSelection } from '@/lib/writing-options'
 import { DefaultUserProfile, loadUserProfile } from '@/lib/user-profile'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 export type GeneratedPromptSource = 'ai' | 'local-template' | 'static-bank'
 
@@ -125,11 +126,12 @@ export function jaccardSimilarity(a: string[], b: string[]) {
   return union === 0 ? 0 : intersection / union
 }
 
-export function currentPromptProfileId() {
+export function currentPromptProfileId(userId: string) {
   if (typeof window === 'undefined') return 'server'
-  const profile = loadUserProfile()
+  const profile = loadUserProfile(userId)
   const normalized = profile || DefaultUserProfile
   return stableHash([
+    userId,
     normalized.fullName.trim().toLowerCase(),
     normalized.englishNickname.trim().toLowerCase(),
     normalized.targetOverall,
@@ -138,10 +140,10 @@ export function currentPromptProfileId() {
   ].join('|'))
 }
 
-function readHistory(): GeneratedPromptHistoryEntry[] {
+function readHistory(userId: string): GeneratedPromptHistoryEntry[] {
   if (typeof window === 'undefined') return []
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(GeneratedPromptHistoryStorageKey) || '[]')
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(userScopedStorageKey(GeneratedPromptHistoryStorageKey, userId)) || '[]')
     if (!Array.isArray(parsed)) return []
     return parsed.filter((item): item is GeneratedPromptHistoryEntry => {
       return Boolean(
@@ -159,19 +161,19 @@ function readHistory(): GeneratedPromptHistoryEntry[] {
   }
 }
 
-function writeHistory(entries: GeneratedPromptHistoryEntry[]) {
+function writeHistory(userId: string, entries: GeneratedPromptHistoryEntry[]) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(GeneratedPromptHistoryStorageKey, JSON.stringify(entries.slice(0, 500)))
+  window.localStorage.setItem(userScopedStorageKey(GeneratedPromptHistoryStorageKey, userId), JSON.stringify(entries.slice(0, 500)))
 }
 
-export function loadGeneratedPromptHistory(userProfileId = currentPromptProfileId()) {
-  return readHistory()
+export function loadGeneratedPromptHistory(userId: string, userProfileId = currentPromptProfileId(userId)) {
+  return readHistory(userId)
     .filter((entry) => entry.userProfileId === userProfileId)
     .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())
 }
 
-export function buildExcludePromptSummaries(taskType: Exclude<WritingTaskType, 'mock'>, userProfileId = currentPromptProfileId(), limit = 20) {
-  return loadGeneratedPromptHistory(userProfileId)
+export function buildExcludePromptSummaries(taskType: Exclude<WritingTaskType, 'mock'>, userId: string, userProfileId = currentPromptProfileId(userId), limit = 20) {
+  return loadGeneratedPromptHistory(userId, userProfileId)
     .filter((entry) => entry.taskType === taskType)
     .slice(0, limit)
     .map((entry) => ({
@@ -189,16 +191,17 @@ export function findDuplicatePrompt(
   questionText: string,
   options: {
     taskType: Exclude<WritingTaskType, 'mock'>
+    userId: string
     userProfileId?: string
     chartType?: string
     essayType?: string
     topic?: string
   }
 ): PromptDuplicateResult {
-  const userProfileId = options.userProfileId || currentPromptProfileId()
+  const userProfileId = options.userProfileId || currentPromptProfileId(options.userId)
   const hash = promptHash(questionText)
   const keywords = promptKeywords(questionText)
-  for (const entry of loadGeneratedPromptHistory(userProfileId)) {
+  for (const entry of loadGeneratedPromptHistory(options.userId, userProfileId)) {
     if (entry.taskType !== options.taskType) continue
     if (entry.questionHash === hash) return { duplicate: true, reason: 'exact', similarity: 1, matched: entry }
     const similarity = jaccardSimilarity(keywords, entry.keywords)
@@ -217,7 +220,8 @@ export function recordGeneratedPrompt(
   question: WritingQuestion,
   selection: PromptSelection,
   source: GeneratedPromptSource,
-  userProfileId = currentPromptProfileId()
+  userId: string,
+  userProfileId = currentPromptProfileId(userId)
 ) {
   const questionText = buildPrompt(question)
   const entry: GeneratedPromptHistoryEntry = {
@@ -235,17 +239,17 @@ export function recordGeneratedPrompt(
     completed: false,
     source
   }
-  const remaining = readHistory().filter((item) => !(item.userProfileId === userProfileId && item.promptId === question.id))
-  writeHistory([entry, ...remaining])
+  const remaining = readHistory(userId).filter((item) => !(item.userProfileId === userProfileId && item.promptId === question.id))
+  writeHistory(userId, [entry, ...remaining])
   return entry
 }
 
-export function markGeneratedPromptCompleted(promptId: string, userProfileId = currentPromptProfileId()) {
-  const entries = readHistory().map((entry) => {
+export function markGeneratedPromptCompleted(promptId: string, userId: string, userProfileId = currentPromptProfileId(userId)) {
+  const entries = readHistory(userId).map((entry) => {
     if (entry.userProfileId === userProfileId && entry.promptId === promptId) {
       return { ...entry, completed: true }
     }
     return entry
   })
-  writeHistory(entries)
+  writeHistory(userId, entries)
 }

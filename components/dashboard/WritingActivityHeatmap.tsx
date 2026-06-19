@@ -1,0 +1,118 @@
+import type { WritingActivityDay } from '@/lib/writing-activity'
+
+type HeatmapCell = WritingActivityDay & {
+  level: 0 | 1 | 2 | 3 | 4
+}
+
+function intensityLevel(count: number): HeatmapCell['level'] {
+  if (count <= 0) return 0
+  if (count === 1) return 1
+  if (count <= 3) return 2
+  if (count <= 6) return 3
+  return 4
+}
+
+function mondayIndex(dateKey: string) {
+  const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay()
+  return day === 0 ? 6 : day - 1
+}
+
+function formatTooltip(dateKey: string, count: number) {
+  const date = new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC'
+  }).format(new Date(`${dateKey}T00:00:00.000Z`))
+  return `${date}：${count} 次写作批改`
+}
+
+function buildWeeks(activity: WritingActivityDay[]) {
+  if (activity.length === 0) return [] as Array<Array<HeatmapCell | null>>
+  const padded: Array<HeatmapCell | null> = [
+    ...Array.from({ length: mondayIndex(activity[0].date) }, () => null),
+    ...activity.map((day) => ({ ...day, level: intensityLevel(day.count) }))
+  ]
+  while (padded.length % 7 !== 0) padded.push(null)
+  return Array.from({ length: padded.length / 7 }, (_, index) => padded.slice(index * 7, index * 7 + 7))
+}
+
+function monthLabels(weeks: Array<Array<HeatmapCell | null>>) {
+  let previousMonth = ''
+  return weeks.map((week, index) => {
+    const firstDay = week.find(Boolean)
+    if (!firstDay) return { index, label: '' }
+    const month = firstDay.date.slice(0, 7)
+    if (month === previousMonth) return { index, label: '' }
+    previousMonth = month
+    return {
+      index,
+      label: new Intl.DateTimeFormat('zh-CN', { month: 'short', timeZone: 'UTC' }).format(
+        new Date(`${firstDay.date}T00:00:00.000Z`)
+      )
+    }
+  })
+}
+
+export function WritingActivityHeatmap({ activity }: { activity: WritingActivityDay[] }) {
+  const weeks = buildWeeks(activity)
+  const labels = monthLabels(weeks)
+  const total = activity.reduce((sum, day) => sum + day.count, 0)
+
+  return (
+    <section className="dashboard-panel activity-panel" aria-labelledby="writing-activity-title">
+      <header className="activity-panel-header">
+        <div>
+          <p className="stitch-label">Writing activity</p>
+          <h2 id="writing-activity-title">写作热力图</h2>
+        </div>
+        <strong>{total} 次</strong>
+      </header>
+
+      <div className="activity-scroll" tabIndex={0} aria-label="最近十二个月写作活动，可横向滚动">
+        <div className="activity-chart">
+          <div className="activity-months" aria-hidden="true">
+            {labels.map((label) => (
+              <span key={label.index}>{label.label}</span>
+            ))}
+          </div>
+          <div className="activity-body">
+            <div className="activity-weekdays" aria-hidden="true">
+              <span>一</span>
+              <span />
+              <span>三</span>
+              <span />
+              <span>五</span>
+              <span />
+              <span>日</span>
+            </div>
+            <div className="activity-weeks">
+              {weeks.map((week, weekIndex) => (
+                <div className="activity-week" key={weekIndex}>
+                  {week.map((day, dayIndex) => (
+                    day ? (
+                      <span
+                        className={`activity-cell level-${day.level}`}
+                        key={day.date}
+                        role="img"
+                        aria-label={formatTooltip(day.date, day.count)}
+                        title={formatTooltip(day.date, day.count)}
+                      />
+                    ) : <span className="activity-cell is-placeholder" key={`empty-${dayIndex}`} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer className="activity-legend">
+        <span>少</span>
+        {[0, 1, 2, 3, 4].map((level) => <i className={`activity-cell level-${level}`} key={level} />)}
+        <span>多</span>
+      </footer>
+    </section>
+  )
+}
+

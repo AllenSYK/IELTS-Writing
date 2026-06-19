@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { userScopedStorageKey } from '@/lib/user-storage'
 import {
   createContext,
   useCallback,
@@ -220,9 +222,10 @@ type CommandAction = {
   keywords: string
 }
 
-function getDraftMode(): WritingTaskType {
+function getDraftMode(userId: string | null): WritingTaskType {
+  if (!userId) return 'task2'
   const modes: WritingTaskType[] = ['task2', 'task1', 'mock']
-  const found = modes.find((mode) => window.localStorage.getItem(`aerowrite-draft-${mode}`)?.trim())
+  const found = modes.find((mode) => window.localStorage.getItem(userScopedStorageKey(`aerowrite-draft-${mode}`, userId))?.trim())
   return found ?? 'task2'
 }
 
@@ -242,6 +245,7 @@ function writeRecent(id: string) {
 
 function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
+  const { userId } = useUserSession()
   const { pushToast, dismissToast } = useToast()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
@@ -261,7 +265,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         title: '查看当前草稿',
         subtitle: '打开最近有内容的写作任务',
         icon: 'draft',
-        run: () => router.push(`/write/${getDraftMode()}`),
+        run: () => router.push(`/write/${getDraftMode(userId)}`),
         keywords: 'draft 草稿 current'
       },
       {
@@ -291,7 +295,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         keywords: 'search history 搜索 历史'
       }
     ],
-    [dismissToast, pushToast, query, router]
+    [dismissToast, pushToast, query, router, userId]
   )
 
   const recents = useMemo(() => (open ? readRecents() : []), [open])

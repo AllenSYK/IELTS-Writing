@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { AsyncButton, ConfirmDialog, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { MaterialIcon } from '@/components/stitch-ui'
 import { Task1Visual } from '@/components/task1/Task1Visual'
@@ -56,6 +57,7 @@ import {
   type PromptSelection
 } from '@/lib/writing-options'
 import { getFallbackQuestionsByType, getRandomFallbackQuestion } from '@/lib/task1-fallback-questions'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
@@ -108,24 +110,24 @@ function formatTime(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
 }
 
-function singleDraftKey(mode: WritingTaskType) {
-  return `aerowrite-draft-${mode}`
+function singleDraftKey(userId: string, mode: WritingTaskType) {
+  return userScopedStorageKey(`aerowrite-draft-${mode}`, userId)
 }
 
-function mockDraftKey(taskType: MockTaskType) {
-  return `aerowrite-draft-mock-${taskType}`
+function mockDraftKey(userId: string, taskType: MockTaskType) {
+  return userScopedStorageKey(`aerowrite-draft-mock-${taskType}`, userId)
 }
 
-function timerKeyFor(mode: WritingTaskType) {
-  return `aerowrite-timer-${mode}`
+function timerKeyFor(userId: string, mode: WritingTaskType) {
+  return userScopedStorageKey(`aerowrite-timer-${mode}`, userId)
 }
 
-function questionCacheKey(taskType: MockTaskType, selection: PromptSelection) {
-  return `aerowrite-question-cache:${taskType}:${JSON.stringify(selection)}`
+function questionCacheKey(userId: string, taskType: MockTaskType, selection: PromptSelection) {
+  return userScopedStorageKey(`aerowrite-question-cache:${taskType}:${JSON.stringify(selection)}`, userId)
 }
 
-function readCachedQuestion(taskType: MockTaskType, selection: PromptSelection) {
-  const key = questionCacheKey(taskType, selection)
+function readCachedQuestion(userId: string, taskType: MockTaskType, selection: PromptSelection) {
+  const key = questionCacheKey(userId, taskType, selection)
   const memoryCached = recentQuestionCache.get(key)
   if (memoryCached && Date.now() - memoryCached.cachedAt < QUESTION_CACHE_TTL_MS) {
     return memoryCached.question
@@ -148,8 +150,8 @@ function readCachedQuestion(taskType: MockTaskType, selection: PromptSelection) 
   return null
 }
 
-function rememberQuestion(taskType: MockTaskType, selection: PromptSelection, question: WritingQuestion) {
-  const key = questionCacheKey(taskType, selection)
+function rememberQuestion(userId: string, taskType: MockTaskType, selection: PromptSelection, question: WritingQuestion) {
+  const key = questionCacheKey(userId, taskType, selection)
   const cachedAt = Date.now()
   recentQuestionCache.set(key, { question, cachedAt })
   try {
@@ -427,6 +429,7 @@ function defaultQuestionFor(mode: WritingTaskType, selection = DefaultPromptSele
 export default function WritePage() {
   const params = useParams()
   const router = useRouter()
+  const { userId } = useUserSession()
   const { pushToast } = useToast()
   const online = useNetworkStatus()
   const mode = normalizeMode(params.mode)
@@ -483,20 +486,21 @@ export default function WritePage() {
       : mode === 'task2'
         ? `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
         : `${Task1ChartLabels[promptSelection.task1ChartType]} + ${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
-  const timerKey = timerKeyFor(mode)
-  const positionKey = `aerowrite-editor-position-${mode}-${activeTaskType}`
-  const splitKey = `aerowrite-editor-split-${mode}`
+  const timerKey = userId ? timerKeyFor(userId, mode) : ''
+  const positionKey = userId ? userScopedStorageKey(`aerowrite-editor-position-${mode}-${activeTaskType}`, userId) : ''
+  const splitKey = userId ? userScopedStorageKey(`aerowrite-editor-split-${mode}`, userId) : ''
 
   const saveAllDrafts = useCallback(
     (showToast = false) => {
+      if (!userId) return
       try {
         if (mode === 'mock') {
           if (mockQuestions) {
-            writeDraft(mockDraftKey('task1'), mockEssays.task1, mockQuestions.task1.id, mockQuestions.task1)
-            writeDraft(mockDraftKey('task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2)
+            writeDraft(mockDraftKey(userId, 'task1'), mockEssays.task1, mockQuestions.task1.id, mockQuestions.task1)
+            writeDraft(mockDraftKey(userId, 'task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2)
           }
         } else if (singleQuestion) {
-          writeDraft(singleDraftKey(mode), essay, singleQuestion.id, singleQuestion)
+          writeDraft(singleDraftKey(userId, mode), essay, singleQuestion.id, singleQuestion)
         }
         lastAutoSaveAtRef.current = Date.now()
         setSaveStatus(online ? 'saved' : 'offline')
@@ -512,7 +516,7 @@ export default function WritePage() {
         if (showToast) pushToast({ kind: 'error', title: '保存失败', message: '请检查磁盘空间后重试。' })
       }
     },
-    [essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion]
+    [essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion, userId]
   )
 
   useEffect(() => {
@@ -532,6 +536,7 @@ export default function WritePage() {
   }, [evaluationStartTime, loading])
 
   useEffect(() => {
+    if (!userId) return
     let cancelled = false
 
     window.queueMicrotask(() => {
@@ -539,14 +544,14 @@ export default function WritePage() {
         const params = new URLSearchParams(window.location.search)
         const selection = selectionFromSearchParams(params)
         const recordId = params.get('record')
-        const sourceRecord = recordId ? getWritingRecord(recordId) : null
+        const sourceRecord = recordId ? getWritingRecord(userId, recordId) : null
         if (cancelled) return
         setPromptSelection(selection)
 
         if (mode === 'mock') {
           const fallback = buildMockQuestionSetForSelection(selection)
-          const task1Draft = readDraft(mockDraftKey('task1'))
-          const task2Draft = readDraft(mockDraftKey('task2'))
+          const task1Draft = readDraft(mockDraftKey(userId, 'task1'))
+          const task2Draft = readDraft(mockDraftKey(userId, 'task2'))
           const restoredTask1 = sourceRecord?.components?.task1?.essay || task1Draft?.essay || ''
           const restoredTask2 = sourceRecord?.components?.task2?.essay || task2Draft?.essay || ''
 
@@ -644,7 +649,7 @@ export default function WritePage() {
           }
         } else {
           const taskType = mode === 'task1' ? 'task1' : 'task2'
-          const draft = readDraft(singleDraftKey(mode))
+          const draft = readDraft(singleDraftKey(userId, mode))
           const restoredEssay = sourceRecord?.essay || draft?.essay || ''
           let question: WritingQuestion | null = null
 
@@ -722,9 +727,10 @@ export default function WritePage() {
     }
     // Question generation must only run for the current route/session seed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, splitKey, timerKey])
+  }, [mode, splitKey, timerKey, userId])
 
   useEffect(() => {
+    if (!timerKey) return
     const timer = window.setInterval(() => {
       const endAt = readTimerEnd(timerKey, durationMinutes)
       setTimeLeft(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)))
@@ -793,6 +799,7 @@ export default function WritePage() {
   })
 
   useEffect(() => {
+    if (!positionKey) return
     window.requestAnimationFrame(() => {
       const storedPosition = window.localStorage.getItem(positionKey)
       if (storedPosition && textareaRef.current) {
@@ -809,7 +816,7 @@ export default function WritePage() {
   }, [positionKey, activeMockTask])
 
   const persistEditorPosition = useCallback(() => {
-    if (!textareaRef.current) return
+    if (!textareaRef.current || !positionKey) return
     window.localStorage.setItem(
       positionKey,
       JSON.stringify({
@@ -847,7 +854,8 @@ export default function WritePage() {
   }
 
   async function requestGeneratedQuestion(payload: GeneratePromptPayload) {
-    const requestKey = JSON.stringify(payload)
+    if (!userId) throw new Error('用户身份尚未确认。')
+    const requestKey = `${userId}:${JSON.stringify(payload)}`
     const existing = pendingQuestionRequests.get(requestKey)
     if (existing) return existing
 
@@ -877,12 +885,14 @@ export default function WritePage() {
   }
 
   async function generateQuestionFor(taskType: MockTaskType, selection: PromptSelection) {
-    const cachedQuestion = readCachedQuestion(taskType, selection)
+    if (!userId) throw new Error('用户身份尚未确认。')
+    const cachedQuestion = readCachedQuestion(userId, taskType, selection)
     if (cachedQuestion) return cachedQuestion
 
-    const userProfileId = currentPromptProfileId()
+    const userProfileId = currentPromptProfileId(userId)
     const duplicateContext = {
       taskType,
+      userId,
       userProfileId,
       chartType: taskType === 'task1' ? selection.task1ChartType : undefined,
       essayType: taskType === 'task2' ? selection.task2EssayType : undefined,
@@ -894,12 +904,12 @@ export default function WritePage() {
         const question = await requestGeneratedQuestion({
           taskType,
           selection,
-          excludePromptSummaries: buildExcludePromptSummaries(taskType, userProfileId, 20)
+          excludePromptSummaries: buildExcludePromptSummaries(taskType, userId, userProfileId, 20)
         })
         const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
         if (!duplicate.duplicate) {
-          recordGeneratedPrompt(question, selection, question.generatedSource === 'ai' ? 'ai' : 'local-template', userProfileId)
-          return rememberQuestion(taskType, selection, question)
+          recordGeneratedPrompt(question, selection, question.generatedSource === 'ai' ? 'ai' : 'local-template', userId, userProfileId)
+          return rememberQuestion(userId, taskType, selection, question)
         }
       } catch (caught) {
         if (attempt === 0) {
@@ -925,17 +935,17 @@ export default function WritePage() {
         processSpec: fbQuestion.processSpec,
         mapSpec: fbQuestion.mapSpec
       }
-      recordGeneratedPrompt(question, selection, 'local-template', userProfileId)
+      recordGeneratedPrompt(question, selection, 'local-template', userId, userProfileId)
       setPromptGenerationNotice('已使用本地题库生成题目。')
-      return rememberQuestion(taskType, selection, question)
+      return rememberQuestion(userId, taskType, selection, question)
     }
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const question = buildLocalGeneratedQuestion(taskType, selection, attempt)
       const duplicate = findDuplicatePrompt(buildPrompt(question), duplicateContext)
       if (!duplicate.duplicate) {
-        recordGeneratedPrompt(question, selection, 'local-template', userProfileId)
-        return rememberQuestion(taskType, selection, question)
+        recordGeneratedPrompt(question, selection, 'local-template', userId, userProfileId)
+        return rememberQuestion(userId, taskType, selection, question)
       }
     }
 
@@ -944,8 +954,8 @@ export default function WritePage() {
     if (duplicate.duplicate) {
       setPromptGenerationNotice('最近已经生成过高度相似题目，已显示题库中最接近当前选择的备用题。')
     }
-    recordGeneratedPrompt(fallback, selection, 'static-bank', userProfileId)
-    return rememberQuestion(taskType, selection, fallback)
+    recordGeneratedPrompt(fallback, selection, 'static-bank', userId, userProfileId)
+    return rememberQuestion(userId, taskType, selection, fallback)
   }
 
   async function submitCurrent() {
@@ -954,7 +964,7 @@ export default function WritePage() {
   }
 
   async function submitSingle() {
-    if (loading) return
+    if (loading || !userId) return
     setError('')
     if (!online) {
       setError('当前离线。作文已保存在本地，网络恢复后再提交批改。')
@@ -971,7 +981,7 @@ export default function WritePage() {
       return
     }
 
-    const essayHashKey = `${essay.trim().toLowerCase().slice(0, 100)}:${activeQuestion.taskType}`
+    const essayHashKey = `${userId}:${essay.trim().toLowerCase().slice(0, 100)}:${activeQuestion.taskType}`
     if (pendingEvaluations.has(essayHashKey)) {
       const confirmResubmit = window.confirm('检测到相同内容的批改正在进行中。\n\n点击"确定"等待当前批改完成，\n点击"取消"强制重新批改。')
       if (!confirmResubmit) {
@@ -1038,9 +1048,9 @@ export default function WritePage() {
         imageUrl: activeQuestion.image
       }
 
-      saveWritingRecord(record)
-      markGeneratedPromptCompleted(activeQuestion.id)
-      window.localStorage.removeItem(singleDraftKey(mode))
+      saveWritingRecord(userId, record)
+      markGeneratedPromptCompleted(activeQuestion.id, userId)
+      window.localStorage.removeItem(singleDraftKey(userId, mode))
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')
@@ -1101,7 +1111,7 @@ export default function WritePage() {
   }
 
   async function submitMock() {
-    if (loading) return
+    if (loading || !userId) return
     setError('')
     if (!online) {
       setError('当前离线。两篇作文已保存在本地，网络恢复后再提交批改。')
@@ -1117,8 +1127,8 @@ export default function WritePage() {
       return
     }
 
-    const dedupeKey1 = `mock-task1:${mockEssays.task1.trim().toLowerCase().slice(0, 100)}`
-    const dedupeKey2 = `mock-task2:${mockEssays.task2.trim().toLowerCase().slice(0, 100)}`
+    const dedupeKey1 = `${userId}:mock-task1:${mockEssays.task1.trim().toLowerCase().slice(0, 100)}`
+    const dedupeKey2 = `${userId}:mock-task2:${mockEssays.task2.trim().toLowerCase().slice(0, 100)}`
 
     let succeeded = false
     setSubmitStatus('saving')
@@ -1217,11 +1227,11 @@ export default function WritePage() {
         }
       }
 
-      saveWritingRecord(record)
-      markGeneratedPromptCompleted(mockQuestions.task1.id)
-      markGeneratedPromptCompleted(mockQuestions.task2.id)
-      window.localStorage.removeItem(mockDraftKey('task1'))
-      window.localStorage.removeItem(mockDraftKey('task2'))
+      saveWritingRecord(userId, record)
+      markGeneratedPromptCompleted(mockQuestions.task1.id, userId)
+      markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
+      window.localStorage.removeItem(mockDraftKey(userId, 'task1'))
+      window.localStorage.removeItem(mockDraftKey(userId, 'task2'))
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')
@@ -1290,7 +1300,7 @@ export default function WritePage() {
       ? `当前 Task 1 为 ${mockWordCounts.task1}/150 words，Task 2 为 ${mockWordCounts.task2}/250 words。你可以继续写，也可以确认提交并接受可能影响评分的风险。`
       : `当前 ${wordCount} words，建议至少 ${wordTarget} words。你可以继续写，也可以确认提交并接受可能影响评分的风险。`
 
-  if (!hydrated || !activeQuestion) return <PageSkeleton variant="editor" />
+  if (!userId || !hydrated || !activeQuestion) return <PageSkeleton variant="editor" />
 
   return (
     <main className="exam-page" data-main-content tabIndex={-1}>

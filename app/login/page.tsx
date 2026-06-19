@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Loader2, LockKeyhole, LogIn, Mail } from 'lucide-react'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 
 type LoginResponse = {
   success?: boolean
@@ -31,6 +32,7 @@ async function postWithTimeout<T>(url: string, payload: unknown, timeoutMs = 150
 
 export default function LoginPage() {
   const router = useRouter()
+  const { refreshUser } = useUserSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -55,6 +57,7 @@ export default function LoginPage() {
         return
       }
 
+      await refreshUser()
       router.replace(data.redirectTo || '/activate')
     } catch (caught) {
       setError(caught instanceof DOMException && caught.name === 'AbortError' ? '请求超时，请检查网络后重试。' : '登录失败，请稍后重试。')

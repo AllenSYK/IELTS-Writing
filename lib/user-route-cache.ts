@@ -15,7 +15,7 @@ export const UserRouteCacheKeys = {
 export type UserRouteCacheKey = (typeof UserRouteCacheKeys)[keyof typeof UserRouteCacheKeys]
 
 type CacheMutator = (
-  key: UserRouteCacheKey,
+  key: readonly ['user-writing-records', UserRouteCacheKey, string],
   data: WritingRecord[],
   options: { revalidate: false }
 ) => Promise<unknown>
@@ -25,59 +25,85 @@ const recordCacheKeys = [
   UserRouteCacheKeys.level0
 ] as const
 
-let cachedRecords: WritingRecord[] | null = null
-let pendingRecords: Promise<WritingRecord[]> | null = null
+const cachedRecords = new Map<string, WritingRecord[]>()
+const pendingRecords = new Map<string, Promise<WritingRecord[]>>()
 
-function loadRecordsOnce() {
-  if (cachedRecords) return Promise.resolve(cachedRecords)
+export function userWritingRecordsCacheKey(key: UserRouteCacheKey, userId: string) {
+  return ['user-writing-records', key, userId] as const
+}
 
-  if (!pendingRecords) {
-    pendingRecords = Promise.resolve()
-      .then(() => loadWritingRecords())
+function loadRecordsOnce(userId: string) {
+  const cached = cachedRecords.get(userId)
+  if (cached) return Promise.resolve(cached)
+
+  let pending = pendingRecords.get(userId)
+  if (!pending) {
+    pending = Promise.resolve()
+      .then(() => loadWritingRecords(userId))
       .then((records) => {
-        cachedRecords = records
+        cachedRecords.set(userId, records)
         return records
       })
       .finally(() => {
-        pendingRecords = null
+        pendingRecords.delete(userId)
       })
+    pendingRecords.set(userId, pending)
   }
-  return pendingRecords
+  return pending
 }
 
-export async function warmUserRouteCache(key: UserRouteCacheKey, mutate: CacheMutator) {
-  const records = await loadRecordsOnce()
-  await Promise.all(recordCacheKeys.map((cacheKey) => mutate(cacheKey, records, { revalidate: false })))
+export async function warmUserRouteCache(userId: string, key: UserRouteCacheKey, mutate: CacheMutator) {
+  const records = await loadRecordsOnce(userId)
+  await Promise.all(recordCacheKeys.map((cacheKey) => mutate(userWritingRecordsCacheKey(cacheKey, userId), records, { revalidate: false })))
 }
 
-export async function warmAllUserRouteCaches(mutate: CacheMutator) {
-  const records = await loadRecordsOnce()
-  await Promise.all(recordCacheKeys.map((cacheKey) => mutate(cacheKey, records, { revalidate: false })))
+export async function warmAllUserRouteCaches(userId: string, mutate: CacheMutator) {
+  const records = await loadRecordsOnce(userId)
+  await Promise.all(recordCacheKeys.map((cacheKey) => mutate(userWritingRecordsCacheKey(cacheKey, userId), records, { revalidate: false })))
 }
 
-export function replaceCachedUserWritingRecords(records: WritingRecord[]) {
-  cachedRecords = records
+export function replaceCachedUserWritingRecords(userId: string, records: WritingRecord[]) {
+  cachedRecords.set(userId, records)
+}
+
+export function clearUserRouteMemoryCaches(userId?: string) {
+  if (userId) {
+    cachedRecords.delete(userId)
+    pendingRecords.delete(userId)
+    return
+  }
+  cachedRecords.clear()
+  pendingRecords.clear()
 }
 
 export function useUserWritingRecords(
-  key: typeof UserRouteCacheKeys.history | typeof UserRouteCacheKeys.level0
+  key: typeof UserRouteCacheKeys.history | typeof UserRouteCacheKeys.level0,
+  userId: string | null
 ) {
-  const result = useSWR<WritingRecord[]>(key, loadRecordsOnce, {
-    keepPreviousData: true,
-    revalidateOnFocus: false,
-    revalidateIfStale: true,
-    dedupingInterval: 30_000
-  })
+  const result = useSWR<WritingRecord[]>(
+    userId ? userWritingRecordsCacheKey(key, userId) : null,
+    () => loadRecordsOnce(userId as string),
+    {
+      keepPreviousData: false,
+      revalidateOnFocus: false,
+      revalidateIfStale: true,
+      dedupingInterval: 30_000
+    }
+  )
 
   return {
     records: result.data ?? [],
-    isLoading: !result.data && result.isLoading,
+    isLoading: !userId || (!result.data && result.isLoading),
     isValidating: result.isValidating,
     refresh: result.mutate
   }
 }
 
-export function subscribeToWritingRecordChanges(listener: () => void) {
-  window.addEventListener(WritingRecordsUpdatedEvent, listener)
-  return () => window.removeEventListener(WritingRecordsUpdatedEvent, listener)
+export function subscribeToWritingRecordChanges(listener: (userId: string) => void) {
+  const handler = (event: Event) => {
+    const detail = event instanceof CustomEvent ? event.detail : null
+    if (detail && typeof detail.userId === 'string') listener(detail.userId)
+  }
+  window.addEventListener(WritingRecordsUpdatedEvent, handler)
+  return () => window.removeEventListener(WritingRecordsUpdatedEvent, handler)
 }

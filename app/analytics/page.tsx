@@ -8,6 +8,7 @@ import { IeltsRadarChart } from '@/components/analytics/IeltsRadarChart'
 import { PracticePlan } from '@/components/analytics/PracticePlan'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   buildErrorDistribution,
   buildPracticeRecommendations,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/writing-records'
 import { UserRouteCacheKeys, useUserWritingRecords } from '@/lib/user-route-cache'
 import { useUserProfile } from '@/stores/user-profile-store'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 type AnalyticsRange = '7' | '30' | 'all'
 
@@ -46,23 +48,25 @@ function buildTrend(records: WritingRecord[]) {
 }
 
 export default function AnalyticsPage() {
+  const { userId } = useUserSession()
   const { profile } = useUserProfile()
-  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.level0)
+  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.level0, userId)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [range, setRange] = useState<AnalyticsRange>('30')
   const [now, setNow] = useState(0)
 
   useEffect(() => {
+    if (!userId) return
     window.queueMicrotask(() => {
-      setRange((window.localStorage.getItem('aerowrite-analytics-range') as AnalyticsRange | null) || '30')
+      setRange((window.localStorage.getItem(userScopedStorageKey('aerowrite-analytics-range', userId)) as AnalyticsRange | null) || '30')
       setNow(Date.now())
       setPreferencesLoaded(true)
     })
-  }, [])
+  }, [userId])
 
   useEffect(() => {
-    if (preferencesLoaded) window.localStorage.setItem('aerowrite-analytics-range', range)
-  }, [preferencesLoaded, range])
+    if (preferencesLoaded && userId) window.localStorage.setItem(userScopedStorageKey('aerowrite-analytics-range', userId), range)
+  }, [preferencesLoaded, range, userId])
 
   const scopedRecords = useMemo(() => {
     if (range === 'all') return records

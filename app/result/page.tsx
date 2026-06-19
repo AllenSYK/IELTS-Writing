@@ -10,6 +10,7 @@ import { ScoreSummary } from '@/components/evaluation/ScoreSummary'
 import { ConfirmDialog, useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { Task1Visual } from '@/components/task1/Task1Visual'
 import { criterionKeysForTask } from '@/lib/ielts-scoring'
 import { getQuestionById } from '@/lib/ielts-questions'
@@ -28,6 +29,7 @@ import {
   type EssayAnnotationCategory,
   type WritingRecord
 } from '@/lib/writing-records'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 type ResultTab = 'original' | 'corrected' | 'revised' | 'model'
 type AnnotationFilter = 'all' | 'grammar' | 'vocabulary' | 'logic' | 'task' | 'high'
@@ -144,6 +146,7 @@ function resultCriterionLabel(key: CriterionKey) {
 
 export default function ResultPage() {
   const { pushToast } = useToast()
+  const { userId } = useUserSession()
   const [record, setRecord] = useState<WritingRecord | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [tab, setTab] = useState<ResultTab>('corrected')
@@ -154,25 +157,26 @@ export default function ResultPage() {
   const [showAcceptAllConfirm, setShowAcceptAllConfirm] = useState(false)
 
   useEffect(() => {
+    if (!userId) return
     window.queueMicrotask(() => {
       const id = new URLSearchParams(window.location.search).get('id')
-      const nextRecord = getWritingRecord(id)
+      const nextRecord = getWritingRecord(userId, id)
       setRecord(nextRecord)
       if (nextRecord) {
         setAcceptedChanges(nextRecord.acceptedChanges ?? [])
         setIgnoredIds(new Set())
-        const storedTab = window.localStorage.getItem(`aerowrite-result-tab-${nextRecord.id}`) as ResultTab | null
+        const storedTab = window.localStorage.getItem(userScopedStorageKey(`aerowrite-result-tab-${nextRecord.id}`, userId)) as ResultTab | null
         if (storedTab === 'original' || storedTab === 'corrected' || storedTab === 'revised' || storedTab === 'model') {
           setTab(storedTab)
         }
       }
       setLoaded(true)
     })
-  }, [])
+  }, [userId])
 
   useEffect(() => {
-    if (record) window.localStorage.setItem(`aerowrite-result-tab-${record.id}`, tab)
-  }, [record, tab])
+    if (record && userId) window.localStorage.setItem(userScopedStorageKey(`aerowrite-result-tab-${record.id}`, userId), tab)
+  }, [record, tab, userId])
 
   const sentenceErrors = useMemo(() => record?.evaluation.sentenceAnnotations ?? record?.evaluation.sentenceErrors ?? [], [record])
 
@@ -232,13 +236,13 @@ export default function ResultPage() {
   }
 
   function saveToMistakes() {
-    if (!record) return
-    saveMistakeRecord(record)
+    if (!record || !userId) return
+    saveMistakeRecord(userId, record)
     pushToast({ kind: 'success', title: '已保存到错题本', message: '可在本机记录中继续复盘。' })
   }
 
   function persistAcceptedChanges(nextChanges: AcceptedAnnotationChange[]) {
-    if (!record) return
+    if (!record || !userId) return
     const updated: WritingRecord = {
       ...record,
       originalEssay,
@@ -247,7 +251,7 @@ export default function ResultPage() {
     }
     setAcceptedChanges(nextChanges)
     setRecord(updated)
-    saveWritingRecord(updated)
+    saveWritingRecord(userId, updated)
   }
 
   function acceptAnnotation(annotation: EssayAnnotation) {

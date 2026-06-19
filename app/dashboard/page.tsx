@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { CalendarDays, CheckCircle2, Clock3, PenLine } from 'lucide-react'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { WritingActivityHeatmap } from '@/components/dashboard/WritingActivityHeatmap'
 import { checkActiveWebLicenseForUser, getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
+import { loadWritingActivityForUser } from '@/lib/writing-activity'
 import { LogoutButton } from './LogoutButton'
 
 function formatDate(value?: string | null) {
@@ -18,22 +19,14 @@ export default async function DashboardPage() {
   const user = await getCurrentSupabaseUser()
   if (!user) redirect('/login')
 
-  const service = createSupabaseServiceRoleClient()
-  const [profile, check, recentUsageResult] = await Promise.all([
+  const [profile, check, activity] = await Promise.all([
     getWebProfile(user.id),
     checkActiveWebLicenseForUser(user),
-    service
-      .from('usage_records')
-      .select('id, action, model, success, error_message, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(5)
+    loadWritingActivityForUser(user.id)
   ])
   if (profile?.role === 'admin') redirect('/admin/licenses')
 
   if (!check.ok) redirect('/activate')
-
-  const recentUsage = recentUsageResult.data
 
   return (
     <main className="stitch-page dashboard-page" data-main-content tabIndex={-1}>
@@ -71,7 +64,7 @@ export default async function DashboardPage() {
           </article>
         </section>
 
-        <section className="dashboard-panel">
+        <section className="dashboard-panel dashboard-license-panel">
           <h2>激活信息</h2>
           <dl className="dashboard-definition-list">
             <div><dt>激活邮箱</dt><dd>{check.activation.email}</dd></div>
@@ -81,22 +74,7 @@ export default async function DashboardPage() {
           </dl>
         </section>
 
-        <section className="dashboard-panel">
-          <h2>最近批改记录</h2>
-          {recentUsage?.length ? (
-            <div className="dashboard-usage-list">
-              {recentUsage.map((item) => (
-                <div key={item.id}>
-                  <span>{item.action === 'generate_prompt' ? 'AI 生成题目' : 'AI 批改'}</span>
-                  <strong>{item.success ? '成功' : '失败'}</strong>
-                  <small>{formatDate(item.created_at)} · {item.model || '默认模型'}</small>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="dashboard-empty">暂无批改记录。开始一次练习后会显示在这里。</p>
-          )}
-        </section>
+        <WritingActivityHeatmap activity={activity} />
       </section>
     </main>
   )

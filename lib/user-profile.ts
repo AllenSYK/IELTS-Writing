@@ -1,3 +1,5 @@
+import { userScopedStorageKey } from '@/lib/user-storage'
+
 export type IELTSBand = 5 | 5.5 | 6 | 6.5 | 7 | 7.5 | 8 | 8.5 | 9
 
 export type EnglishLevel = 'beginner' | 'intermediate' | 'upper-intermediate' | 'advanced'
@@ -155,21 +157,21 @@ export function hasProfileErrors(errors: UserProfileValidationError) {
   return Object.values(errors).some(Boolean)
 }
 
-export function loadUserProfile(): UserProfile {
+export function loadUserProfile(userId: string): UserProfile {
   if (typeof window === 'undefined') return DefaultUserProfile
   try {
-    const raw = window.localStorage.getItem(UserProfileStorageKey)
+    const raw = window.localStorage.getItem(userScopedStorageKey(UserProfileStorageKey, userId))
     return normalizeUserProfile(raw ? JSON.parse(raw) : null)
   } catch {
     return DefaultUserProfile
   }
 }
 
-export function saveUserProfile(profile: UserProfile): UserProfile {
+export function saveUserProfile(userId: string, profile: UserProfile): UserProfile {
   const normalized = normalizeUserProfile({ ...profile, updatedAt: new Date().toISOString() })
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(UserProfileStorageKey, JSON.stringify(normalized))
-    window.dispatchEvent(new CustomEvent('aerowrite:user-profile-updated', { detail: normalized }))
+    window.localStorage.setItem(userScopedStorageKey(UserProfileStorageKey, userId), JSON.stringify(normalized))
+    window.dispatchEvent(new CustomEvent('aerowrite:user-profile-updated', { detail: { userId, profile: normalized } }))
   }
   return normalized
 }

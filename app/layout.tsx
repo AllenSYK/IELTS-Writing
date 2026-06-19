@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { AppShell } from '@/components/layout/AppShell'
+import { UserSessionProvider } from '@/components/auth/UserSessionProvider'
 import { AppInteractionProvider } from '@/components/interaction-system'
 import { UserPerformanceProvider } from '@/components/performance/UserPerformanceProvider'
 import { UserProfileProvider } from '@/stores/user-profile-store'
@@ -15,13 +16,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body>
-        <AppInteractionProvider>
-          <UserPerformanceProvider>
-            <UserProfileProvider>
-              <AppShell>{children}</AppShell>
-            </UserProfileProvider>
-          </UserPerformanceProvider>
-        </AppInteractionProvider>
+        <UserSessionProvider>
+          <AppInteractionProvider>
+            <UserPerformanceProvider>
+              <UserProfileProvider>
+                <AppShell>{children}</AppShell>
+              </UserProfileProvider>
+            </UserPerformanceProvider>
+          </AppInteractionProvider>
+        </UserSessionProvider>
       </body>
     </html>
   )

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/stitch-ui'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   TaskTypeLabels,
   deleteWritingRecord,
@@ -17,6 +18,7 @@ import {
   type WritingTaskType
 } from '@/lib/writing-records'
 import { UserRouteCacheKeys, useUserWritingRecords } from '@/lib/user-route-cache'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 type TaskFilter = 'all' | WritingTaskType
 type RangeFilter = '7' | '30' | 'year' | 'all'
@@ -108,7 +110,8 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
 
 export default function HistoryPage() {
   const { pushToast } = useToast()
-  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.history)
+  const { userId } = useUserSession()
+  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.history, userId)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('all')
@@ -120,9 +123,10 @@ export default function HistoryPage() {
   const debouncedQuery = useDebouncedValue(query, 220)
 
   useEffect(() => {
+    if (!userId) return
     window.queueMicrotask(() => {
       try {
-        const stored = JSON.parse(window.localStorage.getItem(HistoryFilterStorageKey) || '{}') as Partial<{
+        const stored = JSON.parse(window.localStorage.getItem(userScopedStorageKey(HistoryFilterStorageKey, userId)) || '{}') as Partial<{
           taskFilter: TaskFilter
           rangeFilter: RangeFilter
           sortFilter: SortFilter
@@ -139,12 +143,12 @@ export default function HistoryPage() {
       }
       setPreferencesLoaded(true)
     })
-  }, [])
+  }, [userId])
 
   useEffect(() => {
-    if (!preferencesLoaded) return
-    window.localStorage.setItem(HistoryFilterStorageKey, JSON.stringify({ taskFilter, rangeFilter, sortFilter, scoreFilter, query }))
-  }, [preferencesLoaded, query, rangeFilter, scoreFilter, sortFilter, taskFilter])
+    if (!preferencesLoaded || !userId) return
+    window.localStorage.setItem(userScopedStorageKey(HistoryFilterStorageKey, userId), JSON.stringify({ taskFilter, rangeFilter, sortFilter, scoreFilter, query }))
+  }, [preferencesLoaded, query, rangeFilter, scoreFilter, sortFilter, taskFilter, userId])
 
   const visibleRecords = useMemo(
     () => {
@@ -181,10 +185,10 @@ export default function HistoryPage() {
   ]
 
   function confirmDelete() {
-    if (!pendingDelete) return
+    if (!pendingDelete || !userId) return
     setRemovingId(pendingDelete.id)
     window.setTimeout(() => {
-      const deleted = deleteWritingRecord(pendingDelete.id)
+      const deleted = deleteWritingRecord(userId, pendingDelete.id)
       setRemovingId(null)
       setPendingDelete(null)
       if (deleted) {
@@ -194,7 +198,7 @@ export default function HistoryPage() {
           message: '短时间内可以撤销。',
           actionLabel: 'Undo',
           onAction: () => {
-            restoreWritingRecord(deleted)
+            restoreWritingRecord(userId, deleted)
             pushToast({ kind: 'success', title: '已恢复记录' })
           },
           durationMs: 8000
@@ -208,10 +212,6 @@ export default function HistoryPage() {
   return (
     <main className="stitch-page" data-main-content tabIndex={-1}>
       <section className="history-main">
-        <header className="history-header">
-          <h1 className="stitch-title-headline">练习记录</h1>
-        </header>
-
         <div className="history-toolbar">
           <label className="history-search">
             <MaterialIcon name="search" size={18} />

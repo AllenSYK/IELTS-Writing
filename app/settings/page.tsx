@@ -17,6 +17,8 @@ import {
   type UserProfile
 } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { belongsToUserStorageKey } from '@/lib/user-storage'
 
 type LicenseInfo = {
   status: string
@@ -65,6 +67,7 @@ function formatDateTime(value?: string | null) {
 }
 
 export default function SettingsPage() {
+  const { userId } = useUserSession()
   const { pushToast } = useToast()
   const motion = useMotionPreference()
   const { profile, saveProfile } = useUserProfile()
@@ -89,17 +92,19 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!profileDirty && profileSaveStatus !== 'saving' && profileSaveStatus !== 'success') {
-      setDraftProfile(profile)
-      setProfileSaveStatus('clean')
+      window.queueMicrotask(() => {
+        setDraftProfile(profile)
+        setProfileSaveStatus('clean')
+      })
     }
   }, [profile, profileDirty, profileSaveStatus])
 
   useEffect(() => {
     if (profileSaveStatus === 'saving') return
     if (profileDirty) {
-      setProfileSaveStatus((current) => (current === 'error' ? 'error' : 'dirty'))
+      window.queueMicrotask(() => setProfileSaveStatus((current) => (current === 'error' ? 'error' : 'dirty')))
     } else if (profileSaveStatus === 'dirty') {
-      setProfileSaveStatus('clean')
+      window.queueMicrotask(() => setProfileSaveStatus('clean'))
     }
   }, [profileDirty, profileSaveStatus])
 
@@ -122,7 +127,7 @@ export default function SettingsPage() {
       const result = await window.desktopUpdater?.checkForUpdates()
       setUpdateState((current) => ({ ...current, ...(result?.state || {}), checking: false, message: result?.message || current.message }))
       pushToast({ kind: result?.ok === false ? 'warning' : 'success', title: result?.message || '更新检查完成' })
-    } catch (error) {
+    } catch {
       setUpdateState((current) => ({ ...current, checking: false, status: 'error', message: '暂时无法检查更新，请稍后重试。' }))
       pushToast({ kind: 'error', title: '暂时无法检查更新，请稍后重试。' })
     }
@@ -153,11 +158,16 @@ export default function SettingsPage() {
   }
 
   function resetLayout() {
+    if (!userId) return
     Object.keys(window.localStorage)
-      .filter((key) => key.startsWith('aerowrite-editor-position-') || key.startsWith('aerowrite-editor-split-') || key === 'aerowrite-history-filters-v1')
+      .filter((key) => belongsToUserStorageKey(key, userId) && (
+        key.startsWith('aerowrite-editor-position-') ||
+        key.startsWith('aerowrite-editor-split-') ||
+        key.startsWith('aerowrite-history-filters-v1')
+      ))
       .forEach((key) => window.localStorage.removeItem(key))
     Object.keys(window.sessionStorage)
-      .filter((key) => key.startsWith('aerowrite-scroll:'))
+      .filter((key) => belongsToUserStorageKey(key, userId) && key.startsWith('aerowrite-scroll:'))
       .forEach((key) => window.sessionStorage.removeItem(key))
     setConfirmResetLayout(false)
     pushToast({ kind: 'success', title: '布局已重置', message: '作文历史和草稿未被清除。' })

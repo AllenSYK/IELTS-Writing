@@ -6,6 +6,8 @@ import {
   saveUserProfile,
   type UserProfile
 } from '@/lib/user-profile'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { userScopedStorageKey } from '@/lib/user-storage'
 import {
   createContext,
   useCallback,
@@ -25,36 +27,52 @@ type UserProfileContextValue = {
 const UserProfileContext = createContext<UserProfileContextValue | null>(null)
 
 export function UserProfileProvider({ children }: { children: ReactNode }) {
+  const { userId } = useUserSession()
   const [profile, setProfile] = useState<UserProfile>(DefaultUserProfile)
 
   useEffect(() => {
-    setProfile(loadUserProfile())
+    let cancelled = false
+    if (!userId) {
+      window.queueMicrotask(() => {
+        if (!cancelled) setProfile(DefaultUserProfile)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+    window.queueMicrotask(() => {
+      if (!cancelled) setProfile(loadUserProfile(userId))
+    })
+    const storageKey = userScopedStorageKey('aerowrite-user-profile-v1', userId)
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === 'aerowrite-user-profile-v1') {
-        setProfile(loadUserProfile())
+      if (event.key === storageKey) {
+        setProfile(loadUserProfile(userId))
       }
     }
     const handleProfileEvent = (event: Event) => {
       const detail = event instanceof CustomEvent ? event.detail : null
-      setProfile(detail && typeof detail === 'object' ? (detail as UserProfile) : loadUserProfile())
+      if (detail?.userId !== userId) return
+      setProfile(detail.profile && typeof detail.profile === 'object' ? (detail.profile as UserProfile) : loadUserProfile(userId))
     }
 
     window.addEventListener('storage', handleStorage)
     window.addEventListener('aerowrite:user-profile-updated', handleProfileEvent)
     return () => {
+      cancelled = true
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('aerowrite:user-profile-updated', handleProfileEvent)
     }
-  }, [])
+  }, [userId])
 
   const saveProfile = useCallback(async (nextProfile: UserProfile) => {
-    const saved = saveUserProfile(nextProfile)
+    if (!userId) return DefaultUserProfile
+    const saved = saveUserProfile(userId, nextProfile)
     setProfile(saved)
     return saved
-  }, [])
+  }, [userId])
 
-  const reloadProfile = useCallback(() => setProfile(loadUserProfile()), [])
+  const reloadProfile = useCallback(() => setProfile(userId ? loadUserProfile(userId) : DefaultUserProfile), [userId])
 
   const value = useMemo(
     () => ({

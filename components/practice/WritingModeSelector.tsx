@@ -18,6 +18,8 @@ import {
   type PromptSelection
 } from '@/lib/writing-options'
 import type { WritingTaskType } from '@/lib/writing-records'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { userScopedStorageKey } from '@/lib/user-storage'
 
 type ModeCard = {
   mode: WritingTaskType
@@ -91,10 +93,11 @@ function Chip({
 
 export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
   const router = useRouter()
+  const { userId } = useUserSession()
   const [selection, setSelection] = useState<PromptSelection>(() => {
-    if (typeof window === 'undefined') return DefaultPromptSelection
+    if (typeof window === 'undefined' || !userId) return DefaultPromptSelection
     try {
-      return { ...DefaultPromptSelection, ...JSON.parse(window.sessionStorage.getItem('aerowrite-prompt-selection-v1') || '{}') }
+      return { ...DefaultPromptSelection, ...JSON.parse(window.sessionStorage.getItem(userScopedStorageKey('aerowrite-prompt-selection-v1', userId)) || '{}') }
     } catch {
       return DefaultPromptSelection
     }
@@ -110,7 +113,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
         ...patch,
         task1Subtype: patch.task1ChartType && !(selectedTask1SubtypeOptions(patch.task1ChartType) as readonly string[]).includes(current.task1Subtype) ? 'random' : (patch.task1Subtype ?? current.task1Subtype)
       }
-      window.sessionStorage.setItem('aerowrite-prompt-selection-v1', JSON.stringify(next))
+      if (userId) window.sessionStorage.setItem(userScopedStorageKey('aerowrite-prompt-selection-v1', userId), JSON.stringify(next))
       return next
     })
   }

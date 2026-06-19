@@ -2,48 +2,58 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { SWRConfig, useSWRConfig } from 'swr'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   UserRouteCacheKeys,
+  clearUserRouteMemoryCaches,
   replaceCachedUserWritingRecords,
   subscribeToWritingRecordChanges,
+  userWritingRecordsCacheKey,
   warmAllUserRouteCaches
 } from '@/lib/user-route-cache'
 import { loadWritingRecords } from '@/lib/writing-records'
 
-const persistentUserCache = new Map()
-
-function UserCacheSynchronizer() {
+function UserCacheSynchronizer({ userId }: { userId: string | null }) {
   const { mutate } = useSWRConfig()
 
   useEffect(() => {
-    void warmAllUserRouteCaches(mutate)
+    if (!userId) return
+    void warmAllUserRouteCaches(userId, mutate)
 
-    return subscribeToWritingRecordChanges(() => {
-      const records = loadWritingRecords()
-      replaceCachedUserWritingRecords(records)
+    return subscribeToWritingRecordChanges((changedUserId) => {
+      if (changedUserId !== userId) return
+      const records = loadWritingRecords(userId)
+      replaceCachedUserWritingRecords(userId, records)
       void Promise.all([
-        mutate(UserRouteCacheKeys.history, records, { revalidate: false }),
-        mutate(UserRouteCacheKeys.level0, records, { revalidate: false })
+        mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.history, userId), records, { revalidate: false }),
+        mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.level0, userId), records, { revalidate: false })
       ])
     })
-  }, [mutate])
+  }, [mutate, userId])
 
   return null
 }
 
 export function UserPerformanceProvider({ children }: { children: ReactNode }) {
+  const { userId } = useUserSession()
+
+  useEffect(() => {
+    clearUserRouteMemoryCaches()
+  }, [userId])
+
   return (
     <SWRConfig
+      key={userId ?? 'anonymous'}
       value={{
-        provider: () => persistentUserCache,
+        provider: () => new Map(),
         dedupingInterval: 30_000,
-        keepPreviousData: true,
+        keepPreviousData: false,
         revalidateOnFocus: false,
         revalidateOnReconnect: true,
         shouldRetryOnError: false
       }}
     >
-      <UserCacheSynchronizer />
+      <UserCacheSynchronizer userId={userId} />
       {children}
     </SWRConfig>
   )

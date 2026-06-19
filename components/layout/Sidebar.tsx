@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSWRConfig } from 'swr'
 import { MaterialIcon } from '@/components/stitch-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   UserRouteCacheKeys,
   warmUserRouteCache,
@@ -53,6 +54,7 @@ function useOnlineLabel() {
 }
 
 export function Sidebar() {
+  const { userId } = useUserSession()
   const pathname = usePathname()
   const router = useRouter()
   const { mutate } = useSWRConfig()
@@ -64,7 +66,7 @@ export function Sidebar() {
 
   function prefetchItem(item: SidebarItem) {
     router.prefetch(item.href)
-    if (item.cacheKey) void warmUserRouteCache(item.cacheKey, mutate)
+    if (item.cacheKey && userId) void warmUserRouteCache(userId, item.cacheKey, mutate)
   }
 
   return (
