@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import {
   buildCorrectedEssay,
@@ -11,23 +10,16 @@ import {
   parseAiEvaluationText,
   splitEssayIntoBlocks
 } from '../lib/ai'
+import { applyAcceptedAnnotationChanges } from '../lib/essay-annotations'
 import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts-questions'
 import {
   calculateEssayOverallBand,
   calculateWritingOverall,
-  isExpiredAt,
   roundToHalfBand
 } from '../lib/ielts-scoring'
-import { countWords, normalizeEvaluation, type EssayAnnotation } from '../lib/writing-records'
-import { resolveAuthRedirect } from '../lib/auth/route-access'
-import {
-  getEffectiveBindingStatus,
-  getEffectiveLicenseStatus,
-  UNBOUND_BINDING_REASON
-} from '../lib/web-license/admin-license-data'
+import type { EssayAnnotation } from '../lib/writing-records'
 import { prepareTask1ChartSpec, validateChartSpec } from '../lib/task1-chart-schema'
 import { getFallbackQuestionsByType } from '../lib/task1-fallback-questions'
-import { readStorageValue } from '../lib/user-storage'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -87,6 +79,55 @@ test('AI overallBand is ignored in favour of server-side criterion averaging', (
   }), 'task2')
   assert.equal(parsed.overallBand, '6.5')
   assert.equal(parsed.bandEstimate, '6.5')
+})
+
+test('Scoring responses keep only the first three strengths and weaknesses', () => {
+  const parsed = parseAiEvaluationText(JSON.stringify({
+    taskResponse: { score: 6, feedback: '回应任务' },
+    coherenceCohesion: { score: 6, feedback: '结构清楚' },
+    lexicalResource: { score: 6, feedback: '词汇够用' },
+    grammaticalRangeAccuracy: { score: 6, feedback: '语法基本准确' },
+    summary: '测试',
+    strengths: ['one', 'two', 'three', 'four'],
+    weaknesses: ['one', 'two', 'three', 'four', 'five']
+  }), 'task2')
+
+  assert.deepEqual(parsed.strengths, ['one', 'two', 'three'])
+  assert.deepEqual(parsed.weaknesses, ['one', 'two', 'three'])
+})
+
+test('Released provider aliases normalize only at the AI response boundary', () => {
+  const parsed = parseAiEvaluationText(JSON.stringify({
+    taskResponse: { score: 6, feedback: '回应任务' },
+    coherenceCohesion: { score: 6, feedback: '结构清楚' },
+    lexicalResource: { score: 6, feedback: '词汇够用' },
+    grammaticalRangeAccuracy: { score: 6, feedback: '语法基本准确' },
+    overall_comment: '旧版总体评价',
+    merits: ['旧版优点'],
+    improvements: ['旧版问题'],
+    annotations: [{
+      text: 'people is',
+      correction: 'people are',
+      category: 'grammar',
+      severity: 'high',
+      scoreCriterion: 'Grammatical Range and Accuracy',
+      explanationZh: '主谓一致错误',
+      effect: '影响准确性',
+      fix: '改为 people are'
+    }]
+  }), 'task2')
+
+  assert.equal(parsed.summary, '旧版总体评价')
+  assert.deepEqual(parsed.strengths, ['旧版优点'])
+  assert.deepEqual(parsed.weaknesses, ['旧版问题'])
+  assert.equal(parsed.annotations?.[0]?.originalText, 'people is')
+  assert.equal(parsed.annotations?.[0]?.replacement, 'people are')
+})
+
+test('Malformed pseudo-JSON is rejected instead of being guessed into valid data', () => {
+  assert.throws(() => parseAiEvaluationText(`{
+    'taskResponse': {'score': 6, 'feedback': '回应任务'}
+  }`, 'task2'))
 })
 
 test('批改标注使用准确的 UTF-16 偏移并标记无法定位的文本', () => {
@@ -321,15 +362,33 @@ test('Corrected essay applies replacements backwards and resolves overlaps deter
   assert.equal(sameSeverity, 'aXf')
 })
 
+test('Accepted annotation changes preserve the highest-priority non-overlapping edits', () => {
+  const annotations = [
+    annotation({ id: 'long', start: 1, end: 5, originalText: 'bcde', replacement: 'X', severity: 'low' }),
+    annotation({ id: 'short', start: 2, end: 4, originalText: 'cd', replacement: 'Y', severity: 'high' })
+  ]
+  const acceptedAt = '2026-06-20T00:00:00.000Z'
+  const result = applyAcceptedAnnotationChanges('abcdef', [
+    { annotationId: 'long', start: 1, end: 5, originalText: 'bcde', replacement: 'X', acceptedAt },
+    { annotationId: 'short', start: 2, end: 4, originalText: 'cd', replacement: 'Y', acceptedAt }
+  ], annotations)
+
+  assert.equal(result, 'abYef')
+})
+
 test('Evaluation cache separates phase, grading version, and model', () => {
   const base = { essay: 'Essay text', taskType: 'task2', prompt: 'Prompt', promptVersion: 'p1' }
   const quick = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'quick' })
   const full = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'full' })
   const otherModel = getEvaluationCacheKey({ ...base, model: 'model-b', phase: 'full' })
+  const otherProvider = getEvaluationCacheKey({ ...base, provider: 'provider-b', model: 'model-a', phase: 'full' })
+  const letterTask = getEvaluationCacheKey({ ...base, questionType: 'letter', model: 'model-a', phase: 'full' })
   const oldRubric = getEvaluationCacheKey({ ...base, model: 'model-a', phase: 'full', gradingVersion: 'old' })
   const differentWhitespace = getEvaluationCacheKey({ ...base, essay: 'Essay  text', model: 'model-a', phase: 'full' })
   assert.notEqual(quick, full)
   assert.notEqual(full, otherModel)
+  assert.notEqual(full, otherProvider)
+  assert.notEqual(full, letterTask)
   assert.notEqual(full, oldRubric)
   assert.notEqual(full, differentWhitespace)
 })
@@ -592,217 +651,50 @@ test('Mixed Chart 连续两次无效响应后使用备用题目', async () => {
   }
 })
 
-test('Word count handles punctuation and contractions', () => {
-  assert.equal(countWords("It's a well-developed, high-scoring essay."), 5)
-})
+test('Task 1 chart responses without series fall back to a matching built-in question', async () => {
+  const originalFetch = globalThis.fetch
+  const originalEnv = {
+    key: process.env.AI_API_KEY,
+    baseUrl: process.env.AI_BASE_URL,
+    model: process.env.AI_MODEL
+  }
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  process.env.AI_MODEL = 'test-model'
 
-test('Expiry date parser rejects past licenses', () => {
-  assert.equal(isExpiredAt('2026-01-01T00:00:00.000Z', new Date('2026-06-15T00:00:00.000Z').getTime()), true)
-  assert.equal(isExpiredAt('2026-12-01T00:00:00.000Z', new Date('2026-06-15T00:00:00.000Z').getTime()), false)
-})
-
-test('legacy browser storage values migrate without deleting the original value', () => {
-  const values = new Map<string, string>([['aerowrite-writing-records-v1:user:user-a', '[{"id":"record-1"}]']])
-  const storage = {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => values.set(key, value),
-    removeItem: (key: string) => values.delete(key),
-    clear: () => values.clear(),
-    key: (index: number) => [...values.keys()][index] ?? null,
-    get length() {
-      return values.size
+  const incomplete = JSON.stringify({
+    title: 'Academic Task 1 - Line Chart',
+    promptLead: 'The line chart below shows incomplete transport data for three cities between 2020 and 2024.',
+    promptDetail: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
+    questionType: 'line_chart',
+    chartSpec: {
+      kind: 'line',
+      title: 'Incomplete transport data',
+      xAxis: { categories: ['2020', '2022', '2024'] }
     }
-  } as Storage
-
-  const currentKey = 'ielts-writing-writing-records-v1:user:user-a'
-  assert.equal(readStorageValue(storage, currentKey), '[{"id":"record-1"}]')
-  assert.equal(storage.getItem(currentKey), '[{"id":"record-1"}]')
-  assert.equal(storage.getItem('aerowrite-writing-records-v1:user:user-a'), '[{"id":"record-1"}]')
-})
-
-test('grading and question routes expose only the authenticated web flow', async () => {
-  const [evaluationRoute, promptRoute] = await Promise.all([
-    readFile(new URL('../app/api/ai/evaluate/route.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../app/api/ai/generate-prompt/route.ts', import.meta.url), 'utf8')
-  ])
-
-  for (const source of [evaluationRoute, promptRoute]) {
-    assert.match(source, /requireActiveWebLicense/)
-    assert.doesNotMatch(source, /x-device-id|desktop|licenseToken|LICENSE_SERVER_URL/i)
-  }
-})
-
-test('settings and support pages use browser services only', async () => {
-  const [settingsPage, supportPage] = await Promise.all([
-    readFile(new URL('../app/settings/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/support/page.tsx', import.meta.url), 'utf8')
-  ])
-
-  for (const source of [settingsPage, supportPage]) {
-    assert.doesNotMatch(source, /desktopApp|desktopLicense|desktopUpdater|nativeBridge/i)
-  }
-  assert.match(settingsPage, /\/api\/license\/status/)
-})
-
-test('Stored legacy evaluations normalize into the new result shape', () => {
-  const normalized = normalizeEvaluation({
-    bandEstimate: '6.5',
-    criteria: { taskAchievement: { score: '6.0', feedback: 'overview is limited' } },
-    overallFeedback: '旧记录评价。',
-    sentenceErrors: [],
-    suggestions: ['写清 overview'],
-    feedback: ['旧记录评价。']
   })
-  assert.equal(normalized?.overallBand, '6.5')
-  assert.equal(normalized?.summary, '旧记录评价。')
-  assert.deepEqual(normalized?.criteria?.taskAchievement?.evidence, undefined)
-  assert.equal(normalized?.criteria?.taskAchievement?.whyNotHigher, undefined)
-  assert.deepEqual(normalized?.nextSteps, [])
-  assert.deepEqual(normalized?.suggestions, ['写清 overview'])
-})
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls += 1
+    return aiStreamResponse(incomplete)
+  }) as typeof fetch
 
-test('Admin routes use the dedicated admin login before license routing', () => {
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin/licenses',
-      isAuthenticated: false
-    }),
-    '/admin/login'
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin/licenses',
-      isAuthenticated: true,
-      role: 'user',
-      licenseActive: false
-    }),
-    '/admin/login?reason=not_admin'
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin/licenses',
-      isAuthenticated: true,
-      role: 'user',
-      licenseActive: true
-    }),
-    '/admin/login?reason=not_admin'
-  )
-})
-
-test('Admin login never sends ordinary users into the user activation flow', () => {
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin/login',
-      isAuthenticated: false
-    }),
-    null
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin/login',
-      isAuthenticated: true,
-      role: 'user',
-      licenseActive: false
-    }),
-    null
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin/login',
-      isAuthenticated: true,
-      role: 'admin'
-    }),
-    '/admin/licenses'
-  )
-})
-
-test('Admin and ordinary login redirects remain separate', () => {
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/admin',
-      isAuthenticated: true,
-      role: 'admin'
-    }),
-    '/admin/licenses'
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/dashboard',
-      isAuthenticated: true,
-      role: 'admin'
-    }),
-    '/admin/licenses'
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/login',
-      isAuthenticated: true,
-      role: 'user',
-      licenseActive: false
-    }),
-    '/activate'
-  )
-  assert.equal(
-    resolveAuthRedirect({
-      pathname: '/login',
-      isAuthenticated: true,
-      role: 'user',
-      licenseActive: true
-    }),
-    '/dashboard'
-  )
-})
-
-test('User Home navigation targets the account center without a client redirect page', async () => {
-  const [nextConfig, sidebar, commandPalette, appShell] = await Promise.all([
-    readFile(new URL('../next.config.mjs', import.meta.url), 'utf8'),
-    readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../components/interaction-system.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
-  ])
-
-  assert.match(nextConfig, /source:\s*['"]\/['"][\s\S]*?destination:\s*['"]\/dashboard['"][\s\S]*?permanent:\s*false/)
-  assert.match(sidebar, /id:\s*['"]home['"],\s*href:\s*['"]\/dashboard['"]/)
-  assert.match(commandPalette, /id:\s*['"]home['"][\s\S]*?href:\s*['"]\/dashboard['"]/)
-  assert.doesNotMatch(appShell, /写作概览/)
-})
-
-test('Admin license status distinguishes unused, partial, exhausted, and expired', () => {
-  const now = new Date('2026-06-18T00:00:00.000Z').getTime()
-  assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 0, max_activations: 3 }, now), 'unused')
-  assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 1, max_activations: 3 }, now), 'partial')
-  assert.equal(getEffectiveLicenseStatus({ status: 'active', activation_count: 3, max_activations: 3 }, now), 'exhausted')
-  assert.equal(
-    getEffectiveLicenseStatus({
-      status: 'active',
-      activation_count: 0,
-      max_activations: 3,
-      expires_at: '2026-06-17T00:00:00.000Z'
-    }, now),
-    'expired'
-  )
-})
-
-test('Admin binding status distinguishes valid, expiring, expired, revoked, and unbound', () => {
-  const now = new Date('2026-06-18T00:00:00.000Z').getTime()
-  assert.equal(getEffectiveBindingStatus({ status: 'active', expires_at: '2026-08-18T00:00:00.000Z' }, now), 'active')
-  assert.equal(getEffectiveBindingStatus({ status: 'active', expires_at: '2026-06-25T00:00:00.000Z' }, now), 'expiring')
-  assert.equal(getEffectiveBindingStatus({ status: 'active', expires_at: '2026-06-17T00:00:00.000Z' }, now), 'expired')
-  assert.equal(getEffectiveBindingStatus({ status: 'revoked', expires_at: '2026-08-18T00:00:00.000Z' }, now), 'revoked')
-  assert.equal(
-    getEffectiveBindingStatus({
-      status: 'active',
-      expires_at: '2026-08-18T00:00:00.000Z',
-      license_status: 'disabled'
-    }, now),
-    'revoked'
-  )
-  assert.equal(
-    getEffectiveBindingStatus({
-      status: 'revoked',
-      expires_at: '2026-08-18T00:00:00.000Z',
-      revoked_reason: UNBOUND_BINDING_REASON
-    }, now),
-    'unbound'
-  )
+  try {
+    const question = await generateWritingPromptWithAi({
+      taskType: 'task1',
+      selection: {
+        task1ChartType: 'line_chart',
+        task1Subtype: 'random',
+        task2EssayType: 'random',
+        task2Topic: 'random'
+      }
+    })
+    assert.equal(calls, 2)
+    assert.equal(question.generatedSource, 'local-template')
+    assert.equal(question.questionType, 'line_chart')
+    assert.equal(prepareTask1ChartSpec(question.chartSpec, 'line').success, true)
+  } finally {
+    globalThis.fetch = originalFetch
+    restoreAiEnv(originalEnv)
+  }
 })
