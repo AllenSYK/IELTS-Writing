@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 import { createSingleFlight } from '@/lib/web-license/single-flight'
+import { accountDisplayName } from '@/lib/phone-auth'
 
 type ActivateResponse = {
   success: boolean
@@ -16,7 +17,7 @@ type ActivateResponse = {
 
 export default function ActivatePage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
+  const [accountLabel, setAccountLabel] = useState('')
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
@@ -31,7 +32,7 @@ export default function ActivatePage() {
         router.replace('/login')
         return
       }
-      setEmail(data.user.email || '')
+      setAccountLabel(accountDisplayName(data.user))
       setChecking(false)
     }).catch(() => {
       setError('无法读取登录状态，请重新登录。')
@@ -79,7 +80,7 @@ export default function ActivatePage() {
         <div className="auth-heading">
           <span className="auth-icon"><KeyRound size={22} /></span>
           <div>
-            <p className="ui-label">{checking ? '正在读取登录状态' : email}</p>
+            <p className="ui-label">{checking ? '正在读取登录状态' : accountLabel}</p>
             <h1>输入账号激活码</h1>
           </div>
         </div>

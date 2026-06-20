@@ -45,6 +45,8 @@ type ActivationRef = {
 type UserRow = {
   id: string
   email: string | null
+  phone: string | null
+  accountLabel: string
   createdAt: string
   lastSignInAt: string | null
   emailConfirmedAt: string | null
@@ -66,6 +68,7 @@ type UserDetail = {
   user: {
     id: string
     email?: string
+    phone?: string
     created_at: string
     last_sign_in_at?: string
     email_confirmed_at?: string
@@ -74,6 +77,7 @@ type UserDetail = {
   profile: {
     id: string
     email: string | null
+    phone: string | null
     role: string
     license_status: string
     license_expires_at: string | null
@@ -335,10 +339,10 @@ export function AdminUsersClient() {
                             else next.delete(user.id)
                             return next
                           })}
-                          aria-label={`选择 ${user.email || user.id}`}
+                          aria-label={`选择 ${user.accountLabel}`}
                         />
                       </td>
-                      <td data-label="邮箱"><strong>{user.email || '暂无邮箱'}</strong><small className="admin-id-cell">{user.id}</small></td>
+                      <td data-label="账号"><strong>{user.accountLabel}</strong><small className="admin-id-cell">{user.id}</small></td>
                       <td data-label="角色"><AdminBadge value={user.role} /></td>
                       <td data-label="注册时间">{formatAdminDate(user.createdAt)}</td>
                       <td data-label="邮箱验证状态"><span className={`admin-status ${user.emailConfirmedAt ? 'good' : 'warning'}`}>{user.emailConfirmedAt ? '已验证' : '未验证'}</span></td>
@@ -354,7 +358,7 @@ export function AdminUsersClient() {
                           ) : (
                             <button className="admin-icon-button warning" type="button" onClick={() => setConfirm({
                               title: '禁用这个用户账号？',
-                              message: `${user.email || user.id} 将无法继续登录。`,
+                              message: `${user.accountLabel} 将无法继续登录。`,
                               label: '确认禁用',
                               action: () => updateUser(user.id, { action: 'disable' }, '用户账号已禁用')
                             })} aria-label="禁用"><Ban size={15} /></button>
@@ -379,8 +383,8 @@ export function AdminUsersClient() {
         {selected ? (
           <div className="admin-detail-stack">
             <section className="admin-user-detail-hero">
-              <span className="admin-user-avatar large">{(selected.email || 'U').slice(0, 1).toUpperCase()}</span>
-              <div><strong>{selected.email || '暂无邮箱'}</strong><small>{selected.id}</small></div>
+              <span className="admin-user-avatar large">{selected.accountLabel.slice(0, 1).toUpperCase()}</span>
+              <div><strong>{selected.accountLabel}</strong><small>{selected.id}</small></div>
               <AdminBadge value={isBanned(selected) ? 'disabled' : selected.role === 'admin' ? 'admin' : selected.licenseStatus} />
             </section>
             {!detail ? <AdminTableSkeleton columns={2} rows={5} /> : (

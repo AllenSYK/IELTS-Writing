@@ -5,6 +5,7 @@ import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/l
 export type WebProfile = {
   id: string
   email: string | null
+  phone: string | null
   role: string
   license_status: string
   license_expires_at: string | null
@@ -50,7 +51,7 @@ export const getWebProfile = cache(async function getWebProfile(userId: string) 
   const service = createSupabaseServiceRoleClient()
   const { data: profile, error } = await service
     .from('profiles')
-    .select('id, email, role, license_status, license_expires_at')
+    .select('id, email, phone, role, license_status, license_expires_at')
     .eq('id', userId)
     .maybeSingle()
 

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
 import { AdminLoginClient } from './AdminLoginClient'
+import { accountDisplayName } from '@/lib/phone-auth'
 
 export default async function AdminLoginPage({
   searchParams
@@ -21,7 +22,7 @@ export default async function AdminLoginPage({
 
   return (
     <AdminLoginClient
-      currentEmail={user.email || profile?.email || '未知邮箱'}
+      currentEmail={accountDisplayName(user)}
       initialReason="not_admin"
     />
   )

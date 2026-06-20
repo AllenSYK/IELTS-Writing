@@ -31,7 +31,7 @@ export type WritingQuestion = {
   questionType: Task1QuestionType | Task2QuestionType
   trainingType?: Task1TrainingType
   topic?: string
-  generatedSource?: 'ai' | 'local-template' | 'static-bank'
+  generatedSource?: 'ai' | 'local-template' | 'static-bank' | 'user_upload'
   image?: string
   imageAlt?: string
   structuredData?: Record<string, unknown>

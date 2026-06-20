@@ -24,6 +24,7 @@ import {
 } from '@/components/admin/AdminUI'
 import { useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
+import { maskPhone, shortUserId } from '@/lib/phone-auth'
 
 type OverviewData = {
   success: true
@@ -55,6 +56,7 @@ type OverviewData = {
   recentUsers: Array<{
     id: string
     email: string | null
+    phone: string | null
     role: string
     license_status: string
     created_at: string
@@ -182,7 +184,7 @@ export function AdminOverviewClient() {
               {data.recentUsers.map((user) => (
                 <div key={user.id}>
                   <span><UsersRound size={15} /></span>
-                  <div><strong>{user.email || '暂无邮箱'}</strong><small>{formatAdminDate(user.created_at)}</small></div>
+                  <div><strong>{user.email || maskPhone(user.phone) || shortUserId(user.id)}</strong><small>{formatAdminDate(user.created_at)}</small></div>
                   <AdminBadge value={user.role === 'admin' ? 'admin' : user.license_status} />
                 </div>
               ))}

@@ -10,7 +10,10 @@ export type AiConfig = {
 
 export type AiMessage = {
   role: 'system' | 'user'
-  content: string
+  content: string | Array<
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string } }
+  >
 }
 
 type CompletionOptions = {
@@ -121,7 +124,14 @@ export function getGradingAiConfig() {
   })
 }
 
-export function createAiRequestId(prefix: 'eval' | 'gen') {
+export function getVisionAiConfig() {
+  return getAiConfig({
+    modelEnv: 'QWEN_VISION_MODEL',
+    defaultModel: 'qwen3.7-plus'
+  })
+}
+
+export function createAiRequestId(prefix: 'eval' | 'gen' | 'parse') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 

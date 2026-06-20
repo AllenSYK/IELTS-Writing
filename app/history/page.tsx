@@ -70,6 +70,7 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
       <div className="history-card-main">
         <div className="history-card-meta">
           <span className="task-badge">{TaskTypeLabels[record.taskType]}</span>
+          {record.questionSource === 'user_upload' ? <span className="task-badge is-custom">自定义题目</span> : null}
           <span className="ui-label history-date">
             <MaterialIcon name="calendar_today" size={16} />
             {formatDate(record.submittedAt)}

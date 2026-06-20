@@ -143,13 +143,29 @@
 .agreement-consent input {
   width: 18px;
   height: 18px;
+  min-width: 18px;
+  flex: 0 0 18px;
   margin: 2px 0 0;
   accent-color: var(--primary);
 }
 
-.agreement-consent a {
+.agreement-consent > span {
+  min-width: 0;
+  text-align: left;
+}
+
+.agreement-consent button {
+  display: inline;
+  margin: 0;
+  border: 0;
+  background: transparent;
   color: var(--primary);
+  padding: 0;
+  font: inherit;
   font-weight: 700;
+  line-height: inherit;
+  vertical-align: baseline;
+  cursor: pointer;
 }
 
 @media (max-width: 1040px) {

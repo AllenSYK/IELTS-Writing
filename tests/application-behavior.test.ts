@@ -11,6 +11,7 @@ import {
   UNBOUND_BINDING_REASON
 } from '../lib/web-license/admin-license-data'
 import { readStorageValue } from '../lib/user-storage'
+import { accountDisplayName, maskPhone, normalizeMainlandPhone } from '../lib/phone-auth'
 
 test('Word count handles punctuation and contractions', () => {
   assert.equal(countWords("It's a well-developed, high-scoring essay."), 5)
@@ -170,6 +171,90 @@ test('auth forms require explicit agreement consent and record versions server-s
   }
   assert.match(migration, /create table if not exists public\.user_agreements/i)
   assert.match(migration, /unique \(user_id, agreement_type, agreement_version\)/i)
+})
+
+test('mainland phone numbers normalize to E.164 and account labels never render blank', () => {
+  assert.equal(normalizeMainlandPhone('138 1234-5678'), '+8613812345678')
+  assert.equal(normalizeMainlandPhone('+86 13812345678'), '+8613812345678')
+  assert.equal(maskPhone('+8613812345678'), '+86138****5678')
+  assert.equal(accountDisplayName({ id: '12345678-abcd', email: null, phone: '+8613812345678' }), '+86138****5678')
+  assert.equal(accountDisplayName({ id: '12345678-abcd', email: null, phone: null }), '用户 12345678')
+  assert.throws(() => normalizeMainlandPhone('12345'))
+})
+
+test('phone OTP routes preserve email auth and never auto-create users from the login entry', async () => {
+  const [sendRoute, verifyRoute, loginPage, registerPage] = await Promise.all([
+    readFile(new URL('../app/api/auth/phone/send/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/auth/phone/verify/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/login/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8')
+  ])
+
+  assert.match(sendRoute, /shouldCreateUser:\s*body\.mode === 'register'/)
+  assert.match(sendRoute, /body\.mode === 'login' && !existingProfile/)
+  assert.match(verifyRoute, /verifyOtp\(\{[\s\S]*type:\s*'sms'/)
+  assert.match(verifyRoute, /recordUserAgreements/)
+  assert.match(sendRoute, /console\.error\('\[phone-otp-send\]', \{ error: error instanceof Error \? error\.name/)
+  assert.match(verifyRoute, /console\.error\('\[phone-otp-verify\]', \{ error: error instanceof Error \? error\.name/)
+  assert.match(loginPage, /邮箱登录/)
+  assert.match(loginPage, /手机号登录/)
+  assert.match(registerPage, /邮箱注册/)
+  assert.match(registerPage, /手机号注册/)
+})
+
+test('agreement controls use one centered dialog and shared legal content without navigation', async () => {
+  const [consent, terms, privacy] = await Promise.all([
+    readFile(new URL('../components/auth/AgreementConsent.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/terms/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/privacy/page.tsx', import.meta.url), 'utf8')
+  ])
+
+  assert.match(consent, /CenteredDialog/)
+  assert.match(consent, /setOpenDocument\('terms'\)/)
+  assert.match(consent, /setOpenDocument\('privacy'\)/)
+  assert.doesNotMatch(consent, /next\/link|href="\/terms"|href="\/privacy"/)
+  assert.match(terms, /TermsSections/)
+  assert.match(privacy, /PrivacySections/)
+})
+
+test('practice settings share one responsive grid and include the authenticated custom-task upload flow', async () => {
+  const [selector, uploadPanel, parseRoute, writePage, migration, css] = await Promise.all([
+    readFile(new URL('../components/practice/WritingModeSelector.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/practice/UploadedTaskPanel.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/ai/parse-uploaded-writing-task/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/write/[mode]/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20260620131332_custom_task_uploads_and_phone_profiles.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(selector, /function PracticeSettingRow/)
+  assert.match(selector, /practice-setting-row/)
+  assert.match(selector, /<UploadedTaskPanel/)
+  assert.match(css, /\.practice-setting-row\s*\{[\s\S]*?grid-template-columns:/)
+  assert.match(css, /@media \(max-width: 820px\)[\s\S]*?\.practice-setting-row,[\s\S]*?grid-template-columns:\s*1fr/)
+  assert.match(uploadPanel, /image\/png,image\/jpeg,image\/webp/)
+  assert.match(uploadPanel, /questionText/)
+  assert.match(uploadPanel, /确认题目并开始练习/)
+  assert.match(parseRoute, /requireActiveWebLicense/)
+  assert.match(parseRoute, /validateImageUpload/)
+  assert.match(parseRoute, /createSignedUrl/)
+  assert.match(writePage, /customTask/)
+  assert.match(writePage, /normalizeGeneratedQuestion/)
+  assert.match(migration, /'writing-task-uploads',[\s\S]*?false,[\s\S]*?10485760/)
+  assert.match(migration, /writing-task-uploads/)
+  assert.match(migration, /storage\.foldername\(name\)/)
+})
+
+test('writing heatmap positions the latest date at the right edge before paint', async () => {
+  const [heatmap, css] = await Promise.all([
+    readFile(new URL('../components/dashboard/WritingActivityHeatmap.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+  assert.match(heatmap, /useLayoutEffect/)
+  assert.match(heatmap, /scrollWidth - container\.clientWidth/)
+  assert.match(heatmap, /\[latestDate, range, weeks\.length\]/)
+  assert.match(css, /\.activity-chart\s*\{[\s\S]*?margin:\s*0 0 0 auto;/)
+  assert.match(css, /\.activity-scroll::\-webkit-scrollbar[\s\S]*?display:\s*none;/)
 })
 
 test('result annotations open in one centered dialog without scrollIntoView', async () => {

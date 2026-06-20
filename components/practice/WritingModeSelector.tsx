@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import {
   DefaultPromptSelection,
@@ -20,6 +20,7 @@ import {
 import type { WritingTaskType } from '@/lib/writing-records'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { userScopedStorageKey } from '@/lib/user-storage'
+import { UploadedTaskPanel } from '@/components/practice/UploadedTaskPanel'
 
 type ModeCard = {
   mode: WritingTaskType
@@ -88,6 +89,26 @@ function Chip({
       {selected ? <MaterialIcon name="check" size={15} /> : null}
       {label}
     </button>
+  )
+}
+
+function PracticeSettingRow({
+  title,
+  description,
+  children
+}: {
+  title: string
+  description: string
+  children: ReactNode
+}) {
+  return (
+    <section className="practice-setting-row" aria-label={title}>
+      <div className="practice-setting-copy">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <div className="practice-setting-control">{children}</div>
+    </section>
   )
 }
 
@@ -187,8 +208,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
         </div>
 
         <div className="prompt-choice-list">
-          <section className="prompt-choice-row" aria-label="练习模式">
-            <h3 className="ui-label">练习模式</h3>
+          <PracticeSettingRow title="练习模式" description="选择单项练习或完整 60 分钟模考。">
             <div className="choice-chip-row">
               {modes.map((mode) => (
                 <Link
@@ -203,37 +223,37 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
                 </Link>
               ))}
             </div>
-          </section>
+          </PracticeSettingRow>
 
-          <section className="prompt-choice-row" aria-label="Task 1 题型">
-            <h3 className="ui-label">Task 1 题型</h3>
-            <div className="choice-chip-row">
-              {[...primaryTask1Types, ...(showAdvanced ? advancedTask1Types : [])].map((type) => (
-                <Chip
-                  key={type}
-                  selected={selection.task1ChartType === type}
-                  label={compactLabel(type, Task1ChartLabels[type])}
-                  title={type === 'mixed_charts' ? '组合图表会同时包含两种或多种数据呈现方式。' : undefined}
-                  onClick={() => updateSelection({ task1ChartType: selection.task1ChartType === type ? 'random' : type })}
-                />
-              ))}
-            </div>
-            {task1SubtypeOptions.length > 1 ? (
-              <div className="choice-chip-row is-subtype">
-                {task1SubtypeOptions.map((type) => (
+          <PracticeSettingRow title="Task 1 题型" description="指定图表、地图或流程题；未选择时将随机生成。">
+            <div className="practice-setting-control-stack">
+              <div className="choice-chip-row">
+                {[...primaryTask1Types, ...(showAdvanced ? advancedTask1Types : [])].map((type) => (
                   <Chip
                     key={type}
-                    selected={selection.task1Subtype === type}
-                    label={compactLabel(type, Task1SubtypeLabels[type])}
-                    onClick={() => updateSelection({ task1Subtype: selection.task1Subtype === type ? 'random' : type })}
+                    selected={selection.task1ChartType === type}
+                    label={compactLabel(type, Task1ChartLabels[type])}
+                    title={type === 'mixed_charts' ? '组合图表会同时包含两种或多种数据呈现方式。' : undefined}
+                    onClick={() => updateSelection({ task1ChartType: selection.task1ChartType === type ? 'random' : type })}
                   />
                 ))}
               </div>
-            ) : null}
-          </section>
+              {task1SubtypeOptions.length > 1 ? (
+                <div className="choice-chip-row is-subtype">
+                  {task1SubtypeOptions.map((type) => (
+                    <Chip
+                      key={type}
+                      selected={selection.task1Subtype === type}
+                      label={compactLabel(type, Task1SubtypeLabels[type])}
+                      onClick={() => updateSelection({ task1Subtype: selection.task1Subtype === type ? 'random' : type })}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </PracticeSettingRow>
 
-          <section className="prompt-choice-row" aria-label="Task 2 题型">
-            <h3 className="ui-label">Task 2 题型</h3>
+          <PracticeSettingRow title="Task 2 题型" description="选择议论文问题结构，保留所有子问题要求。">
             <div className="choice-chip-row">
               {[...primaryTask2Types, ...(showAdvanced ? advancedTask2Types : [])].map((type) => (
                 <Chip
@@ -244,10 +264,9 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
                 />
               ))}
             </div>
-          </section>
+          </PracticeSettingRow>
 
-          <section className="prompt-choice-row" aria-label="Task 2 主题">
-            <h3 className="ui-label">Task 2 主题</h3>
+          <PracticeSettingRow title="Task 2 主题" description="选择练习主题；高级选项包含更多常见考试领域。">
             <div className="choice-chip-row">
               {[...primaryTopics, ...(showAdvanced ? advancedTopics : [])].map((topic) => (
                 <Chip
@@ -258,8 +277,10 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
                 />
               ))}
             </div>
-          </section>
+          </PracticeSettingRow>
         </div>
+
+        <UploadedTaskPanel />
       </GlassPanel>
     </>
   )

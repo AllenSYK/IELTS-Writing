@@ -149,6 +149,8 @@ export type WritingRecordComponent = {
   imageUrl?: string
   promptLead?: string
   promptDetail?: string
+  questionSource?: 'user_upload'
+  uploadedTaskId?: string
 }
 
 export type WritingRecord = {
@@ -177,6 +179,8 @@ export type WritingRecord = {
   promptLead?: string
   promptDetail?: string
   imageUrl?: string
+  questionSource?: 'user_upload'
+  uploadedTaskId?: string
 }
 
 export const WritingRecordsStorageKey = 'ielts-writing-writing-records-v1'

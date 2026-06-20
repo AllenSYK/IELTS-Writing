@@ -22,6 +22,13 @@ import {
 import type { EssayAnnotation } from '../lib/writing-records'
 import { prepareTask1ChartSpec, validateChartSpec } from '../lib/task1-chart-schema'
 import { getFallbackQuestionsByType } from '../lib/task1-fallback-questions'
+import {
+  UploadMaxBytes,
+  UploadedTask1ResultSchema,
+  UploadedTask2ResultSchema,
+  buildConfirmedUploadedQuestion,
+  validateImageUpload
+} from '../lib/uploaded-writing-task'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -31,6 +38,88 @@ test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.75), 7)
   assert.equal(roundToHalfBand(8.75), 9)
   assert.equal(roundToHalfBand(9), 9)
+})
+
+function pngBytes(width: number, height: number) {
+  const bytes = new Uint8Array(24)
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const view = new DataView(bytes.buffer)
+  view.setUint32(16, width)
+  view.setUint32(20, height)
+  return bytes
+}
+
+test('uploaded image validation checks content, MIME, extension, size, and dimensions', () => {
+  const image = validateImageUpload({
+    name: 'task.png',
+    reportedMimeType: 'image/png',
+    size: 24,
+    bytes: pngBytes(1200, 800)
+  })
+  assert.deepEqual(image, { mimeType: 'image/png', extension: 'png', width: 1200, height: 800 })
+  assert.throws(() => validateImageUpload({
+    name: 'task.jpg',
+    reportedMimeType: 'image/jpeg',
+    size: 24,
+    bytes: pngBytes(1200, 800)
+  }))
+  assert.throws(() => validateImageUpload({
+    name: 'task.png',
+    reportedMimeType: 'image/png',
+    size: UploadMaxBytes + 1,
+    bytes: pngBytes(1200, 800)
+  }))
+})
+
+test('Task 1 upload preserves uncertain values as null and does not create a fake chart preview', () => {
+  const parsed = UploadedTask1ResultSchema.parse({
+    taskType: 'task1',
+    questionText: 'The chart below shows energy use.\nSummarise the information.',
+    promptLead: 'The chart below shows energy use.',
+    promptDetail: 'Summarise the information.',
+    visualType: 'line',
+    visualTitle: 'Energy use',
+    unit: '%',
+    chart: {
+      categories: ['2020', '2021'],
+      series: [{ name: 'Solar', data: [20, null] }]
+    },
+    extractedText: ['2020', '2021', 'Solar'],
+    uncertainties: [{ field: 'chart.series[0].data[1]', message: 'The 2021 value is unreadable.' }]
+  })
+  assert.equal(parsed.chart?.series[0].data[1], null)
+  const question = buildConfirmedUploadedQuestion({
+    uploadId: 'upload-1',
+    result: parsed,
+    questionText: parsed.questionText
+  })
+  assert.equal(question.generatedSource, 'user_upload')
+  assert.equal(question.chartSpec, undefined)
+  assert.match(question.image || '', /uploaded-writing-tasks\/upload-1\/image/)
+})
+
+test('Task 2 upload keeps both questions and allows the detected type to be corrected', () => {
+  const parsed = UploadedTask2ResultSchema.parse({
+    taskType: 'task2',
+    questionText: 'Many people move to cities.\nWhy does this happen? Is this a positive or negative development?',
+    promptLead: 'Many people move to cities.',
+    promptDetail: 'Why does this happen? Is this a positive or negative development?',
+    detectedQuestionType: 'two_part',
+    requirements: ['Why does this happen?', 'Is this a positive or negative development?'],
+    minimumWords: 250,
+    suggestedMinutes: 40,
+    uncertainties: []
+  })
+  assert.equal(parsed.requirements.length, 2)
+  const question = buildConfirmedUploadedQuestion({
+    uploadId: 'upload-2',
+    result: parsed,
+    questionText: parsed.questionText,
+    detectedQuestionType: 'direct_question'
+  })
+  assert.equal(question.questionType, 'direct_question')
+  assert.match(`${question.promptLead}\n${question.promptDetail}`, /Why does this happen\?/)
+  assert.match(`${question.promptLead}\n${question.promptDetail}`, /positive or negative development\?/)
 })
 
 test('Single essay overall is calculated from exactly four criterion scores', () => {

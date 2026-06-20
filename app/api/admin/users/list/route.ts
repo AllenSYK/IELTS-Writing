@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 
     const userIds = listedUsers.map((user) => user.id)
     const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, { data: usage, error: usageError }] = await Promise.all([
-      service.from('profiles').select('id, email, role, license_status, license_expires_at, created_at').in('id', userIds),
+      service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at').in('id', userIds),
       service
         .from('license_activations')
         .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_value, code_prefix, plan, status)')
@@ -74,6 +74,8 @@ export async function GET(request: Request) {
         return {
           id: user.id,
           email: user.email,
+          phone: user.phone || profile?.phone || null,
+          accountLabel: user.email || user.phone || profile?.phone || `用户 ${user.id.slice(0, 8)}`,
           createdAt: user.created_at,
           lastSignInAt: user.last_sign_in_at,
           emailConfirmedAt: user.email_confirmed_at,
@@ -91,7 +93,7 @@ export async function GET(request: Request) {
           evaluationCount: usageInfo.count
         }
       })
-      .filter((user) => !search || user.email?.toLowerCase().includes(search) || user.id.includes(search))
+      .filter((user) => !search || user.accountLabel.toLowerCase().includes(search) || user.id.includes(search))
       .filter((user) => {
         const banned = Boolean(user.bannedUntil && new Date(user.bannedUntil).getTime() > Date.now())
         if (filter === 'admin') return user.role === 'admin'

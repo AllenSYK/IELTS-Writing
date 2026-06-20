@@ -7,6 +7,7 @@ import { Eye, EyeOff, Loader2, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
+import { PhoneOtpForm } from '@/components/auth/PhoneOtpForm'
 
 type LoginResponse = {
   success?: boolean
@@ -41,6 +42,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -88,7 +90,16 @@ export default function LoginPage() {
           <p>登录后将进入对应的账号页面。</p>
         </header>
 
-        <form className="auth-form auth-form-modern" onSubmit={handleSubmit}>
+        <div className="auth-method-tabs" role="tablist" aria-label="登录方式">
+          <button type="button" role="tab" aria-selected={authMethod === 'email'} className={authMethod === 'email' ? 'is-active' : ''} onClick={() => setAuthMethod('email')}>
+            邮箱登录
+          </button>
+          <button type="button" role="tab" aria-selected={authMethod === 'phone'} className={authMethod === 'phone' ? 'is-active' : ''} onClick={() => setAuthMethod('phone')}>
+            手机号登录
+          </button>
+        </div>
+
+        {authMethod === 'email' ? <form className="auth-form auth-form-modern" onSubmit={handleSubmit}>
           <label>
             <span>邮箱</span>
             <div className="auth-input-shell">
@@ -143,7 +154,7 @@ export default function LoginPage() {
             {loading ? <Loader2 className="admin-spin" size={18} /> : <LogIn size={18} />}
             {loading ? '正在登录' : '登录'}
           </button>
-        </form>
+        </form> : <PhoneOtpForm mode="login" />}
 
         <p className="auth-switch">
           没有账号？<Link href="/register">立即注册</Link>

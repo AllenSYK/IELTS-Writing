@@ -1,5 +1,6 @@
 import { json } from '@/lib/http'
 import { getCurrentSupabaseUser, getWebProfile, requireActiveWebLicense } from '@/lib/web-license/auth'
+import { accountDisplayName } from '@/lib/phone-auth'
 
 export async function GET() {
   const user = await getCurrentSupabaseUser()
@@ -16,6 +17,8 @@ export async function GET() {
       isAdmin: true,
       redirectTo: '/admin/licenses',
       email: user.email,
+      phone: user.phone,
+      accountLabel: accountDisplayName(user),
       profile
     })
   }
@@ -29,6 +32,8 @@ export async function GET() {
       isAdmin: false,
       redirectTo: '/dashboard',
       email: user.email,
+      phone: user.phone,
+      accountLabel: accountDisplayName(user),
       profile: check.profile,
       activation: check.activation,
       license: check.license
@@ -42,6 +47,8 @@ export async function GET() {
     isAdmin: false,
     redirectTo: '/activate',
     email: user.email,
+    phone: user.phone,
+    accountLabel: accountDisplayName(user),
     profile,
     code: check.code,
     message: check.message

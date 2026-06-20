@@ -53,7 +53,9 @@ const StoredWritingRecordSchema = z.object({
   mapSpec: z.unknown().optional(),
   promptLead: z.string().optional(),
   promptDetail: z.string().optional(),
-  imageUrl: z.string().optional()
+  imageUrl: z.string().optional(),
+  questionSource: z.literal('user_upload').optional(),
+  uploadedTaskId: z.string().optional()
 }).passthrough()
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -494,7 +496,9 @@ function normalizeComponents(value: unknown): WritingRecord['components'] {
       mapSpec: isObject(component.mapSpec) ? component.mapSpec as Record<string, unknown> : undefined,
       imageUrl: typeof component.imageUrl === 'string' ? component.imageUrl : undefined,
       promptLead: typeof component.promptLead === 'string' ? component.promptLead : undefined,
-      promptDetail: typeof component.promptDetail === 'string' ? component.promptDetail : undefined
+      promptDetail: typeof component.promptDetail === 'string' ? component.promptDetail : undefined,
+      questionSource: component.questionSource === 'user_upload' ? 'user_upload' : undefined,
+      uploadedTaskId: typeof component.uploadedTaskId === 'string' ? component.uploadedTaskId : undefined
     }
   }
   return Object.keys(output).length > 0 ? output : undefined
@@ -536,7 +540,9 @@ export function parseStoredWritingRecord(value: unknown): WritingRecord | null {
     mapSpec: isObject(stored.mapSpec) ? stored.mapSpec : undefined,
     promptLead: stored.promptLead,
     promptDetail: stored.promptDetail,
-    imageUrl: stored.imageUrl
+    imageUrl: stored.imageUrl,
+    questionSource: stored.questionSource,
+    uploadedTaskId: stored.uploadedTaskId
   })
 }
 

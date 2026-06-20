@@ -38,6 +38,7 @@ import {
   deleteAccountDraft,
   readAccountDraft,
   readTimerEnd,
+  normalizeGeneratedQuestion,
   restoreQuestionFromRecord,
   singleDraftKey,
   timerKeyFor,
@@ -127,6 +128,7 @@ export default function WritePage() {
   const [promptGenerationNotice, setPromptGenerationNotice] = useState('')
   const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [customTaskId, setCustomTaskId] = useState<string | null>(null)
 
   const activeQuestion = mode === 'mock' ? mockQuestions?.[activeMockTask] ?? null : singleQuestion
   const activeEssay = mode === 'mock' ? mockEssays[activeMockTask] : essay
@@ -146,7 +148,9 @@ export default function WritePage() {
   const loading = submitStatus !== 'idle' && submitStatus !== 'error' && submitStatus !== 'success'
   const timerTone = timeLeft <= 60 ? 'timer-critical' : timeLeft <= 600 ? 'timer-warning' : ''
   const promptChoiceSummary =
-    mode === 'task1'
+    customTaskId
+      ? '自定义题目'
+      : mode === 'task1'
       ? Task1ChartLabels[promptSelection.task1ChartType]
       : mode === 'task2'
         ? `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
@@ -154,6 +158,7 @@ export default function WritePage() {
   const timerKey = userId ? timerKeyFor(userId, mode) : ''
   const positionKey = userId ? userScopedStorageKey(`ielts-writing-editor-position-${mode}-${activeTaskType}`, userId) : ''
   const splitKey = userId ? userScopedStorageKey(`ielts-writing-editor-split-${mode}`, userId) : ''
+  const activeSingleDraftKey = userId ? singleDraftKey(userId, mode, customTaskId) : ''
 
   const saveAllDrafts = useCallback(
     (showToast = false) => {
@@ -165,7 +170,7 @@ export default function WritePage() {
             writeDraft(mockDraftKey(userId, 'task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2, { userId, taskType: 'task2' })
           }
         } else if (singleQuestion) {
-          writeDraft(singleDraftKey(userId, mode), essay, singleQuestion.id, singleQuestion, { userId, taskType: mode })
+          writeDraft(activeSingleDraftKey, essay, singleQuestion.id, singleQuestion, { userId, taskType: mode })
         }
         lastAutoSaveAtRef.current = Date.now()
         setSaveStatus(online ? 'saved' : 'offline')
@@ -181,7 +186,7 @@ export default function WritePage() {
         if (showToast) pushToast({ kind: 'error', title: '保存失败', message: '请检查磁盘空间后重试。' })
       }
     },
-    [essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion, userId]
+    [activeSingleDraftKey, essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion, userId]
   )
   const generateInitialQuestion = useEffectEvent(generateQuestionFor)
   const notifyInitialRestore = useEffectEvent(pushToast)
@@ -207,6 +212,8 @@ export default function WritePage() {
         const params = new URLSearchParams(window.location.search)
         const selection = selectionFromSearchParams(params)
         const recordId = params.get('record')
+        const uploadedTaskId = mode === 'mock' ? null : params.get('customTask')
+        setCustomTaskId(uploadedTaskId)
         const sourceRecord = recordId ? await getWritingRecordFromServer(userId, recordId) : null
         if (cancelled) return
         setPromptSelection(selection)
@@ -314,7 +321,8 @@ export default function WritePage() {
           }
         } else {
           const taskType = mode === 'task1' ? 'task1' : 'task2'
-          const draft = await readAccountDraft(singleDraftKey(userId, mode))
+          const singleDraftStorageKey = singleDraftKey(userId, mode, uploadedTaskId)
+          const draft = await readAccountDraft(singleDraftStorageKey)
           const restoredEssay = sourceRecord?.essay || draft?.essay || ''
           let question: WritingQuestion | null = null
 
@@ -332,6 +340,18 @@ export default function WritePage() {
                   imageAlt: bankQuestion.imageAlt || question.imageAlt
                 }
               }
+            }
+          }
+          if (!question && uploadedTaskId) {
+            try {
+              const response = await fetch(`/api/user/uploaded-writing-tasks/${encodeURIComponent(uploadedTaskId)}`, {
+                cache: 'no-store'
+              })
+              const data = await response.json() as { success?: boolean; question?: unknown; message?: string }
+              if (!response.ok || !data.success) throw new Error(data.message || '自定义题目读取失败')
+              question = normalizeGeneratedQuestion(data.question)
+            } catch (caught) {
+              setError(caught instanceof Error ? caught.message : '自定义题目读取失败')
             }
           }
           if (!question && draft && (draft.chartSpec || draft.processSpec || draft.mapSpec)) {
@@ -610,12 +630,16 @@ export default function WritePage() {
         mapSpec: activeQuestion.mapSpec as Record<string, unknown> | undefined,
         promptLead: activeQuestion.promptLead,
         promptDetail: activeQuestion.promptDetail,
-        imageUrl: activeQuestion.image
+        imageUrl: activeQuestion.image,
+        questionSource: activeQuestion.generatedSource === 'user_upload' ? 'user_upload' : undefined,
+        uploadedTaskId: typeof activeQuestion.structuredData?.uploadedTaskId === 'string'
+          ? activeQuestion.structuredData.uploadedTaskId
+          : undefined
       }
 
       await saveWritingRecord(userId, record)
-      markGeneratedPromptCompleted(activeQuestion.id, userId)
-      deleteAccountDraft(singleDraftKey(userId, mode))
+      if (activeQuestion.generatedSource !== 'user_upload') markGeneratedPromptCompleted(activeQuestion.id, userId)
+      deleteAccountDraft(activeSingleDraftKey)
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')
@@ -979,17 +1003,7 @@ export default function WritePage() {
               <p className="ui-body-md">{activeQuestion.promptDetail}</p>
             </div>
 
-            {activeQuestion.taskType === 'task1' && (activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
-              <div className="exam-graph-frame">
-                <Task1Visual
-                  chartType={activeQuestion.questionType}
-                  chartSpec={activeQuestion.chartSpec}
-                  processSpec={activeQuestion.processSpec}
-                  mapSpec={activeQuestion.mapSpec}
-                  title={activeQuestion.title}
-                />
-              </div>
-            ) : activeQuestion.image ? (
+            {activeQuestion.image ? (
               <div className="exam-graph-frame">
                 <Image
                   alt={activeQuestion.imageAlt || activeQuestion.title}
@@ -999,6 +1013,19 @@ export default function WritePage() {
                   priority
                   style={{ width: '100%', height: 'auto' }}
                   unoptimized
+                />
+              </div>
+            ) : null}
+
+            {activeQuestion.taskType === 'task1' && (activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
+              <div className="exam-graph-frame">
+                {activeQuestion.generatedSource === 'user_upload' ? <p className="ui-label">结构化预览（原图仍保留在上方）</p> : null}
+                <Task1Visual
+                  chartType={activeQuestion.questionType}
+                  chartSpec={activeQuestion.chartSpec}
+                  processSpec={activeQuestion.processSpec}
+                  mapSpec={activeQuestion.mapSpec}
+                  title={activeQuestion.title}
                 />
               </div>
             ) : null}

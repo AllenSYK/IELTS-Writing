@@ -16,7 +16,7 @@ export async function GET() {
         .order('created_at', { ascending: false }),
       service
         .from('profiles')
-        .select('id, email, role, license_status, created_at')
+        .select('id, email, phone, role, license_status, created_at')
         .order('created_at', { ascending: false }),
       service
         .from('license_activations')

@@ -31,7 +31,9 @@ const DraftSchema = z.object({
   promptDetail: z.string().optional(),
   questionType: z.string().optional(),
   trainingType: z.string().optional(),
-  title: z.string().optional()
+  title: z.string().optional(),
+  generatedSource: z.enum(['ai', 'local-template', 'static-bank', 'user_upload']).optional(),
+  structuredData: z.record(z.unknown()).optional()
 })
 
 const WritingQuestionSchema = z.object({
@@ -45,7 +47,7 @@ const WritingQuestionSchema = z.object({
   questionType: z.string(),
   trainingType: z.enum(['academic', 'general']).optional(),
   topic: z.string().optional(),
-  generatedSource: z.enum(['ai', 'local-template', 'static-bank']).optional(),
+  generatedSource: z.enum(['ai', 'local-template', 'static-bank', 'user_upload']).optional(),
   image: z.string().optional(),
   imageAlt: z.string().optional(),
   structuredData: z.record(z.unknown()).optional(),
@@ -81,12 +83,14 @@ type QuestionSource = {
   processSpec?: Record<string, unknown>
   mapSpec?: Record<string, unknown>
   imageUrl?: string
+  questionSource?: string
+  uploadedTaskId?: string
 }
 
 const recentQuestionCache = new Map<string, { question: WritingQuestion; cachedAt: number }>()
 
-export function singleDraftKey(userId: string, mode: WritingTaskType) {
-  return userScopedStorageKey(`ielts-writing-draft-${mode}`, userId)
+export function singleDraftKey(userId: string, mode: WritingTaskType, customTaskId?: string | null) {
+  return userScopedStorageKey(`ielts-writing-draft-${mode}${customTaskId ? `-${customTaskId}` : ''}`, userId)
 }
 
 export function mockDraftKey(userId: string, taskType: Exclude<WritingTaskType, 'mock'>) {
@@ -252,7 +256,9 @@ export function writeDraft(
     promptDetail: question?.promptDetail,
     questionType: question?.questionType,
     trainingType: question?.trainingType,
-    title: question?.title
+    title: question?.title,
+    generatedSource: question?.generatedSource,
+    structuredData: question?.structuredData
   }
   window.localStorage.setItem(draftKey, JSON.stringify(payload))
   if (account && window.navigator.onLine) {
@@ -326,11 +332,14 @@ export function restoreQuestionFromRecord(source: QuestionSource): WritingQuesti
     wordTarget: isTask1 ? 150 : 250,
     questionType: (source.questionType || (isTask1 ? 'line_chart' : 'opinion')) as Task1QuestionType | Task2QuestionType,
     trainingType: source.trainingType === 'general' ? 'general' : isTask1 ? 'academic' : undefined,
-    generatedSource: 'static-bank',
+    generatedSource: source.questionSource === 'user_upload' ? 'user_upload' : 'static-bank',
     chartSpec: restoredChartSpec,
     processSpec: processSpec.success ? processSpec.data : undefined,
     mapSpec: mapSpec.success ? mapSpec.data : undefined,
-    image: source.imageUrl
+    image: source.imageUrl,
+    structuredData: source.uploadedTaskId
+      ? { source: 'user_upload', uploadedTaskId: source.uploadedTaskId }
+      : undefined
   }
 }
 

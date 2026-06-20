@@ -1,7 +1,7 @@
 'use client'
 
 import useSWR from 'swr'
-import { useState, type CSSProperties } from 'react'
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { WritingActivityDay } from '@/lib/writing-activity'
 
 type ActivityRange = 365 | 183 | 30
@@ -91,6 +91,7 @@ function HeatmapSkeleton() {
 }
 
 export function WritingActivityHeatmap({ userId }: { userId: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
   const [range, setRange] = useState<ActivityRange>(365)
   const { data: activity, isLoading } = useSWR(
     ['writing-activity', userId, range],
@@ -106,6 +107,13 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
   const labels = monthLabels(weeks)
   const total = days.reduce((sum, day) => sum + day.count, 0)
   const chartStyle = { '--activity-week-count': weeks.length } as CSSProperties
+  const latestDate = days.at(-1)?.date || ''
+
+  useLayoutEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+    container.scrollLeft = Math.max(0, container.scrollWidth - container.clientWidth)
+  }, [latestDate, range, weeks.length])
 
   return (
     <section className="dashboard-panel activity-panel" aria-labelledby="writing-activity-title">
@@ -135,7 +143,7 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
       {isLoading ? (
         <HeatmapSkeleton />
       ) : (
-        <div className="activity-scroll" tabIndex={0} aria-label={`最近 ${range} 天写作活动，可横向滚动`}>
+        <div ref={scrollRef} className="activity-scroll" tabIndex={0} aria-label={`最近 ${range} 天写作活动，最新日期位于最右侧`}>
           <div className="activity-chart" style={chartStyle}>
             <div className="activity-months" aria-hidden="true">
               {labels.map((label) => (

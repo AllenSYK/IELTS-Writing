@@ -4,6 +4,7 @@ import { CalendarDays, CheckCircle2, Clock3, PenLine } from 'lucide-react'
 import { WritingActivityHeatmap } from '@/components/dashboard/WritingActivityHeatmap'
 import { checkActiveWebLicenseForUser, getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
 import { LogoutButton } from './LogoutButton'
+import { accountDisplayName } from '@/lib/phone-auth'
 
 function formatDate(value?: string | null) {
   if (!value) return '暂无'
@@ -33,7 +34,7 @@ export default async function DashboardPage() {
           <div>
             <p className="ui-label">练习概览</p>
             <h2>账号信息</h2>
-            <p className="ui-body-md">{user.email}</p>
+            <p className="ui-body-md">{accountDisplayName(user)}</p>
           </div>
           <div className="dashboard-actions">
             <Link className="ui-primary-button" href="/practice">
@@ -65,7 +66,7 @@ export default async function DashboardPage() {
         <section className="dashboard-panel dashboard-license-panel">
           <h2>激活信息</h2>
           <dl className="dashboard-definition-list">
-            <div><dt>激活邮箱</dt><dd>{check.activation.email}</dd></div>
+            <div><dt>激活账号</dt><dd>{check.activation.email || accountDisplayName(user)}</dd></div>
             <div><dt>激活时间</dt><dd>{formatDate(check.activation.activated_at)}</dd></div>
             <div><dt>到期时间</dt><dd>{formatDate(check.activation.expires_at)}</dd></div>
             <div><dt>最近使用</dt><dd>{formatDate(check.activation.last_used_at)}</dd></div>

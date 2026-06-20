@@ -18,7 +18,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const { id } = await context.params
     const [{ data: authData, error: authError }, { data: profile, error: profileError }, { data: activations, error: activationError }] = await Promise.all([
       service.auth.admin.getUserById(id),
-      service.from('profiles').select('id, email, role, license_status, license_expires_at, created_at, updated_at').eq('id', id).single(),
+      service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at, updated_at').eq('id', id).single(),
       service
         .from('license_activations')
         .select('id, email, activated_at, expires_at, status, last_used_at, license_codes(id, code_value, code_prefix, plan, status)')
@@ -77,14 +77,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     } else if (body.action === 'bind') {
       const { data: authData, error: userError } = await service.auth.admin.getUserById(id)
       if (userError) throw userError
-      const email = authData.user.email
-      if (!email || !body.licenseCode) {
-        return json({ success: false, code: 'INVALID_INPUT', message: '用户邮箱或激活码缺失' }, { status: 400 })
+      const account = authData.user.email || authData.user.phone || authData.user.id
+      if (!body.licenseCode) {
+        return json({ success: false, code: 'INVALID_INPUT', message: '账号或激活码缺失' }, { status: 400 })
       }
       const { data, error } = await service.rpc('activate_license_code', {
         p_code_hash: hashWebLicenseCode(body.licenseCode),
         p_user_id: id,
-        p_email: email
+        p_email: account
       })
       if (error) throw error
       const result = Array.isArray(data) ? data[0] : data

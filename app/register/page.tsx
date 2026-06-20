@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Loader2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
+import { PhoneOtpForm } from '@/components/auth/PhoneOtpForm'
 
 type SendCodeResponse = {
   success?: boolean
@@ -79,6 +80,7 @@ export default function RegisterPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email')
 
   const passwordChecks = useMemo(() => [
     { label: '至少 8 位', ok: password.length >= 8 },
@@ -262,7 +264,31 @@ export default function RegisterPage() {
   return (
     <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
       <section className="auth-panel auth-panel-modern auth-register-panel">
-        {step === 'success' ? (
+        {step !== 'success' ? (
+          <div className="auth-method-tabs" role="tablist" aria-label="注册方式">
+            <button type="button" role="tab" aria-selected={authMethod === 'email'} className={authMethod === 'email' ? 'is-active' : ''} onClick={() => setAuthMethod('email')}>
+              邮箱注册
+            </button>
+            <button type="button" role="tab" aria-selected={authMethod === 'phone'} className={authMethod === 'phone' ? 'is-active' : ''} onClick={() => setAuthMethod('phone')}>
+              手机号注册
+            </button>
+          </div>
+        ) : null}
+
+        {authMethod === 'phone' && step !== 'success' ? (
+          <>
+            <div className="auth-brand-mark" aria-hidden="true"><span>W</span></div>
+            <header className="auth-copy">
+              <p className="auth-kicker">创建账号</p>
+              <h1>手机号注册</h1>
+              <p>使用中国大陆手机号接收验证码；注册后仍需输入软件激活码开通使用权限。</p>
+            </header>
+            <PhoneOtpForm mode="register" />
+            <p className="auth-switch">已有账号？<Link href="/login">登录</Link></p>
+          </>
+        ) : null}
+
+        {authMethod === 'email' && step === 'success' ? (
           <div className="auth-success-state">
             <span className="auth-success-orb"><CheckCircle2 size={34} /></span>
             <p className="auth-kicker">邮箱验证成功</p>
@@ -272,7 +298,7 @@ export default function RegisterPage() {
           </div>
         ) : null}
 
-        {step === 'account' ? (
+        {authMethod === 'email' && step === 'account' ? (
           <>
             <div className="auth-brand-mark" aria-hidden="true"><span>W</span></div>
             <header className="auth-copy">
@@ -356,7 +382,7 @@ export default function RegisterPage() {
           </>
         ) : null}
 
-        {step === 'code' ? (
+        {authMethod === 'email' && step === 'code' ? (
           <>
             <header className="auth-copy">
               <p className="auth-kicker">邮箱验证码</p>

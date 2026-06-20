@@ -14,7 +14,7 @@ const failureMessages: Record<string, string> = {
   LICENSE_DISABLED: '激活码已禁用',
   LICENSE_EXPIRED: '激活码已过期',
   LICENSE_REVOKED: '激活码已撤销',
-  LICENSE_ALREADY_USED: '激活码已绑定其他邮箱',
+  LICENSE_ALREADY_USED: '激活码已绑定其他账号',
   LICENSE_EXHAUSTED: '激活码可用次数已用完',
   USER_ALREADY_ACTIVE: '当前账号已有有效激活记录',
   INTERNAL_ERROR: '激活失败，请稍后重试'
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const { data, error } = await service.rpc('activate_license_code', {
       p_code_hash: hashWebLicenseCode(normalized),
       p_user_id: user.id,
-      p_email: user.email || ''
+      p_email: user.email || user.phone || user.id
     })
 
     const result = Array.isArray(data) ? data[0] : data
