@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isRecord } from '@/lib/type-guards'
 
 export const Task1ChartKindSchema = z.enum(['line', 'bar', 'pie', 'table', 'mixed'])
 export type Task1ChartKind = z.infer<typeof Task1ChartKindSchema>
@@ -26,6 +27,22 @@ export const TASK1_RENDERER_MAP: Record<string, Task1ChartRenderer> = {
 
 export function resolveChartRenderer(chartType: string): Task1ChartRenderer {
   return TASK1_RENDERER_MAP[chartType] ?? 'line'
+}
+
+const QUESTION_TYPE_TO_CHART_KIND: Record<string, Task1ChartKind> = {
+  line_graph: 'line',
+  line_chart: 'line',
+  dynamic_chart: 'line',
+  bar_chart: 'bar',
+  static_comparison: 'bar',
+  pie_chart: 'pie',
+  table: 'table',
+  mixed_charts: 'mixed'
+}
+
+export function chartKindForQuestionType(questionType: unknown): Task1ChartKind | undefined {
+  if (typeof questionType !== 'string') return undefined
+  return QUESTION_TYPE_TO_CHART_KIND[questionType]
 }
 
 export const Task1AxisSchema = z.object({
@@ -139,12 +156,6 @@ export interface Task1QuestionData {
   chartSpec?: Task1ChartSpec
   processSpec?: Task1ProcessSpec
   mapSpec?: Task1MapSpec
-}
-
-type UnknownRecord = Record<string, unknown>
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function firstDefined(...values: unknown[]) {
@@ -338,7 +349,7 @@ function normalizeStandaloneChartCandidate(
   return parsed.success ? parsed.data : null
 }
 
-function mixedChartCandidates(spec: UnknownRecord) {
+function mixedChartCandidates(spec: Record<string, unknown>) {
   const candidates: Array<{ value: unknown; hint?: Task1StandaloneChartKind }> = []
 
   if (Array.isArray(spec.charts)) {

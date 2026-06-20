@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useSWRConfig } from 'swr'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
+import { useOnlineStatus } from '@/components/browser-hooks'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
   UserRouteCacheKeys,
@@ -36,29 +37,12 @@ const supportItems: SidebarItem[] = [
   { id: 'privacy', href: '/privacy', label: '隐私政策', icon: 'privacy_tip', match: (pathname) => pathname.startsWith('/privacy') }
 ]
 
-function useOnlineLabel() {
-  const [online, setOnline] = useState(true)
-
-  useEffect(() => {
-    const update = () => setOnline(window.navigator.onLine)
-    update()
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-    }
-  }, [])
-
-  return online
-}
-
 export function Sidebar() {
   const { userId } = useUserSession()
   const pathname = usePathname()
   const router = useRouter()
   const { mutate } = useSWRConfig()
-  const online = useOnlineLabel()
+  const online = useOnlineStatus()
   const activeId = useMemo(
     () => [...mainItems, ...supportItems].find((item) => item.match(pathname))?.id ?? 'home',
     [pathname]

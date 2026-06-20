@@ -9,7 +9,7 @@ import {
   Task1MapSpecSchema,
   Task1ProcessSpecSchema,
   prepareTask1ChartSpec,
-  type Task1ChartKind
+  chartKindForQuestionType
 } from '@/lib/task1-chart-schema'
 import { getFallbackQuestionsByType } from '@/lib/task1-fallback-questions'
 import { countWords, type WritingTaskType } from '@/lib/writing-records'
@@ -108,22 +108,8 @@ function questionCacheKey(
   )
 }
 
-export function expectedChartKind(questionType: string | undefined): Task1ChartKind | undefined {
-  const map: Record<string, Task1ChartKind> = {
-    line_graph: 'line',
-    line_chart: 'line',
-    dynamic_chart: 'line',
-    bar_chart: 'bar',
-    static_comparison: 'bar',
-    pie_chart: 'pie',
-    table: 'table',
-    mixed_charts: 'mixed'
-  }
-  return questionType ? map[questionType] : undefined
-}
-
 function validChartSpec(spec: unknown, questionType: string | undefined) {
-  const kind = expectedChartKind(questionType)
+  const kind = chartKindForQuestionType(questionType)
   if (!kind || !spec) return undefined
   const prepared = prepareTask1ChartSpec(spec, kind)
   return prepared.success ? prepared.data : undefined
@@ -148,7 +134,7 @@ export function normalizeGeneratedQuestion(value: unknown): WritingQuestion {
     mapSpec: undefined
   }
   if (question.taskType !== 'task1') return question
-  const kind = expectedChartKind(question.questionType)
+  const kind = chartKindForQuestionType(question.questionType)
   if (kind) {
     const prepared = prepareTask1ChartSpec(parsed.data.chartSpec, kind)
     if (!prepared.success) {
@@ -309,7 +295,7 @@ export function restoreQuestionFromRecord(source: QuestionSource): WritingQuesti
     || source.title
   const promptDetail = source.promptDetail
     ?? (firstNewline > 0 ? source.prompt.slice(firstNewline + 1) : '')
-  const expectedKind = isTask1 ? expectedChartKind(source.questionType) : undefined
+  const expectedKind = isTask1 ? chartKindForQuestionType(source.questionType) : undefined
   const restoredChartSpec = validChartSpec(source.chartSpec, source.questionType)
     // Early mixed-chart records could contain the prompt without renderable visual data.
     || (expectedKind === 'mixed' ? mixedFallbackChartSpec() : undefined)

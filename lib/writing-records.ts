@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { prepareTask1ChartSpec, type Task1ChartKind } from '@/lib/task1-chart-schema'
+import { prepareTask1ChartSpec, chartKindForQuestionType } from '@/lib/task1-chart-schema'
 import { readStorageValue, userScopedStorageKey } from '@/lib/user-storage'
 import { calculateEssayOverallBand, formatBandNumber } from '@/lib/ielts-scoring'
+import { isStringArray } from '@/lib/type-guards'
 import {
   CriterionKeys,
   EssayAnnotationCategories,
@@ -58,23 +59,6 @@ const StoredWritingRecordSchema = z.object({
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string')
-}
-
-function chartKindForQuestionType(questionType: unknown): Task1ChartKind | undefined {
-  if (typeof questionType !== 'string') return undefined
-  const map: Record<string, Task1ChartKind> = {
-    line_graph: 'line',
-    line_chart: 'line',
-    bar_chart: 'bar',
-    pie_chart: 'pie',
-    table: 'table',
-    mixed_charts: 'mixed'
-  }
-  return map[questionType]
 }
 
 function normalizeStoredChartSpec(value: unknown, questionType?: unknown): Record<string, unknown> | undefined {

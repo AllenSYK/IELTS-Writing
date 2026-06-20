@@ -5,6 +5,7 @@ import {
   weightedCriterionScore
 } from '@/lib/ielts-scoring'
 import { normalizeEvaluation } from '@/lib/writing-records'
+import { isRecord } from '@/lib/type-guards'
 import type {
   CriterionKey,
   CriterionScore,
@@ -38,10 +39,6 @@ export class WritingEvaluationError extends Error {
     this.name = 'WritingEvaluationError'
     this.kind = kind
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function providerErrorKind(status: number, code: string | undefined): EvaluationErrorKind {

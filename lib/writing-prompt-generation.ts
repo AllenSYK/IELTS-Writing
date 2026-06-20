@@ -8,6 +8,8 @@ import {
   parseAiJsonObject,
   type AiMessage
 } from '@/lib/ai-provider'
+import { isRecord } from '@/lib/type-guards'
+import { chartKindForQuestionType } from '@/lib/task1-chart-schema'
 import type { WritingQuestion } from '@/lib/ielts-questions'
 import {
   Task1ChartLabels,
@@ -22,8 +24,7 @@ import {
   Task1MapSpecSchema,
   Task1ProcessSpecSchema,
   normalizeTask1ChartSpec,
-  prepareTask1ChartSpec,
-  type Task1ChartKind
+  prepareTask1ChartSpec
 } from '@/lib/task1-chart-schema'
 import { getFallbackQuestionsByType, getRandomFallbackQuestion } from '@/lib/task1-fallback-questions'
 import type { WritingTaskType } from '@/lib/writing-records'
@@ -56,20 +57,6 @@ export type PromptGenerationInput = {
   taskType: Exclude<WritingTaskType, 'mock'>
   selection: PromptSelection
   excludePromptSummaries?: PromptHistorySummary[]
-}
-
-function chartKindForQuestionType(questionType: string): Task1ChartKind | undefined {
-  const map: Record<string, Task1ChartKind> = {
-    line_graph: 'line',
-    line_chart: 'line',
-    dynamic_chart: 'line',
-    bar_chart: 'bar',
-    static_comparison: 'bar',
-    pie_chart: 'pie',
-    table: 'table',
-    mixed_charts: 'mixed'
-  }
-  return map[questionType]
 }
 
 function chartExample(questionType: string, subtype: PromptSelection['task1Subtype']) {
@@ -367,10 +354,6 @@ function buildPromptGenerationPrompt(input: PromptGenerationInput) {
   return input.taskType === 'task1'
     ? buildTask1GenerationPrompt(input)
     : buildTask2GenerationPrompt(input)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeGeneratedPromptResponse(raw: unknown, taskType: string) {
