@@ -9,7 +9,7 @@ import type { BlockAnnotationDraft } from '@/lib/essay-annotation-schema'
 
 export const AnnotationVersion = 2
 
-const MAX_ANNOTATION_BLOCK_CHARS = 1_800
+const MAX_ANNOTATION_BLOCK_CHARS = 2_500
 
 const AnnotationSeverityRank: Record<EssayAnnotationSeverity, number> = {
   high: 3,
