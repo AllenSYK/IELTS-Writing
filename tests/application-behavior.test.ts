@@ -125,7 +125,7 @@ test('User Home navigation targets the account center without a client redirect 
   const [nextConfig, sidebar, commandPalette, appShell] = await Promise.all([
     readFile(new URL('../next.config.mjs', import.meta.url), 'utf8'),
     readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../components/interaction-system.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/command-palette.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
   ])
 

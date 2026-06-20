@@ -8,6 +8,7 @@ import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { MaterialIcon } from '@/components/app-ui'
 import { Task1Visual } from '@/components/task1/Task1Visual'
+import { useEssaySubmission, EVALUATION_STAGES, AI_EVALUATION_TIMEOUT_MS } from '@/components/use-essay-submission'
 import {
   buildMockQuestionSetForSelection,
   buildPrompt,
@@ -29,7 +30,6 @@ import {
 import {
   WritingEvaluationError,
   combineMockEvaluation,
-  evaluationErrorMessage,
   requestEssayEvaluation,
   type EssayEvaluationRequest
 } from '@/lib/writing-evaluation'
@@ -61,18 +61,8 @@ type MockEssays = Record<MockTaskType, string>
 type MockQuestions = Record<MockTaskType, WritingQuestion>
 
 type SaveStatus = 'restoring' | 'idle' | 'saving' | 'saved' | 'offline' | 'error'
-type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'organizing' | 'success' | 'error'
 
 const mockTaskOrder: MockTaskType[] = ['task1', 'task2']
-const evaluationStages = [
-  '正在保存作文',
-  '正在请求评分',
-  '正在解析评分结果',
-  '初步评分已完成',
-  '正在补充详细批改',
-  '详细批改已完成'
-]
-const AI_EVALUATION_TIMEOUT_MS = 10 * 60 * 1000
 
 const pendingEvaluations = new Map<string, Promise<EssayEvaluation>>()
 
@@ -102,7 +92,6 @@ export default function WritePage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const layoutRef = useRef<HTMLElement>(null)
   const lastAutoSaveAtRef = useRef(0)
-  const abortControllerRef = useRef<AbortController | null>(null)
   const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
   const [mockQuestions, setMockQuestions] = useState<MockQuestions | null>(null)
   const [activeMockTask, setActiveMockTask] = useState<MockTaskType>('task1')
@@ -114,8 +103,6 @@ export default function WritePage() {
   const [spellcheck, setSpellcheck] = useState(false)
   const [hydrated, setHydrated] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('restoring')
-  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
-  const [stageIndex, setStageIndex] = useState(0)
   const [draftRestored, setDraftRestored] = useState(false)
   const [showShortfallConfirm, setShowShortfallConfirm] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
@@ -125,8 +112,11 @@ export default function WritePage() {
   const [error, setError] = useState('')
   const [promptSelection, setPromptSelection] = useState<PromptSelection>(DefaultPromptSelection)
   const [promptGenerationNotice, setPromptGenerationNotice] = useState('')
-  const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
-  const [elapsedTime, setElapsedTime] = useState(0)
+
+  const submission = useEssaySubmission({
+    onError: (message) => setError(message),
+    onInfoToast: (title, message) => pushToast({ kind: 'info', title, message })
+  })
 
   const activeQuestion = mode === 'mock' ? mockQuestions?.[activeMockTask] ?? null : singleQuestion
   const activeEssay = mode === 'mock' ? mockEssays[activeMockTask] : essay
@@ -143,7 +133,7 @@ export default function WritePage() {
   )
   const totalMockWords = mockWordCounts.task1 + mockWordCounts.task2
   const progress = 62.8 - (timeLeft / (durationMinutes * 60)) * 62.8
-  const loading = submitStatus !== 'idle' && submitStatus !== 'error' && submitStatus !== 'success'
+  const { loading, submitStatus, stageIndex, elapsedTime, cancelEvaluation, runSubmission } = submission
   const timerTone = timeLeft <= 60 ? 'timer-critical' : timeLeft <= 600 ? 'timer-warning' : ''
   const promptChoiceSummary =
     mode === 'task1'
@@ -185,18 +175,6 @@ export default function WritePage() {
   )
   const generateInitialQuestion = useEffectEvent(generateQuestionFor)
   const notifyInitialRestore = useEffectEvent(pushToast)
-
-  useEffect(() => {
-    let timer: number | undefined
-    if (evaluationStartTime && loading) {
-      timer = window.setInterval(() => {
-        setElapsedTime(Math.floor((Date.now() - evaluationStartTime) / 1000))
-      }, 1000)
-    }
-    return () => {
-      if (timer) window.clearInterval(timer)
-    }
-  }, [evaluationStartTime, loading])
 
   useEffect(() => {
     if (!userId) return
@@ -552,38 +530,27 @@ export default function WritePage() {
       }
     }
 
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
-    let succeeded = false
-    setSubmitStatus('saving')
-    setStageIndex(0)
-    setEvaluationStartTime(Date.now())
-    setElapsedTime(0)
-    try {
+    await runSubmission(async (signal, setStage) => {
       saveAllDrafts(false)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
-      if (abortController.signal.aborted) {
-        throw new WritingEvaluationError('cancelled', '批改已取消。')
-      }
-      setSubmitStatus('submitting')
-      setStageIndex(1)
+      if (signal.aborted) throw new WritingEvaluationError('cancelled', '批改已取消。')
+      submission.setSubmitStatus('submitting')
+      setStage(1)
 
       const evaluation = await evaluateEssay({
         essay,
         taskType: activeQuestion.taskType,
         prompt: buildPrompt(activeQuestion),
         questionType: activeQuestion.questionType
-      }, essayHashKey, abortController.signal)
+      }, essayHashKey, signal)
 
-      if (abortController.signal.aborted) {
-        throw new WritingEvaluationError('cancelled', '批改已取消。')
-      }
-      setStageIndex(2)
+      if (signal.aborted) throw new WritingEvaluationError('cancelled', '批改已取消。')
+      setStage(2)
       await new Promise((resolve) => window.setTimeout(resolve, 100))
-      setStageIndex(3)
+      setStage(3)
 
-      setSubmitStatus('organizing')
-      setStageIndex(4)
+      submission.setSubmitStatus('organizing')
+      setStage(4)
       await new Promise((resolve) => window.setTimeout(resolve, 150))
 
       const now = new Date().toISOString()
@@ -617,34 +584,11 @@ export default function WritePage() {
       markGeneratedPromptCompleted(activeQuestion.id, userId)
       deleteAccountDraft(singleDraftKey(userId, mode))
       window.localStorage.removeItem(timerKey)
-      setStageIndex(5)
-      setSubmitStatus('success')
-      succeeded = true
+      setStage(5)
+      submission.setSubmitStatus('success')
       pushToast({ kind: 'success', title: '批改完成', message: '正在打开结果页。' })
       router.push(`/result?id=${record.id}`)
-    } catch (caught) {
-      const presentation = evaluationErrorMessage(caught)
-      if (caught instanceof WritingEvaluationError && caught.kind === 'cancelled') {
-        pushToast({ kind: 'info', ...presentation })
-      } else {
-        setError(presentation.message)
-        setSubmitStatus('error')
-        pushToast({ kind: 'error', ...presentation })
-      }
-    } finally {
-      abortControllerRef.current = null
-      setEvaluationStartTime(null)
-      if (!succeeded) {
-        window.setTimeout(() => setSubmitStatus((current) => (current === 'success' ? current : 'idle')), 800)
-      }
-    }
-  }
-
-  function cancelEvaluation() {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      pushToast({ kind: 'info', title: '正在取消', message: '正在取消批改，请稍候。' })
-    }
+    })
   }
 
   async function submitMock() {
@@ -667,37 +611,30 @@ export default function WritePage() {
     const dedupeKey1 = `${userId}:mock-task1:${mockEssays.task1.trim().toLowerCase().slice(0, 100)}`
     const dedupeKey2 = `${userId}:mock-task2:${mockEssays.task2.trim().toLowerCase().slice(0, 100)}`
 
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
-    let succeeded = false
-    setSubmitStatus('saving')
-    setStageIndex(0)
-    setEvaluationStartTime(Date.now())
-    setElapsedTime(0)
-    try {
+    await runSubmission(async (signal, setStage) => {
       saveAllDrafts(false)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
-      setSubmitStatus('submitting')
-      setStageIndex(1)
+      submission.setSubmitStatus('submitting')
+      setStage(1)
 
       const task1Evaluation = await evaluateEssay({
         essay: mockEssays.task1,
         taskType: 'task1',
         prompt: buildPrompt(mockQuestions.task1),
         questionType: mockQuestions.task1.questionType
-      }, dedupeKey1, abortController.signal)
+      }, dedupeKey1, signal)
 
-      setStageIndex(2)
+      setStage(2)
       const task2Evaluation = await evaluateEssay({
         essay: mockEssays.task2,
         taskType: 'task2',
         prompt: buildPrompt(mockQuestions.task2),
         questionType: mockQuestions.task2.questionType
-      }, dedupeKey2, abortController.signal)
+      }, dedupeKey2, signal)
 
-      setStageIndex(3)
-      setSubmitStatus('organizing')
-      setStageIndex(4)
+      setStage(3)
+      submission.setSubmitStatus('organizing')
+      setStage(4)
       await new Promise((resolve) => window.setTimeout(resolve, 150))
 
       const now = new Date().toISOString()
@@ -775,27 +712,11 @@ export default function WritePage() {
       deleteAccountDraft(mockDraftKey(userId, 'task1'))
       deleteAccountDraft(mockDraftKey(userId, 'task2'))
       window.localStorage.removeItem(timerKey)
-      setStageIndex(5)
-      setSubmitStatus('success')
-      succeeded = true
+      setStage(5)
+      submission.setSubmitStatus('success')
       pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
       router.push(`/result?id=${record.id}`)
-    } catch (caught) {
-      const presentation = evaluationErrorMessage(caught)
-      if (caught instanceof WritingEvaluationError && caught.kind === 'cancelled') {
-        pushToast({ kind: 'info', ...presentation })
-      } else {
-        setError(presentation.message)
-        setSubmitStatus('error')
-        pushToast({ kind: 'error', ...presentation })
-      }
-    } finally {
-      abortControllerRef.current = null
-      setEvaluationStartTime(null)
-      if (!succeeded) {
-        window.setTimeout(() => setSubmitStatus((current) => (current === 'success' ? current : 'idle')), 800)
-      }
-    }
+    })
   }
 
   function hasWordShortfall() {
@@ -1105,7 +1026,7 @@ export default function WritePage() {
                   </button>
                 </div>
                 <ol className="stage-list">
-                  {evaluationStages.map((stage, index) => (
+                  {EVALUATION_STAGES.map((stage: string, index: number) => (
                     <li key={stage} className={index < stageIndex ? 'is-done' : index === stageIndex ? 'is-active' : ''}>
                       <span className="stage-dot" />
                       <span>{stage}</span>
