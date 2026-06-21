@@ -6894,6 +6894,12 @@ img {
   }
 }
 
+@keyframes analytics-loading-slide {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(150%); }
+  100% { transform: translateX(-100%); }
+}
+
 .ui-nav-link {
   position: relative;
 }

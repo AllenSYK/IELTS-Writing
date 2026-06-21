@@ -6,7 +6,8 @@ import { ErrorDistributionBars } from '@/components/analytics/ErrorDistributionB
 import { GoalStatusPanel } from '@/components/analytics/GoalStatusPanel'
 import { IeltsRadarChart } from '@/components/analytics/IeltsRadarChart'
 import { PracticePlan } from '@/components/analytics/PracticePlan'
-import { PageSkeleton } from '@/components/loading/PageSkeleton'
+import { ChartSkeleton } from '@/components/loading/ChartSkeleton'
+import { QuestionSkeleton } from '@/components/loading/QuestionSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import {
@@ -30,6 +31,7 @@ type AnalyticsRange = '7' | '30' | 'all'
 const ANALYTICS_INVALIDATED_EVENT = 'ielts-writing-analytics-invalidated'
 const ANALYTICS_INVALIDATED_KEY = 'ielts-writing-analytics-invalidated-at'
 const ANALYTICS_LOADED_KEY = 'ielts-writing-analytics-loaded-at'
+const ANALYTICS_CACHE_KEY = 'ielts-writing-analytics-cache'
 
 type AnalyticsApiRecord = {
   id: string
@@ -97,6 +99,26 @@ function adaptRecord(r: AnalyticsApiRecord): WritingRecord {
   }
 }
 
+function readCachedRecords(): WritingRecord[] {
+  try {
+    const raw = sessionStorage.getItem(ANALYTICS_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed as WritingRecord[]
+  } catch {
+    return []
+  }
+}
+
+function writeCachedRecords(records: WritingRecord[]) {
+  try {
+    sessionStorage.setItem(ANALYTICS_CACHE_KEY, JSON.stringify(records))
+  } catch {
+    // ignore quota errors
+  }
+}
+
 async function fetchAnalyticsRecords(): Promise<WritingRecord[]> {
   const response = await fetch('/api/user/writing-records/analytics', { cache: 'no-store' })
   const data = await response.json().catch(() => ({})) as { success?: boolean; records?: AnalyticsApiRecord[]; message?: string }
@@ -125,11 +147,32 @@ function buildTrend(records: WritingRecord[]) {
   return { line, fill, points }
 }
 
+function AnalyticsSkeleton() {
+  return (
+    <main className="ui-page" data-main-content tabIndex={-1} aria-busy="true">
+      <section className="analytics-main" style={{ paddingTop: 120 }}>
+        <QuestionSkeleton />
+        <ChartSkeleton />
+        <div className="skeleton-grid cards">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="skeleton-card" />
+          ))}
+        </div>
+        <span className="sr-only" role="status" aria-live="polite">正在加载学习分析</span>
+      </section>
+    </main>
+  )
+}
+
 export default function AnalyticsPage() {
   const { userId } = useUserSession()
   const { profile } = useUserProfile()
-  const [records, setRecords] = useState<WritingRecord[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+
+  const cachedRecords = useMemo(() => readCachedRecords(), [])
+  const [records, setRecords] = useState<WritingRecord[]>(cachedRecords)
+  const [initialLoading, setInitialLoading] = useState(cachedRecords.length === 0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [range, setRange] = useState<AnalyticsRange>('30')
   const [now, setNow] = useState(0)
@@ -139,17 +182,25 @@ export default function AnalyticsPage() {
   const loadAnalytics = useCallback(async () => {
     if (isFetchingRef.current) return
     isFetchingRef.current = true
+    setRefreshing(true)
     try {
       const result = await fetchAnalyticsRecords()
       if (isMountedRef.current) {
         setRecords(result)
+        setFetchError(null)
+        writeCachedRecords(result)
         localStorage.setItem(ANALYTICS_LOADED_KEY, String(Date.now()))
       }
-    } catch {
-      // keep existing records on failure
+    } catch (err) {
+      if (isMountedRef.current) {
+        setFetchError(err instanceof Error ? err.message : '加载失败，请稍后重试。')
+      }
     } finally {
       isFetchingRef.current = false
-      if (isMountedRef.current) setIsLoading(false)
+      if (isMountedRef.current) {
+        setInitialLoading(false)
+        setRefreshing(false)
+      }
     }
   }, [])
 
@@ -166,7 +217,7 @@ export default function AnalyticsPage() {
       if (invalidatedAt > loadedAt || loadedAt === 0) {
         void loadAnalytics()
       } else {
-        setIsLoading(false)
+        setInitialLoading(false)
       }
     })
   }, [userId, loadAnalytics])
@@ -211,7 +262,7 @@ export default function AnalyticsPage() {
   const errorDistribution = useMemo(() => buildErrorDistribution(scopedRecords), [scopedRecords])
   const recommendations = useMemo(() => buildPracticeRecommendations(scopedRecords), [scopedRecords])
 
-  if (!preferencesLoaded || isLoading) return <PageSkeleton />
+  if (!preferencesLoaded || (initialLoading && records.length === 0)) return <AnalyticsSkeleton />
 
   const rangeOptions: Array<{ id: AnalyticsRange; label: string }> = [
     { id: '7', label: '近7天' },
@@ -222,6 +273,19 @@ export default function AnalyticsPage() {
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="analytics-main">
+        {refreshing ? (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 2, zIndex: 9999, background: 'rgba(0,88,188,0.15)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: '40%', background: '#0058bc', borderRadius: 1, animation: 'analytics-loading-slide 1.2s ease-in-out infinite' }} />
+          </div>
+        ) : null}
+
+        {fetchError && records.length > 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(186,26,26,0.06)', color: '#ba1a1a', fontSize: 13 }}>
+            <MaterialIcon name="warning" size={16} />
+            <span>{fetchError}</span>
+          </div>
+        ) : null}
+
         <header className="page-section-header">
           <p className="ui-body-lg analytics-intro">根据当前账号的真实批改记录生成。</p>
           <div className="filter-chip-row" role="toolbar" aria-label="分析时间范围">
