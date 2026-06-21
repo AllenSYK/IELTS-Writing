@@ -31,11 +31,21 @@ const ProviderDefaults: Record<string, Pick<AiConfig, 'baseUrl' | 'model'>> = {
 }
 
 const DEFAULT_AI_TIMEOUT_MS = 240_000
+export const REQUIRED_QWEN_VISION_MODEL = 'qwen3.5-plus'
 
 const StreamChunkSchema = z.object({
   choices: z.array(z.object({
     delta: z.object({
       content: z.string().optional()
+    }).passthrough(),
+    finish_reason: z.string().nullable().optional()
+  }).passthrough()).min(1)
+}).passthrough()
+
+const CompletionResponseSchema = z.object({
+  choices: z.array(z.object({
+    message: z.object({
+      content: z.string()
     }).passthrough(),
     finish_reason: z.string().nullable().optional()
   }).passthrough()).min(1)
@@ -125,10 +135,14 @@ export function getGradingAiConfig() {
 }
 
 export function getVisionAiConfig() {
-  return getAiConfig({
+  const config = getAiConfig({
     modelEnv: 'QWEN_VISION_MODEL',
-    defaultModel: 'qwen3.7-plus'
+    defaultModel: REQUIRED_QWEN_VISION_MODEL
   })
+  if (config.model !== REQUIRED_QWEN_VISION_MODEL) {
+    throw new AiConfigurationError([`QWEN_VISION_MODEL=${REQUIRED_QWEN_VISION_MODEL}`])
+  }
+  return config
 }
 
 export function createAiRequestId(prefix: 'eval' | 'gen' | 'parse') {
@@ -154,6 +168,41 @@ function providerHttpError(status: number) {
     return new AiProviderError(`AI 服务暂时不可用 (HTTP ${status})，请稍后重试。`, status, 'ai_server_error')
   }
   return new AiProviderError(`AI 服务返回 HTTP ${status} 错误。`, status, 'ai_http_error')
+}
+
+function providerErrorText(value: unknown) {
+  const parsed = z.object({
+    error: z.object({
+      code: z.union([z.string(), z.number()]).optional(),
+      message: z.string().optional()
+    }).optional(),
+    code: z.union([z.string(), z.number()]).optional(),
+    message: z.string().optional()
+  }).passthrough().safeParse(value)
+  if (!parsed.success) return ''
+  return [
+    parsed.data.error?.code,
+    parsed.data.error?.message,
+    parsed.data.code,
+    parsed.data.message
+  ].filter(Boolean).join(' ')
+}
+
+function nonStreamingProviderHttpError(status: number, body: unknown) {
+  const detail = providerErrorText(body)
+  if (
+    status >= 400 &&
+    status < 500 &&
+    /(image|image_url|vision|visual|multimodal|multi-modal|图片|图像|视觉|多模态)/i.test(detail) &&
+    /(unsupported|not support|does not support|invalid modality|only text|不支持|仅支持文本)/i.test(detail)
+  ) {
+    return new AiProviderError(
+      '当前配置的图片识别模型暂时无法处理图片。',
+      status,
+      'vision_model_image_input_unsupported'
+    )
+  }
+  return providerHttpError(status)
 }
 
 function readStreamChunk(data: string) {
@@ -263,6 +312,66 @@ export async function fetchAiCompletion(
   }
 }
 
+export async function fetchAiNonStreamingCompletion(
+  config: AiConfig,
+  messages: AiMessage[],
+  options: CompletionOptions
+): Promise<string> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), configuredTimeoutMs())
+
+  try {
+    const response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        enable_thinking: false,
+        temperature: 0.2,
+        max_tokens: options.maxTokens,
+        stream: false,
+        ...(options.responseFormat ? { response_format: options.responseFormat } : {})
+      })
+    })
+
+    const payload = await response.json().catch(() => null) as unknown
+    if (!response.ok) {
+      throw nonStreamingProviderHttpError(response.status, payload)
+    }
+
+    const completion = CompletionResponseSchema.safeParse(payload)
+    if (!completion.success) {
+      throw new AiResponseError(
+        'AI 服务返回的完整响应格式无效。',
+        'ai_non_stream_response_invalid',
+        completion.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+      )
+    }
+
+    const content = completion.data.choices[0].message.content.trim()
+    if (!content) {
+      throw new AiProviderError('AI 服务返回空内容。', undefined, 'ai_empty_response')
+    }
+    return content
+  } catch (error) {
+    if (error instanceof AiProviderError) throw error
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new AiProviderError('AI服务响应时间过长，本次请求已停止，请稍后重试。', undefined, 'ai_request_timeout')
+    }
+    if (error instanceof TypeError) {
+      throw new AiProviderError('网络错误：无法连接 AI 服务，请检查网络或 AI_BASE_URL。', undefined, 'ai_network_error')
+    }
+    throw new AiProviderError('AI 请求失败：请稍后重试。', undefined, 'ai_provider_failed')
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 function stripMarkdownCodeFence(text: string) {
   const trimmed = text.trim().replace(/^\uFEFF/, '')
   const fenced = trimmed.match(/^```(?:json|JSON)?\s*([\s\S]*?)\s*```$/)
@@ -308,6 +417,7 @@ export async function requestValidatedJson<T>({
   maxTokens,
   requestId,
   stage = 'completion',
+  responseMode = 'stream',
   validate
 }: {
   config: AiConfig
@@ -315,6 +425,7 @@ export async function requestValidatedJson<T>({
   maxTokens: number
   requestId: string
   stage?: string
+  responseMode?: 'stream' | 'non-stream'
   validate: (value: unknown) => T
 }) {
   let validationError: AiResponseError | null = null
@@ -340,7 +451,7 @@ export async function requestValidatedJson<T>({
         model: config.model,
         stage,
         attempt: attempt + 1,
-        run: () => fetchAiCompletion(config, requestMessages, {
+        run: () => (responseMode === 'non-stream' ? fetchAiNonStreamingCompletion : fetchAiCompletion)(config, requestMessages, {
           maxTokens,
           requestId,
           stage,

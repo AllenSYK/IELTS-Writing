@@ -1003,8 +1003,28 @@ export default function WritePage() {
               <p className="ui-body-md">{activeQuestion.promptDetail}</p>
             </div>
 
+            {activeQuestion.taskType === 'task1' && (activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
+              <div className="exam-graph-frame">
+                {activeQuestion.generatedSource === 'user_upload' ? <p className="ui-label">结构化复原</p> : null}
+                <Task1Visual
+                  chartType={activeQuestion.questionType}
+                  chartSpec={activeQuestion.chartSpec}
+                  processSpec={activeQuestion.processSpec}
+                  mapSpec={activeQuestion.mapSpec}
+                  title={activeQuestion.title}
+                />
+              </div>
+            ) : null}
+
+            {activeQuestion.generatedSource === 'user_upload' && activeQuestion.structuredData?.parseStatus === 'partial' ? (
+              <p className="custom-task-warning" role="status">
+                部分图表数据未能完全复原，请同时参考原始图片。
+              </p>
+            ) : null}
+
             {activeQuestion.image ? (
               <div className="exam-graph-frame">
+                {activeQuestion.generatedSource === 'user_upload' ? <p className="ui-label">原始图片核对</p> : null}
                 <Image
                   alt={activeQuestion.imageAlt || activeQuestion.title}
                   src={activeQuestion.image}
@@ -1013,19 +1033,6 @@ export default function WritePage() {
                   priority
                   style={{ width: '100%', height: 'auto' }}
                   unoptimized
-                />
-              </div>
-            ) : null}
-
-            {activeQuestion.taskType === 'task1' && (activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
-              <div className="exam-graph-frame">
-                {activeQuestion.generatedSource === 'user_upload' ? <p className="ui-label">结构化预览（原图仍保留在上方）</p> : null}
-                <Task1Visual
-                  chartType={activeQuestion.questionType}
-                  chartSpec={activeQuestion.chartSpec}
-                  processSpec={activeQuestion.processSpec}
-                  mapSpec={activeQuestion.mapSpec}
-                  title={activeQuestion.title}
                 />
               </div>
             ) : null}

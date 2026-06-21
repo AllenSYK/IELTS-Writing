@@ -31,7 +31,7 @@ export function TableQuestion({ spec }: Props) {
               <tr key={rowIdx}>
                 {row.map((cell, colIdx) => (
                   <td key={colIdx} className={colIdx === 0 ? 'task1-table-label' : 'task1-table-value'}>
-                    {typeof cell === 'number' ? cell.toLocaleString() : cell}
+                    {cell === null ? '—' : typeof cell === 'number' ? cell.toLocaleString() : cell}
                   </td>
                 ))}
               </tr>

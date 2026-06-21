@@ -5961,32 +5961,6 @@ img {
   line-height: 1.6;
 }
 
-.custom-task-type {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 3px;
-  border: 1px solid rgba(0, 88, 188, 0.16);
-  border-radius: 999px;
-  padding: 3px;
-  background: rgba(255, 255, 255, 0.6);
-}
-
-.custom-task-type button {
-  min-width: 76px;
-  min-height: 34px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--on-surface-variant);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.custom-task-type button.is-active {
-  color: var(--primary);
-  background: rgba(216, 226, 255, 0.92);
-}
-
 .custom-task-dropzone {
   width: 100%;
   min-height: 190px;
@@ -7928,14 +7902,6 @@ img {
   .custom-task-heading {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .custom-task-type {
-    width: 100%;
-  }
-
-  .custom-task-type button {
-    flex: 1 1 0;
   }
 
   .custom-task-workspace {

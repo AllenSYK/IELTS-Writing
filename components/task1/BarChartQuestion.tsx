@@ -25,9 +25,9 @@ export function BarChartQuestion({ spec, containerWidth }: Props) {
   const data = useMemo(() => {
     if (!spec.xAxis || !spec.series) return []
     return spec.xAxis.categories.map((cat, i) => {
-      const row: Record<string, string | number> = { name: cat }
+      const row: Record<string, string | number | null> = { name: cat }
       for (const s of spec.series!) {
-        row[s.id] = s.values[i] ?? 0
+        row[s.id] = s.values[i] ?? null
       }
       return row
     })

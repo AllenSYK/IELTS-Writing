@@ -10,7 +10,12 @@ import {
   parseAiEvaluationText,
   splitEssayIntoBlocks
 } from '../lib/ai'
-import { getGradingAiConfig } from '../lib/ai-provider'
+import {
+  AiProviderError,
+  fetchAiNonStreamingCompletion,
+  getGradingAiConfig,
+  getVisionAiConfig
+} from '../lib/ai-provider'
 import { validateBlockAnnotationResponse } from '../lib/essay-annotation-schema'
 import { applyAcceptedAnnotationChanges } from '../lib/essay-annotations'
 import { QuestionTypeLabels, task1Questions, task2Questions } from '../lib/ielts-questions'
@@ -25,10 +30,16 @@ import { getFallbackQuestionsByType } from '../lib/task1-fallback-questions'
 import {
   UploadMaxBytes,
   UploadedTask1ResultSchema,
+  UploadedTask1VisualSchema,
   UploadedTask2ResultSchema,
   buildConfirmedUploadedQuestion,
   validateImageUpload
 } from '../lib/uploaded-writing-task'
+import {
+  parseUploadedWritingTask,
+  uploadedTaskSystemPrompt,
+  uploadedTaskUserPrompt
+} from '../lib/uploaded-writing-task-ai'
 
 test('IELTS band rounding uses half-band steps', () => {
   assert.equal(roundToHalfBand(6.24), 6)
@@ -71,39 +82,35 @@ test('uploaded image validation checks content, MIME, extension, size, and dimen
   }))
 })
 
-test('Task 1 upload preserves uncertain values as null and does not create a fake chart preview', () => {
+test('Task 1 upload preserves uncertain values as null and marks the practice partial', () => {
   const parsed = UploadedTask1ResultSchema.parse({
-    taskType: 'task1',
+    taskType: 'task1_academic',
     questionText: 'The chart below shows energy use.\nSummarise the information.',
-    promptLead: 'The chart below shows energy use.',
-    promptDetail: 'Summarise the information.',
-    visualType: 'line',
-    visualTitle: 'Energy use',
-    unit: '%',
-    chart: {
-      categories: ['2020', '2021'],
-      series: [{ name: 'Solar', data: [20, null] }]
-    },
-    extractedText: ['2020', '2021', 'Solar'],
-    uncertainties: [{ field: 'chart.series[0].data[1]', message: 'The 2021 value is unreadable.' }]
+    visuals: [{
+      kind: 'line',
+      title: 'Energy use',
+      xAxis: { categories: ['2020', '2021'] },
+      yAxis: { unit: '%' },
+      series: [{ name: 'Solar', values: [20, null] }]
+    }],
+    parseStatus: 'partial',
+    uncertainties: [{ location: 'visuals[0].series[0].values[1]', message: 'The 2021 value is unreadable.' }]
   })
-  assert.equal(parsed.chart?.series[0].data[1], null)
+  assert.equal(parsed.visuals[0].kind === 'line' ? parsed.visuals[0].series[0].values[1] : undefined, null)
   const question = buildConfirmedUploadedQuestion({
     uploadId: 'upload-1',
-    result: parsed,
-    questionText: parsed.questionText
+    result: parsed
   })
   assert.equal(question.generatedSource, 'user_upload')
-  assert.equal(question.chartSpec, undefined)
+  assert.equal(question.chartSpec?.series?.[0].values[1], null)
+  assert.equal(question.structuredData?.parseStatus, 'partial')
   assert.match(question.image || '', /uploaded-writing-tasks\/upload-1\/image/)
 })
 
-test('Task 2 upload keeps both questions and allows the detected type to be corrected', () => {
+test('Task 2 upload keeps the complete multi-question wording', () => {
   const parsed = UploadedTask2ResultSchema.parse({
     taskType: 'task2',
     questionText: 'Many people move to cities.\nWhy does this happen? Is this a positive or negative development?',
-    promptLead: 'Many people move to cities.',
-    promptDetail: 'Why does this happen? Is this a positive or negative development?',
     detectedQuestionType: 'two_part',
     requirements: ['Why does this happen?', 'Is this a positive or negative development?'],
     minimumWords: 250,
@@ -113,13 +120,94 @@ test('Task 2 upload keeps both questions and allows the detected type to be corr
   assert.equal(parsed.requirements.length, 2)
   const question = buildConfirmedUploadedQuestion({
     uploadId: 'upload-2',
-    result: parsed,
-    questionText: parsed.questionText,
-    detectedQuestionType: 'direct_question'
+    result: parsed
   })
-  assert.equal(question.questionType, 'direct_question')
+  assert.equal(question.questionType, 'two_part')
   assert.match(`${question.promptLead}\n${question.promptDetail}`, /Why does this happen\?/)
   assert.match(`${question.promptLead}\n${question.promptDetail}`, /positive or negative development\?/)
+})
+
+test('General Training Task 1 is preserved as a letter rather than Task 2', () => {
+  const parsed = UploadedTask1ResultSchema.parse({
+    taskType: 'task1_general_letter',
+    questionText: 'Write a letter to your local council. Explain the problem, describe its effect, and suggest a solution.',
+    visuals: [],
+    letter: {
+      situation: 'A local service has changed.',
+      recipient: 'Local council',
+      purpose: 'Request a solution',
+      bulletPoints: ['Explain the problem', 'Describe its effect', 'Suggest a solution'],
+      tone: 'formal'
+    },
+    uncertainties: []
+  })
+  const question = buildConfirmedUploadedQuestion({ uploadId: 'upload-letter', result: parsed })
+  assert.equal(question.taskType, 'task1')
+  assert.equal(question.trainingType, 'general')
+  assert.equal(question.questionType, 'letter')
+})
+
+test('Task 1 visual schema reconstructs line, pie, table, map, and process visuals', () => {
+  const visuals = [
+    {
+      kind: 'line',
+      title: 'Visitors',
+      xAxis: { categories: ['2020', '2021'] },
+      series: [{ name: 'Museum', values: [10, 20] }]
+    },
+    {
+      kind: 'pie',
+      title: 'Transport',
+      unit: '%',
+      slices: [{ label: 'Bus', value: 60 }, { label: 'Car', value: 40 }]
+    },
+    {
+      kind: 'table',
+      title: 'Population',
+      columns: ['City', '2025'],
+      rows: [['A', 20], ['B', null]]
+    },
+    {
+      kind: 'map',
+      title: 'Town centre',
+      locations: [{ name: 'Station', before: 'Old station', after: 'New station', features: ['road'] }]
+    },
+    {
+      kind: 'process',
+      title: 'Water treatment',
+      steps: [
+        { order: 1, label: 'Filter', next: [2] },
+        { order: 2, label: 'Store' }
+      ]
+    }
+  ]
+  visuals.forEach((visual) => assert.equal(UploadedTask1VisualSchema.safeParse(visual).success, true))
+})
+
+test('Mixed Task 1 keeps a line chart and pie chart as separate visuals', () => {
+  const parsed = UploadedTask1ResultSchema.parse({
+    taskType: 'task1_academic',
+    questionText: 'The charts below show transport use. Summarise the information.',
+    visuals: [
+      {
+        kind: 'line',
+        title: 'Use over time',
+        xAxis: { categories: ['2020', '2021'] },
+        series: [{ name: 'Rail', values: [20, 30] }]
+      },
+      {
+        kind: 'pie',
+        title: 'Share in 2021',
+        unit: '%',
+        slices: [{ label: 'Rail', value: 30 }, { label: 'Other', value: 70 }]
+      }
+    ],
+    uncertainties: []
+  })
+  const question = buildConfirmedUploadedQuestion({ uploadId: 'upload-mixed', result: parsed })
+  assert.equal(parsed.visuals.length, 2)
+  assert.equal(question.questionType, 'mixed_charts')
+  assert.deepEqual(question.chartSpec?.charts?.map((chart) => chart.chartType), ['line', 'pie'])
 })
 
 test('Single essay overall is calculated from exactly four criterion scores', () => {
@@ -508,6 +596,129 @@ test('grading model uses the dedicated qwen3.5-plus configuration', () => {
     else process.env.AI_MODEL = previousGeneralModel
     if (previousGradingModel === undefined) delete process.env.QWEN_GRADING_MODEL
     else process.env.QWEN_GRADING_MODEL = previousGradingModel
+  }
+})
+
+test('vision model is fixed to qwen3.5-plus and never falls back to another model', () => {
+  const previousKey = process.env.AI_API_KEY
+  const previousBaseUrl = process.env.AI_BASE_URL
+  const previousVisionModel = process.env.QWEN_VISION_MODEL
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  delete process.env.QWEN_VISION_MODEL
+
+  try {
+    assert.equal(getVisionAiConfig().model, 'qwen3.5-plus')
+    process.env.QWEN_VISION_MODEL = 'qwen3.7-plus'
+    assert.throws(() => getVisionAiConfig(), /QWEN_VISION_MODEL=qwen3\.5-plus/)
+  } finally {
+    if (previousKey === undefined) delete process.env.AI_API_KEY
+    else process.env.AI_API_KEY = previousKey
+    if (previousBaseUrl === undefined) delete process.env.AI_BASE_URL
+    else process.env.AI_BASE_URL = previousBaseUrl
+    if (previousVisionModel === undefined) delete process.env.QWEN_VISION_MODEL
+    else process.env.QWEN_VISION_MODEL = previousVisionModel
+  }
+})
+
+test('uploaded-task prompt ignores black, white, colored borders and surrounding app UI', () => {
+  assert.match(uploadedTaskSystemPrompt, /black bars/)
+  assert.match(uploadedTaskSystemPrompt, /white margins/)
+  assert.match(uploadedTaskSystemPrompt, /colored backgrounds/)
+  assert.match(uploadedTaskSystemPrompt, /mobile gallery controls/)
+  assert.match(uploadedTaskSystemPrompt, /browser UI/)
+  assert.match(uploadedTaskSystemPrompt, /page counters/)
+  assert.match(uploadedTaskSystemPrompt, /unrelated watermarks/)
+  assert.match(uploadedTaskSystemPrompt, /locate the actual IELTS writing task region/)
+  assert.match(uploadedTaskUserPrompt, /one separate visuals\[\] item per independent visual/)
+})
+
+test('uploaded-task recognition sends the signed image in OpenAI multimodal format with stream false', async () => {
+  const originalFetch = globalThis.fetch
+  const originalWarn = console.warn
+  const previousKey = process.env.AI_API_KEY
+  const previousBaseUrl = process.env.AI_BASE_URL
+  const previousVisionModel = process.env.QWEN_VISION_MODEL
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  process.env.QWEN_VISION_MODEL = 'qwen3.5-plus'
+  const requestBodies: Array<Record<string, unknown>> = []
+  const warnings: unknown[][] = []
+  console.warn = (...args: unknown[]) => warnings.push(args)
+  globalThis.fetch = (async (_input, init) => {
+    requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+    return new Response(JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            taskType: 'task2',
+            questionText: 'Some people prefer cities. To what extent do you agree or disagree?',
+            detectedQuestionType: 'agree_disagree',
+            requirements: ['To what extent do you agree or disagree?'],
+            minimumWords: 250,
+            suggestedMinutes: 40,
+            parseStatus: 'complete',
+            uncertainties: []
+          })
+        },
+        finish_reason: 'stop'
+      }]
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const parsed = await parseUploadedWritingTask({
+      signedImageUrl: 'https://storage.example.test/signed/task.png',
+      requestId: 'parse-non-stream-test'
+    })
+    const requestBody = requestBodies[0]
+    assert.ok(requestBody)
+    assert.equal(parsed.model, 'qwen3.5-plus')
+    assert.equal(requestBody.stream, false)
+    assert.deepEqual(requestBody.response_format, { type: 'json_object' })
+    const messages = requestBody.messages as Array<{ role: string; content: unknown[] }>
+    assert.deepEqual(messages.map((message) => message.role), ['system', 'user'])
+    assert.deepEqual(messages[1].content[0], {
+      type: 'image_url',
+      image_url: { url: 'https://storage.example.test/signed/task.png' }
+    })
+    assert.equal(warnings.some((args) => args[0] === '[ai-stream-invalid]'), false)
+  } finally {
+    globalThis.fetch = originalFetch
+    console.warn = originalWarn
+    if (previousKey === undefined) delete process.env.AI_API_KEY
+    else process.env.AI_API_KEY = previousKey
+    if (previousBaseUrl === undefined) delete process.env.AI_BASE_URL
+    else process.env.AI_BASE_URL = previousBaseUrl
+    if (previousVisionModel === undefined) delete process.env.QWEN_VISION_MODEL
+    else process.env.QWEN_VISION_MODEL = previousVisionModel
+  }
+})
+
+test('explicit image-input rejection is surfaced without model fallback', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    error: { code: 'InvalidParameter', message: 'This model does not support image input.' }
+  }), { status: 400, headers: { 'Content-Type': 'application/json' } })) as typeof fetch
+
+  try {
+    await assert.rejects(
+      () => fetchAiNonStreamingCompletion({
+        provider: 'qwen',
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        model: 'qwen3.5-plus'
+      }, [{
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'https://example.test/task.png' } }]
+      }], {
+        maxTokens: 100,
+        requestId: 'parse-image-unsupported'
+      }),
+      (error) => error instanceof AiProviderError && error.code === 'vision_model_image_input_unsupported'
+    )
+  } finally {
+    globalThis.fetch = originalFetch
   }
 })
 

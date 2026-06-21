@@ -183,7 +183,7 @@ test('mainland phone numbers normalize to E.164 and account labels never render 
   assert.throws(() => normalizeMainlandPhone('12345'))
 })
 
-test('phone OTP routes preserve email auth and never auto-create users from the login entry', async () => {
+test('legacy phone OTP routes remain isolated while public auth pages stay email-only', async () => {
   const [sendRoute, verifyRoute, loginPage, registerPage] = await Promise.all([
     readFile(new URL('../app/api/auth/phone/send/route.ts', import.meta.url), 'utf8'),
     readFile(new URL('../app/api/auth/phone/verify/route.ts', import.meta.url), 'utf8'),
@@ -198,9 +198,9 @@ test('phone OTP routes preserve email auth and never auto-create users from the 
   assert.match(sendRoute, /console\.error\('\[phone-otp-send\]', \{ error: error instanceof Error \? error\.name/)
   assert.match(verifyRoute, /console\.error\('\[phone-otp-verify\]', \{ error: error instanceof Error \? error\.name/)
   assert.match(loginPage, /邮箱登录/)
-  assert.match(loginPage, /手机号登录/)
   assert.match(registerPage, /邮箱注册/)
-  assert.match(registerPage, /手机号注册/)
+  assert.doesNotMatch(loginPage, /手机号登录|PhoneOtpForm/)
+  assert.doesNotMatch(registerPage, /手机号注册|PhoneOtpForm/)
 })
 
 test('agreement controls use one centered dialog and shared legal content without navigation', async () => {
@@ -316,13 +316,16 @@ test('legal pages share the current contact email, AI notice, and final terms ef
   assert.match(legalSections, /mailto:\$\{LegalContactEmail\}/)
 })
 
-test('practice settings share one responsive grid and include the authenticated custom-task upload flow', async () => {
-  const [selector, uploadPanel, parseRoute, writePage, migration, css] = await Promise.all([
+test('practice settings include automatic uploaded-task recognition and direct writing navigation', async () => {
+  const [selector, uploadPanel, parseRoute, parser, aiProvider, writePage, migration, followupMigration, css] = await Promise.all([
     readFile(new URL('../components/practice/WritingModeSelector.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/practice/UploadedTaskPanel.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/api/ai/parse-uploaded-writing-task/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/uploaded-writing-task-ai.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/ai-provider.ts', import.meta.url), 'utf8'),
     readFile(new URL('../app/write/[mode]/page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../supabase/migrations/20260620131332_custom_task_uploads_and_phone_profiles.sql', import.meta.url), 'utf8'),
+    readFile(new URL('../supabase/migrations/20260621040923_automate_uploaded_task_recognition.sql', import.meta.url), 'utf8'),
     readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
@@ -332,16 +335,24 @@ test('practice settings share one responsive grid and include the authenticated 
   assert.match(css, /\.practice-setting-row\s*\{[\s\S]*?grid-template-columns:/)
   assert.match(css, /@media \(max-width: 820px\)[\s\S]*?\.practice-setting-row,[\s\S]*?grid-template-columns:\s*1fr/)
   assert.match(uploadPanel, /image\/png,image\/jpeg,image\/webp/)
-  assert.match(uploadPanel, /questionText/)
-  assert.match(uploadPanel, /确认题目并开始练习/)
+  assert.match(uploadPanel, /自动判断 Task 1 \/ Task 2/)
+  assert.match(uploadPanel, /router\.push\(data\.redirectUrl\)/)
+  assert.doesNotMatch(uploadPanel, /确认题目|taskType.*setTaskType|form\.set\('taskType'/)
   assert.match(parseRoute, /requireActiveWebLicense/)
   assert.match(parseRoute, /validateImageUpload/)
   assert.match(parseRoute, /createSignedUrl/)
+  assert.match(parseRoute, /confirmed_question:\s*question/)
+  assert.match(parseRoute, /status:\s*'confirmed'/)
+  assert.match(parseRoute, /redirectUrl/)
+  assert.match(parser, /responseMode:\s*'non-stream'/)
+  assert.match(aiProvider, /stream:\s*false/)
   assert.match(writePage, /customTask/)
   assert.match(writePage, /normalizeGeneratedQuestion/)
+  assert.match(writePage, /部分图表数据未能完全复原/)
   assert.match(migration, /'writing-task-uploads',[\s\S]*?false,[\s\S]*?10485760/)
   assert.match(migration, /writing-task-uploads/)
   assert.match(migration, /storage\.foldername\(name\)/)
+  assert.match(followupMigration, /task_type in \('unknown', 'task1', 'task2'\)/)
 })
 
 test('writing heatmap positions the latest date at the right edge before paint', async () => {

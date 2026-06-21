@@ -39,7 +39,7 @@ function MixedChartPanel({ chart, containerWidth }: { chart: Task1StandaloneChar
 }
 
 export function MixedChartQuestion({ spec, containerWidth }: Props) {
-  if (!spec.charts || spec.charts.length !== 2) {
+  if (!spec.charts || spec.charts.length < 2) {
     return <div className="task1-chart-empty">组合图数据不完整</div>
   }
 

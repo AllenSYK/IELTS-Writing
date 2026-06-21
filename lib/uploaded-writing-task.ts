@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import type { WritingQuestion } from '@/lib/ielts-questions'
-import type { Task1ChartSpec, Task1MapSpec, Task1ProcessSpec } from '@/lib/task1-chart-schema'
+import type {
+  Task1ChartSpec,
+  Task1MapSpec,
+  Task1ProcessSpec,
+  Task1StandaloneChartSpec
+} from '@/lib/task1-chart-schema'
 
 export const UploadMaxBytes = 10 * 1024 * 1024
 export const UploadMaxPixels = 40_000_000
@@ -9,73 +14,138 @@ export const UploadMinDimension = 160
 export const UploadAllowedMimeTypes = ['image/png', 'image/jpeg', 'image/webp'] as const
 export const UploadAllowedExtensions = ['png', 'jpg', 'jpeg', 'webp'] as const
 
-export type UploadedWritingTaskType = 'task1' | 'task2'
-
-const UncertaintySchema = z.object({
-  field: z.string().min(1).max(120),
-  message: z.string().min(1).max(500)
-})
+export type UploadedWritingTaskType = 'task1_academic' | 'task1_general_letter' | 'task2' | 'unknown'
+export type UploadedWritingMode = 'task1' | 'task2'
 
 const NullableNumberSchema = z.number().finite().nullable()
 
+export const UploadedTaskUncertaintySchema = z.object({
+  location: z.string().min(1).max(240),
+  message: z.string().min(1).max(1_000)
+})
+
+const LineOrBarVisualSchema = z.object({
+  kind: z.enum(['line', 'bar']),
+  title: z.string().max(1_000).optional(),
+  xAxis: z.object({
+    label: z.string().max(300).optional(),
+    categories: z.array(z.string().min(1).max(300)).min(1).max(150)
+  }),
+  yAxis: z.object({
+    label: z.string().max(300).optional(),
+    unit: z.string().max(200).optional(),
+    min: z.number().finite().optional(),
+    max: z.number().finite().optional()
+  }).optional(),
+  series: z.array(z.object({
+    name: z.string().min(1).max(300),
+    values: z.array(NullableNumberSchema).min(1).max(150)
+  })).min(1).max(40)
+}).superRefine((visual, context) => {
+  visual.series.forEach((series, index) => {
+    if (series.values.length !== visual.xAxis.categories.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['series', index, 'values'],
+        message: 'series.values 长度必须与 xAxis.categories 一致'
+      })
+    }
+  })
+})
+
+const PieVisualSchema = z.object({
+  kind: z.literal('pie'),
+  title: z.string().max(1_000).optional(),
+  unit: z.string().max(200).optional(),
+  slices: z.array(z.object({
+    label: z.string().min(1).max(300),
+    value: NullableNumberSchema
+  })).min(1).max(100)
+})
+
+const TableVisualSchema = z.object({
+  kind: z.literal('table'),
+  title: z.string().max(1_000).optional(),
+  columns: z.array(z.string().min(1).max(300)).min(1).max(50),
+  rows: z.array(z.array(z.union([z.string().max(1_000), NullableNumberSchema])).max(50)).min(1).max(150)
+}).superRefine((visual, context) => {
+  visual.rows.forEach((row, index) => {
+    if (row.length !== visual.columns.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rows', index],
+        message: '表格每行单元格数量必须与 columns 一致'
+      })
+    }
+  })
+})
+
+const MapVisualSchema = z.object({
+  kind: z.literal('map'),
+  title: z.string().max(1_000).optional(),
+  locations: z.array(z.object({
+    name: z.string().max(300).optional(),
+    before: z.string().max(1_000).optional(),
+    after: z.string().max(1_000).optional(),
+    features: z.array(z.string().min(1).max(500)).max(40).default([]),
+    position: z.object({
+      x: z.number().min(0).max(100),
+      y: z.number().min(0).max(100)
+    }).optional()
+  })).min(1).max(100),
+  description: z.string().max(4_000).optional()
+})
+
+const ProcessVisualSchema = z.object({
+  kind: z.literal('process'),
+  title: z.string().max(1_000).optional(),
+  steps: z.array(z.object({
+    order: z.number().int().min(1).max(200),
+    label: z.string().min(1).max(500),
+    description: z.string().max(1_000).optional(),
+    next: z.array(z.number().int().min(1).max(200)).max(20).optional()
+  })).min(2).max(100)
+})
+
+export const UploadedTask1VisualSchema = z.union([
+  LineOrBarVisualSchema,
+  PieVisualSchema,
+  TableVisualSchema,
+  MapVisualSchema,
+  ProcessVisualSchema
+])
+
+export const UploadedTask1LetterSchema = z.object({
+  situation: z.string().min(1).max(4_000),
+  recipient: z.string().min(1).max(1_000),
+  purpose: z.string().min(1).max(2_000),
+  bulletPoints: z.array(z.string().min(1).max(1_000)).min(1).max(20),
+  tone: z.enum(['formal', 'semi_formal', 'informal'])
+})
+
 export const UploadedTask1ResultSchema = z.object({
-  taskType: z.literal('task1'),
-  questionText: z.string().min(10).max(12_000),
-  promptLead: z.string().min(1).max(8_000),
-  promptDetail: z.string().min(1).max(4_000),
-  instruction: z.string().max(4_000).default(''),
+  taskType: z.enum(['task1_academic', 'task1_general_letter']),
+  questionText: z.string().min(10).max(16_000),
   minimumWords: z.number().int().min(100).max(500).default(150),
   suggestedMinutes: z.number().int().min(10).max(90).default(20),
-  visualType: z.enum(['line', 'bar', 'pie', 'table', 'map', 'process', 'mixed', 'other']),
-  visualTitle: z.string().max(1_000).default(''),
-  unit: z.string().max(200).default(''),
-  chart: z.object({
-    categories: z.array(z.string().min(1).max(300)).min(1).max(100),
-    series: z.array(z.object({
-      name: z.string().min(1).max(300),
-      data: z.array(NullableNumberSchema).min(1).max(100)
-    })).min(1).max(30)
-  }).optional(),
-  process: z.object({
-    stages: z.array(z.object({
-      id: z.string().min(1).max(120),
-      label: z.string().min(1).max(500),
-      description: z.string().max(1_000).optional()
-    })).min(2).max(50),
-    connections: z.array(z.object({
-      from: z.string().min(1).max(120),
-      to: z.string().min(1).max(120),
-      label: z.string().max(300).optional()
-    })).max(100)
-  }).optional(),
-  map: z.object({
-    beforeLabel: z.string().max(200).default('Before'),
-    afterLabel: z.string().max(200).default('After'),
-    regions: z.array(z.object({
-      id: z.string().min(1).max(120),
-      label: z.string().min(1).max(500),
-      x: z.number().min(0).max(100).nullable(),
-      y: z.number().min(0).max(100).nullable(),
-      change: z.enum(['added', 'removed', 'modified', 'unchanged', 'uncertain']),
-      description: z.string().max(1_000).optional()
-    })).min(1).max(100)
-  }).optional(),
-  extractedText: z.array(z.string().min(1).max(1_000)).max(100).default([]),
-  uncertainties: z.array(UncertaintySchema).max(100).default([]),
-  taskTypeConflict: z.boolean().default(false)
-}).superRefine((value, context) => {
-  if (['line', 'bar', 'pie', 'table', 'mixed'].includes(value.visualType) && !value.chart) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['chart'], message: '图表类 Task 1 必须包含 chart' })
+  visuals: z.array(UploadedTask1VisualSchema).max(12).default([]),
+  letter: UploadedTask1LetterSchema.optional(),
+  sourceImagePath: z.string().max(1_000).default(''),
+  parseStatus: z.enum(['complete', 'partial']).default('complete'),
+  uncertainties: z.array(UploadedTaskUncertaintySchema).max(150).default([])
+}).superRefine((result, context) => {
+  if (result.taskType === 'task1_academic' && result.visuals.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['visuals'],
+      message: 'Academic Task 1 必须包含至少一个视觉材料'
+    })
   }
-  if (value.chart) {
-    value.chart.series.forEach((series, index) => {
-      if (series.data.length !== value.chart?.categories.length) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['chart', 'series', index, 'data'],
-          message: 'series.data 长度必须与 categories 一致'
-        })
-      }
+  if (result.taskType === 'task1_general_letter' && !result.letter) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['letter'],
+      message: 'General Training Task 1 必须包含信件情境和 bullet points'
     })
   }
 })
@@ -95,24 +165,32 @@ export const UploadedTask2QuestionTypeSchema = z.enum([
 
 export const UploadedTask2ResultSchema = z.object({
   taskType: z.literal('task2'),
-  questionText: z.string().min(10).max(12_000),
-  promptLead: z.string().min(1).max(8_000),
-  promptDetail: z.string().min(1).max(4_000),
+  questionText: z.string().min(10).max(16_000),
   detectedQuestionType: UploadedTask2QuestionTypeSchema,
-  requirements: z.array(z.string().min(1).max(1_000)).min(1).max(20),
+  requirements: z.array(z.string().min(1).max(1_000)).min(1).max(30),
   minimumWords: z.number().int().min(100).max(500).default(250),
   suggestedMinutes: z.number().int().min(10).max(90).default(40),
-  uncertainties: z.array(z.string().min(1).max(500)).max(100).default([]),
-  taskTypeConflict: z.boolean().default(false)
+  parseStatus: z.enum(['complete', 'partial']).default('complete'),
+  uncertainties: z.array(z.string().min(1).max(1_000)).max(150).default([])
+})
+
+export const UploadedUnknownResultSchema = z.object({
+  taskType: z.literal('unknown'),
+  reason: z.enum(['not_ielts_writing_task', 'image_too_unclear', 'missing_critical_content']),
+  message: z.string().min(1).max(1_000),
+  uncertainties: z.array(z.string().min(1).max(1_000)).max(100).default([])
 })
 
 export const UploadedWritingTaskResultSchema = z.union([
   UploadedTask1ResultSchema,
-  UploadedTask2ResultSchema
+  UploadedTask2ResultSchema,
+  UploadedUnknownResultSchema
 ])
 
+export type UploadedTask1Visual = z.infer<typeof UploadedTask1VisualSchema>
 export type UploadedTask1Result = z.infer<typeof UploadedTask1ResultSchema>
 export type UploadedTask2Result = z.infer<typeof UploadedTask2ResultSchema>
+export type UploadedUnknownResult = z.infer<typeof UploadedUnknownResultSchema>
 export type UploadedWritingTaskResult = z.infer<typeof UploadedWritingTaskResultSchema>
 
 export type ValidatedImage = {
@@ -245,133 +323,214 @@ function task2QuestionType(value: UploadedTask2Result['detectedQuestionType']) {
   return map[value]
 }
 
-function task1QuestionType(value: UploadedTask1Result['visualType']): WritingQuestion['questionType'] {
-  const map: Record<UploadedTask1Result['visualType'], WritingQuestion['questionType']> = {
+function splitQuestionText(questionText: string) {
+  const normalized = questionText.trim()
+  const paragraphBreak = normalized.lastIndexOf('\n\n')
+  const lineBreak = normalized.lastIndexOf('\n')
+  const splitAt = paragraphBreak > 0 ? paragraphBreak : lineBreak
+  if (splitAt <= 0) return { promptLead: normalized, promptDetail: '' }
+  return {
+    promptLead: normalized.slice(0, splitAt).trim(),
+    promptDetail: normalized.slice(splitAt).trim()
+  }
+}
+
+function seriesId(name: string, index: number) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `series_${index + 1}`
+}
+
+function visualToStandalone(visual: UploadedTask1Visual, index: number): Task1StandaloneChartSpec | null {
+  const title = visual.title || `Uploaded visual ${index + 1}`
+  if (visual.kind === 'line' || visual.kind === 'bar') {
+    return {
+      chartType: visual.kind,
+      title,
+      xAxis: visual.xAxis,
+      yAxis: visual.yAxis,
+      series: visual.series.map((series, seriesIndex) => ({
+        id: seriesId(series.name, seriesIndex),
+        name: series.name,
+        type: visual.kind,
+        values: series.values
+      })),
+      units: visual.yAxis?.unit || '',
+      legend: visual.series.length > 1
+    }
+  }
+  if (visual.kind === 'pie') {
+    return {
+      chartType: 'pie',
+      title,
+      pieData: visual.slices.map((slice) => ({ label: slice.label, value: slice.value })),
+      units: visual.unit || '',
+      legend: true
+    }
+  }
+  if (visual.kind === 'table') {
+    return {
+      chartType: 'table',
+      title,
+      tableData: { columns: visual.columns, rows: visual.rows },
+      units: '',
+      legend: false
+    }
+  }
+  return null
+}
+
+function uploadedChartSpec(result: UploadedTask1Result): Task1ChartSpec | undefined {
+  const charts = result.visuals
+    .map(visualToStandalone)
+    .filter((visual): visual is Task1StandaloneChartSpec => visual !== null)
+  if (charts.length === 0) return undefined
+  if (charts.length > 1) {
+    return {
+      kind: 'mixed',
+      title: 'Uploaded Task 1 visuals',
+      charts,
+      legend: true
+    }
+  }
+  const [chart] = charts
+  return {
+    kind: chart.chartType,
+    title: chart.title,
+    xAxis: chart.xAxis,
+    yAxis: chart.yAxis,
+    series: chart.series,
+    pieData: chart.pieData,
+    tableData: chart.tableData,
+    legend: chart.legend
+  }
+}
+
+function uploadedProcessSpec(result: UploadedTask1Result): Task1ProcessSpec | undefined {
+  const visual = result.visuals.find((item) => item.kind === 'process')
+  if (!visual || visual.kind !== 'process') return undefined
+  const orders = new Set(visual.steps.map((step) => step.order))
+  return {
+    title: visual.title || 'Uploaded Task 1 process',
+    stages: visual.steps.map((step) => ({
+      id: `step_${step.order}`,
+      label: step.label,
+      description: step.description
+    })),
+    connections: visual.steps.flatMap((step) => {
+      const next = step.next ?? []
+      return next
+        .filter((order) => orders.has(order))
+        .map((order) => ({ from: `step_${step.order}`, to: `step_${order}` }))
+    })
+  }
+}
+
+function uploadedMapSpec(result: UploadedTask1Result): Task1MapSpec | undefined {
+  const visual = result.visuals.find((item) => item.kind === 'map')
+  if (!visual || visual.kind !== 'map' || visual.locations.some((location) => !location.position)) return undefined
+  return {
+    title: visual.title || 'Uploaded Task 1 map',
+    beforeLabel: 'Before',
+    afterLabel: 'After',
+    features: visual.locations.map((location, index) => ({
+      id: `location_${index + 1}`,
+      label: location.name || `Location ${index + 1}`,
+      position: location.position!,
+      change: location.before === location.after ? 'unchanged' : 'modified',
+      description: [location.before, location.after, ...location.features].filter(Boolean).join(' → ')
+    }))
+  }
+}
+
+function task1QuestionType(result: UploadedTask1Result): WritingQuestion['questionType'] {
+  if (result.taskType === 'task1_general_letter') return 'letter'
+  const chartVisuals = result.visuals.filter((visual) => ['line', 'bar', 'pie', 'table'].includes(visual.kind))
+  if (chartVisuals.length > 1) return 'mixed_charts'
+  const first = result.visuals[0]
+  if (!first) return 'static_comparison'
+  const map: Record<UploadedTask1Visual['kind'], WritingQuestion['questionType']> = {
     line: 'line_chart',
     bar: 'bar_chart',
     pie: 'pie_chart',
     table: 'table',
     map: 'map',
-    process: 'process',
-    mixed: 'mixed_charts',
-    other: 'static_comparison'
+    process: 'process'
   }
-  return map[value]
+  return map[first.kind]
 }
 
-function reliableChartSpec(result: UploadedTask1Result): Task1ChartSpec | undefined {
-  if (!result.chart || result.uncertainties.length > 0) return undefined
-  const { categories, series } = result.chart
-  if (series.some((item) => item.data.length !== categories.length || item.data.some((value) => value === null))) return undefined
-  if (result.visualType === 'pie' && series.length === 1) {
-    return {
-      kind: 'pie',
-      title: result.visualTitle || 'Uploaded Task 1 chart',
-      pieData: categories.map((label, index) => ({ label, value: series[0].data[index] as number })),
-      legend: true
-    }
-  }
-  if (result.visualType !== 'line' && result.visualType !== 'bar') return undefined
-  const chartType = result.visualType
-  return {
-    kind: chartType,
-    title: result.visualTitle || 'Uploaded Task 1 chart',
-    xAxis: { categories },
-    yAxis: result.unit ? { unit: result.unit } : undefined,
-    series: series.map((item, index) => ({
-      id: `series_${index + 1}`,
-      name: item.name,
-      type: chartType,
-      values: item.data as number[]
-    })),
-    legend: series.length > 1
-  }
-}
-
-function reliableProcessSpec(result: UploadedTask1Result): Task1ProcessSpec | undefined {
-  if (result.visualType !== 'process' || !result.process || result.uncertainties.length > 0) return undefined
-  const ids = new Set(result.process.stages.map((stage) => stage.id))
-  if (result.process.connections.some((connection) => !ids.has(connection.from) || !ids.has(connection.to))) return undefined
-  return {
-    title: result.visualTitle || 'Uploaded Task 1 process',
-    stages: result.process.stages,
-    connections: result.process.connections
-  }
-}
-
-function reliableMapSpec(result: UploadedTask1Result): Task1MapSpec | undefined {
-  if (result.visualType !== 'map' || !result.map || result.uncertainties.length > 0) return undefined
-  if (result.map.regions.some((region) => region.x === null || region.y === null || region.change === 'uncertain')) return undefined
-  return {
-    title: result.visualTitle || 'Uploaded Task 1 map',
-    beforeLabel: result.map.beforeLabel,
-    afterLabel: result.map.afterLabel,
-    features: result.map.regions.map((region) => ({
-      id: region.id,
-      label: region.label,
-      position: { x: region.x as number, y: region.y as number },
-      change: region.change as Exclude<typeof region.change, 'uncertain'>,
-      description: region.description
-    }))
-  }
-}
-
-export function buildConfirmedUploadedQuestion(input: {
+export function buildUploadedWritingQuestion(input: {
   uploadId: string
-  result: UploadedWritingTaskResult
-  questionText: string
-  detectedQuestionType?: UploadedTask2Result['detectedQuestionType']
+  result: Exclude<UploadedWritingTaskResult, UploadedUnknownResult>
 }) {
-  const questionText = input.questionText.trim()
-  if (questionText.length < 10) throw new Error('题目文字过短，请检查识别结果')
-  const splitAt = questionText.lastIndexOf('\n')
-  const fallbackLead = splitAt > 0 ? questionText.slice(0, splitAt).trim() : questionText
-  const fallbackDetail = splitAt > 0 ? questionText.slice(splitAt + 1).trim() : ''
-  const image = `/api/user/uploaded-writing-tasks/${input.uploadId}/image`
+  const { promptLead, promptDetail } = splitQuestionText(input.result.questionText)
 
   if (input.result.taskType === 'task2') {
-    const detected = input.detectedQuestionType || input.result.detectedQuestionType
     return {
       id: `uploaded-${input.uploadId}`,
       taskType: 'task2',
       title: '自定义题目 · IELTS Task 2',
-      promptLead: fallbackLead || input.result.promptLead,
-      promptDetail: fallbackDetail || input.result.promptDetail,
+      promptLead,
+      promptDetail,
       durationMinutes: input.result.suggestedMinutes,
       wordTarget: input.result.minimumWords,
-      questionType: task2QuestionType(detected),
+      questionType: task2QuestionType(input.result.detectedQuestionType),
       generatedSource: 'user_upload',
       structuredData: {
         source: 'user_upload',
         uploadedTaskId: input.uploadId,
         requirements: input.result.requirements,
-        uncertainties: input.result.uncertainties
+        uncertainties: input.result.uncertainties,
+        parseStatus: input.result.parseStatus
       }
     } satisfies WritingQuestion
   }
 
+  const image = input.result.sourceImagePath || `/api/user/uploaded-writing-tasks/${input.uploadId}/image`
   return {
     id: `uploaded-${input.uploadId}`,
     taskType: 'task1',
-    title: '自定义题目 · IELTS Task 1',
-    promptLead: fallbackLead || input.result.promptLead,
-    promptDetail: fallbackDetail || input.result.promptDetail,
+    title: input.result.taskType === 'task1_general_letter'
+      ? '自定义题目 · General Training Task 1'
+      : '自定义题目 · Academic Task 1',
+    promptLead,
+    promptDetail,
     durationMinutes: input.result.suggestedMinutes,
     wordTarget: input.result.minimumWords,
-    questionType: task1QuestionType(input.result.visualType),
-    trainingType: 'academic',
+    questionType: task1QuestionType(input.result),
+    trainingType: input.result.taskType === 'task1_general_letter' ? 'general' : 'academic',
     generatedSource: 'user_upload',
     image,
-    imageAlt: '用户上传的 IELTS Task 1 原始图表',
-    chartSpec: reliableChartSpec(input.result),
-    processSpec: reliableProcessSpec(input.result),
-    mapSpec: reliableMapSpec(input.result),
+    imageAlt: '用户上传的 IELTS Task 1 原始题目图片',
+    chartSpec: uploadedChartSpec(input.result),
+    processSpec: uploadedProcessSpec(input.result),
+    mapSpec: uploadedMapSpec(input.result),
     structuredData: {
       source: 'user_upload',
       uploadedTaskId: input.uploadId,
-      extractedText: input.result.extractedText,
+      taskType: input.result.taskType,
+      visuals: input.result.visuals,
+      letter: input.result.letter,
       uncertainties: input.result.uncertainties,
-      visualType: input.result.visualType
+      parseStatus: input.result.parseStatus
     }
   } satisfies WritingQuestion
+}
+
+export function buildConfirmedUploadedQuestion(input: {
+  uploadId: string
+  result: Exclude<UploadedWritingTaskResult, UploadedUnknownResult>
+  questionText?: string
+  detectedQuestionType?: UploadedTask2Result['detectedQuestionType']
+}) {
+  const result = input.result.taskType === 'task2'
+    ? {
+        ...input.result,
+        questionText: input.questionText?.trim() || input.result.questionText,
+        detectedQuestionType: input.detectedQuestionType || input.result.detectedQuestionType
+      }
+    : {
+        ...input.result,
+        questionText: input.questionText?.trim() || input.result.questionText
+      }
+  return buildUploadedWritingQuestion({ uploadId: input.uploadId, result })
 }

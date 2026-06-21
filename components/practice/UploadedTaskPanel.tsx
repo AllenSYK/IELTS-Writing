@@ -4,28 +4,16 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { MaterialIcon } from '@/components/app-ui'
-import {
-  UploadedTask2QuestionTypeSchema,
-  validateImageUpload,
-  type UploadedTask2Result,
-  type UploadedWritingTaskResult,
-  type UploadedWritingTaskType
-} from '@/lib/uploaded-writing-task'
+import { validateImageUpload } from '@/lib/uploaded-writing-task'
 
-type UploadStatus =
-  | 'idle'
-  | 'selected'
-  | 'uploading'
-  | 'recognizing'
-  | 'success'
-  | 'confirming'
-  | 'error'
+type UploadStatus = 'idle' | 'selected' | 'processing' | 'error'
 
 type ParseResponse = {
   success?: boolean
-  uploadId?: string
-  previewUrl?: string
-  result?: UploadedWritingTaskResult
+  taskType?: 'task1_academic' | 'task1_general_letter' | 'task2'
+  parseStatus?: 'complete' | 'partial'
+  customTaskId?: string
+  redirectUrl?: string
   error?: {
     code?: string
     message?: string
@@ -33,17 +21,23 @@ type ParseResponse = {
   }
 }
 
-const task2TypeLabels: Record<UploadedTask2Result['detectedQuestionType'], string> = {
-  agree_disagree: '同意 / 不同意',
-  discuss_both_views: '讨论双方观点',
-  advantages_disadvantages: '优点与缺点',
-  outweigh: '利是否大于弊',
-  causes_solutions: '原因与解决方案',
-  problems_solutions: '问题与解决方案',
-  positive_negative: '积极或消极发展',
-  two_part: '双问题',
-  direct_question: '直接问题',
-  other: '其他题型'
+const progressStages = [
+  { title: '正在上传', detail: '正在校验并安全保存题目图片…' },
+  { title: '正在识别题目', detail: '正在定位试题区域并自动判断 Task 类型…' },
+  { title: '正在复原图表', detail: '正在提取题目文字、图表结构和可读数据…' },
+  { title: '正在创建练习', detail: '正在将识别结果保存到你的账号…' },
+  { title: '即将进入写作', detail: '练习已创建，正在打开对应写作页面…' }
+] as const
+
+const errorMessages: Record<string, string> = {
+  VISION_MODEL_NOT_CONFIGURED: '图片识别服务尚未配置，请稍后再试。',
+  VISION_MODEL_IMAGE_INPUT_UNSUPPORTED: '当前配置的图片识别模型暂时无法处理图片。',
+  SIGNED_IMAGE_UNAVAILABLE: '题目图片暂时无法提供给识别服务，请直接重试。',
+  TASK_IMAGE_PARSE_FAILED: '图片识别服务暂时不可用，请稍后直接重试。',
+  MODEL_RESPONSE_INVALID: '识别结果格式异常，请直接重新识别。',
+  TASK_NOT_RECOGNIZED: '未识别到 IELTS 写作题目，请检查图片后重新上传。',
+  TASK_IMAGE_TOO_UNCLEAR: '题目关键信息无法辨认，请换一张更清晰的图片。',
+  CUSTOM_TASK_CREATE_FAILED: '题目已识别，但创建写作练习失败，请直接重试。'
 }
 
 function formatBytes(bytes: number) {
@@ -56,28 +50,34 @@ function createRequestId() {
   return `parse_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }
 
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
 export function UploadedTaskPanel() {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
-  const recognitionTimerRef = useRef<number | null>(null)
-  const [taskType, setTaskType] = useState<UploadedWritingTaskType>('task1')
+  const inFlightRef = useRef(false)
+  const progressTimersRef = useRef<number[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [status, setStatus] = useState<UploadStatus>('idle')
-  const [uploadId, setUploadId] = useState('')
-  const [result, setResult] = useState<UploadedWritingTaskResult | null>(null)
-  const [questionText, setQuestionText] = useState('')
-  const [detectedQuestionType, setDetectedQuestionType] = useState<UploadedTask2Result['detectedQuestionType']>('other')
+  const [progressStage, setProgressStage] = useState(0)
   const [error, setError] = useState('')
   const [dragging, setDragging] = useState(false)
 
   useEffect(() => () => {
     if (previewUrl.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
-    if (recognitionTimerRef.current) window.clearTimeout(recognitionTimerRef.current)
+    progressTimersRef.current.forEach((timer) => window.clearTimeout(timer))
   }, [previewUrl])
 
+  function clearProgressTimers() {
+    progressTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    progressTimersRef.current = []
+  }
+
   async function validateAndSelect(nextFile: File | null) {
-    if (!nextFile) return
+    if (!nextFile || inFlightRef.current) return
     setError('')
     try {
       const bytes = new Uint8Array(await nextFile.arrayBuffer())
@@ -91,9 +91,7 @@ export function UploadedTaskPanel() {
       setFile(nextFile)
       setPreviewUrl(URL.createObjectURL(nextFile))
       setStatus('selected')
-      setResult(null)
-      setUploadId('')
-      setQuestionText('')
+      setProgressStage(0)
     } catch (caught) {
       setFile(null)
       setStatus('error')
@@ -101,31 +99,31 @@ export function UploadedTaskPanel() {
     }
   }
 
-  async function removeUpload() {
-    if (uploadId) {
-      await fetch(`/api/user/uploaded-writing-tasks/${encodeURIComponent(uploadId)}`, {
-        method: 'DELETE',
-        cache: 'no-store'
-      }).catch(() => undefined)
-    }
+  function removeUpload() {
+    if (inFlightRef.current) return
+    clearProgressTimers()
     if (previewUrl.startsWith('blob:')) URL.revokeObjectURL(previewUrl)
     setFile(null)
     setPreviewUrl('')
     setStatus('idle')
-    setUploadId('')
-    setResult(null)
-    setQuestionText('')
+    setProgressStage(0)
     setError('')
     if (inputRef.current) inputRef.current.value = ''
   }
 
   async function parseImage() {
-    if (!file || status === 'uploading' || status === 'recognizing') return
+    if (!file || inFlightRef.current) return
+    inFlightRef.current = true
     setError('')
-    setStatus('uploading')
-    recognitionTimerRef.current = window.setTimeout(() => setStatus('recognizing'), 450)
+    setStatus('processing')
+    setProgressStage(0)
+    clearProgressTimers()
+    progressTimersRef.current = [
+      window.setTimeout(() => setProgressStage(1), 650),
+      window.setTimeout(() => setProgressStage(2), 2_400)
+    ]
+
     const form = new FormData()
-    form.set('taskType', taskType)
     form.set('requestId', createRequestId())
     form.set('file', file)
 
@@ -136,43 +134,23 @@ export function UploadedTaskPanel() {
         cache: 'no-store'
       })
       const data = await response.json().catch(() => ({})) as ParseResponse
-      if (!response.ok || !data.success || !data.uploadId || !data.result) {
-        throw new Error(data.error?.message || '题目识别失败，请重新上传清晰图片。')
+      if (!response.ok || !data.success || !data.customTaskId || !data.redirectUrl) {
+        const fallback = data.error?.code ? errorMessages[data.error.code] : ''
+        throw new Error(fallback || data.error?.message || '题目图片识别失败，请直接重试。')
       }
-      setUploadId(data.uploadId)
-      setResult(data.result)
-      setQuestionText(data.result.questionText)
-      if (data.result.taskType === 'task2') setDetectedQuestionType(data.result.detectedQuestionType)
-      setStatus('success')
-    } catch (caught) {
-      setStatus('error')
-      setError(caught instanceof Error ? caught.message : '题目识别失败，请重新上传清晰图片。')
-    } finally {
-      if (recognitionTimerRef.current) window.clearTimeout(recognitionTimerRef.current)
-      recognitionTimerRef.current = null
-    }
-  }
 
-  async function confirmTask() {
-    if (!uploadId || !result || status === 'confirming') return
-    setStatus('confirming')
-    setError('')
-    try {
-      const response = await fetch(`/api/user/uploaded-writing-tasks/${encodeURIComponent(uploadId)}/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          questionText,
-          ...(result.taskType === 'task2' ? { detectedQuestionType } : {})
-        }),
-        cache: 'no-store'
-      })
-      const data = await response.json().catch(() => ({})) as { success?: boolean; message?: string }
-      if (!response.ok || !data.success) throw new Error(data.message || '题目确认失败')
-      router.push(`/write/${result.taskType}?customTask=${encodeURIComponent(uploadId)}`)
+      clearProgressTimers()
+      setProgressStage(3)
+      await wait(220)
+      setProgressStage(4)
+      await wait(180)
+      router.push(data.redirectUrl)
     } catch (caught) {
-      setStatus('success')
-      setError(caught instanceof Error ? caught.message : '题目确认失败，请重试。')
+      clearProgressTimers()
+      setStatus('error')
+      setError(caught instanceof Error ? caught.message : '题目图片识别失败，请直接重试。')
+    } finally {
+      inFlightRef.current = false
     }
   }
 
@@ -186,10 +164,8 @@ export function UploadedTaskPanel() {
     void validateAndSelect(event.dataTransfer.files?.[0] ?? null)
   }
 
-  const busy = status === 'uploading' || status === 'recognizing' || status === 'confirming'
-  const uncertainties = result?.taskType === 'task1'
-    ? result.uncertainties.map((item) => `${item.field}：${item.message}`)
-    : result?.uncertainties ?? []
+  const busy = status === 'processing'
+  const currentStage = progressStages[progressStage]
 
   return (
     <section className="custom-task-panel" aria-labelledby="custom-task-title">
@@ -197,21 +173,7 @@ export function UploadedTaskPanel() {
         <div>
           <p className="ui-label">自定义练习</p>
           <h3 id="custom-task-title">上传自己的题目</h3>
-          <p>上传 IELTS 写作题目图片，系统识别内容后由你确认，再进入现有答题和批改流程。</p>
-        </div>
-        <div className="custom-task-type" role="group" aria-label="选择上传题目的 Task 类型">
-          {(['task1', 'task2'] as const).map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={taskType === type ? 'is-active' : ''}
-              aria-pressed={taskType === type}
-              disabled={busy || Boolean(result)}
-              onClick={() => setTaskType(type)}
-            >
-              {type === 'task1' ? 'Task 1' : 'Task 2'}
-            </button>
-          ))}
+          <p>上传 IELTS 写作题目图片，系统会自动判断 Task 类型、复原可读视觉材料，并直接进入写作。</p>
         </div>
       </div>
 
@@ -230,7 +192,7 @@ export function UploadedTaskPanel() {
         >
           <span className="custom-task-upload-icon"><MaterialIcon name="add_photo_alternate" size={28} /></span>
           <strong>点击选择或拖拽题目图片</strong>
-          <span>支持 PNG、JPG/JPEG、WebP；单张最大 10 MB。手机端可拍照或从相册选择。</span>
+          <span>支持 PNG、JPG/JPEG、WebP；单张最大 10 MB。图片可包含边框、相册界面、浏览器 UI 或杂乱背景。</span>
         </button>
       ) : (
         <div className="custom-task-workspace">
@@ -249,90 +211,32 @@ export function UploadedTaskPanel() {
               <span><MaterialIcon name="image" size={20} /></span>
               <div>
                 <strong>{file.name}</strong>
-                <small>{formatBytes(file.size)} · {taskType === 'task1' ? 'IELTS Task 1' : 'IELTS Task 2'}</small>
+                <small>{formatBytes(file.size)} · 自动判断 Task 1 / Task 2</small>
               </div>
-              <button type="button" onClick={() => void removeUpload()} disabled={busy} aria-label="删除或更换图片">
+              <button type="button" onClick={removeUpload} disabled={busy} aria-label="删除或更换图片">
                 <MaterialIcon name="delete" size={18} />
               </button>
             </div>
 
             {status === 'selected' || status === 'error' ? (
-              <button className="ui-primary-button custom-task-primary" type="button" onClick={() => void parseImage()}>
+              <button
+                className="ui-primary-button custom-task-primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void parseImage()}
+              >
                 <MaterialIcon name="document_scanner" size={18} />
                 上传并识别
               </button>
             ) : null}
 
-            {status === 'uploading' || status === 'recognizing' ? (
+            {busy ? (
               <div className="custom-task-progress" role="status" aria-live="polite">
                 <span className="custom-task-spinner" />
                 <div>
-                  <strong>{status === 'uploading' ? '正在安全上传' : '正在识别题目'}</strong>
-                  <span>{status === 'uploading' ? '正在校验文件与图片尺寸…' : '正在提取题目文字和图表结构，请稍候…'}</span>
+                  <strong>{currentStage.title}</strong>
+                  <span>{currentStage.detail}</span>
                 </div>
-              </div>
-            ) : null}
-
-            {result ? (
-              <div className="custom-task-result">
-                <div className="custom-task-result-heading">
-                  <span><MaterialIcon name="check_circle" filled size={20} />识别完成，请确认</span>
-                  <button type="button" onClick={() => void removeUpload()} disabled={busy}>重新上传</button>
-                </div>
-
-                {result.taskTypeConflict ? (
-                  <p className="custom-task-warning" role="alert">
-                    图片内容可能与所选任务类型不一致，请检查后重试。
-                  </p>
-                ) : null}
-
-                <label className="custom-task-editor">
-                  <span>识别出的题目文字</span>
-                  <textarea value={questionText} onChange={(event) => setQuestionText(event.target.value)} rows={8} />
-                </label>
-
-                {result.taskType === 'task2' ? (
-                  <label className="custom-task-editor">
-                    <span>题型</span>
-                    <select
-                      value={detectedQuestionType}
-                      onChange={(event) => {
-                        const parsed = UploadedTask2QuestionTypeSchema.safeParse(event.target.value)
-                        if (parsed.success) setDetectedQuestionType(parsed.data)
-                      }}
-                    >
-                      {Object.entries(task2TypeLabels).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <dl className="custom-task-structure">
-                    <div><dt>图表类型</dt><dd>{result.visualType}</dd></div>
-                    <div><dt>标题</dt><dd>{result.visualTitle || '未识别'}</dd></div>
-                    <div><dt>单位</dt><dd>{result.unit || '未标注'}</dd></div>
-                    <div><dt>数据系列</dt><dd>{result.chart?.series.length ?? 0}</dd></div>
-                  </dl>
-                )}
-
-                {uncertainties.length > 0 ? (
-                  <div className="custom-task-uncertainties">
-                    <strong>需要你重点核对</strong>
-                    <ul>
-                      {uncertainties.map((item) => <li key={item}>{item}</li>)}
-                    </ul>
-                  </div>
-                ) : null}
-
-                <button
-                  className="ui-primary-button custom-task-primary"
-                  type="button"
-                  disabled={busy || questionText.trim().length < 10 || result.taskTypeConflict}
-                  onClick={() => void confirmTask()}
-                >
-                  <MaterialIcon name="edit_note" size={18} />
-                  {status === 'confirming' ? '正在创建练习' : '确认题目并开始练习'}
-                </button>
               </div>
             ) : null}
           </div>
@@ -349,7 +253,7 @@ export function UploadedTaskPanel() {
       {error ? <p className="custom-task-error" role="alert">{error}</p> : null}
       <p className="custom-task-security">
         <MaterialIcon name="lock" size={15} />
-        图片仅保存到当前账号的私有空间，不会生成公共永久链接；PDF 暂未支持。
+        图片和自定义练习仅绑定当前账号；原图保存在私有空间，用于 Task 1 写作时核对。
       </p>
     </section>
   )

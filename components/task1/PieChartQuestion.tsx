@@ -14,10 +14,10 @@ type Props = {
 export function PieChartQuestion({ spec, containerWidth }: Props) {
   const data = useMemo(() => {
     if (!spec.pieData) return []
-    return spec.pieData.map(d => ({
+    return spec.pieData.flatMap(d => d.value === null ? [] : [{
       name: d.label,
       value: d.value
-    }))
+    }])
   }, [spec])
 
   if (!spec.pieData || data.length === 0) {

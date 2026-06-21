@@ -45,17 +45,17 @@ export const Task1SeriesSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   type: z.enum(['line', 'bar']).optional(),
-  values: z.array(z.number()).min(1)
+  values: z.array(z.number().nullable()).min(1)
 })
 
 export const Task1PieDataSchema = z.object({
   label: z.string().min(1),
-  value: z.number().finite()
+  value: z.number().finite().nullable()
 })
 
 export const Task1TableDataSchema = z.object({
   columns: z.array(z.string()).min(1),
-  rows: z.array(z.array(z.union([z.string(), z.number()]))).min(1)
+  rows: z.array(z.array(z.union([z.string(), z.number(), z.null()]))).min(1)
 })
 
 export const Task1StandaloneChartSpecSchema = z.object({
@@ -83,7 +83,7 @@ export const Task1ChartSpecSchema = z.object({
   series: z.array(Task1SeriesSchema).optional(),
   pieData: z.array(Task1PieDataSchema).optional(),
   tableData: Task1TableDataSchema.optional(),
-  charts: z.array(Task1StandaloneChartSpecSchema).length(2).optional(),
+  charts: z.array(Task1StandaloneChartSpecSchema).min(2).max(12).optional(),
   legend: z.boolean().optional(),
   source: z.string().optional()
 })
@@ -161,10 +161,16 @@ function toStringArray(value: unknown): string[] | undefined {
   return output.length > 0 ? output : undefined
 }
 
-function toNumberArray(value: unknown): number[] | undefined {
+function toNumberArray(value: unknown): Array<number | null> | undefined {
   if (!Array.isArray(value)) return undefined
-  const output = value.map((item) => typeof item === 'number' ? item : Number(item))
-  return output.length > 0 && output.every(Number.isFinite) ? output : undefined
+  const output = value.map((item) => {
+    if (item === null) return null
+    const number = typeof item === 'number' ? item : Number(item)
+    return number
+  })
+  return output.length > 0 && output.every((item) => item === null || Number.isFinite(item))
+    ? output
+    : undefined
 }
 
 function normalizeStandaloneKind(value: unknown, hint?: Task1StandaloneChartKind): Task1StandaloneChartKind | undefined {
@@ -246,15 +252,16 @@ function normalizePieData(value: unknown, labelsValue?: unknown): z.infer<typeof
   const labels = toStringArray(labelsValue) || []
   const output = value.flatMap((item, index) => {
     if (isRecord(item)) {
-      const numericValue = Number(firstDefined(item.value, item.amount, item.percentage, item.data))
-      if (!Number.isFinite(numericValue)) return []
+      const rawValue = firstDefined(item.value, item.amount, item.percentage, item.data)
+      const numericValue = rawValue === null ? null : Number(rawValue)
+      if (numericValue !== null && !Number.isFinite(numericValue)) return []
       return [{
         label: toStringValue(firstDefined(item.label, item.name, item.category)) || labels[index] || `Category ${index + 1}`,
         value: numericValue
       }]
     }
-    const numericValue = Number(item)
-    if (!Number.isFinite(numericValue)) return []
+    const numericValue = item === null ? null : Number(item)
+    if (numericValue !== null && !Number.isFinite(numericValue)) return []
     return [{ label: labels[index] || `Category ${index + 1}`, value: numericValue }]
   })
   return output.length > 0 ? output : undefined
@@ -266,7 +273,7 @@ function normalizeTableData(value: unknown, fallbackColumns?: unknown, fallbackR
   const rawRows = firstDefined(table.rows, table.data, fallbackRows)
   if (!columns || !Array.isArray(rawRows)) return undefined
   const rows = rawRows.filter(Array.isArray).map((row) =>
-    row.map((cell) => typeof cell === 'number' ? cell : String(cell))
+    row.map((cell) => cell === null ? null : typeof cell === 'number' ? cell : String(cell))
   )
   return rows.length > 0 ? { columns, rows } : undefined
 }
@@ -503,7 +510,7 @@ export function validateChartSpec(spec: unknown, expectedKind?: Task1ChartKind):
     }
     if (data.series) {
       for (const s of data.series) {
-        if (!s.values.every(v => Number.isFinite(v))) {
+        if (!s.values.every(v => v === null || Number.isFinite(v))) {
           errors.push(`Series "${s.name}" contains non-finite values`)
         }
       }
@@ -511,8 +518,8 @@ export function validateChartSpec(spec: unknown, expectedKind?: Task1ChartKind):
   }
 
   if (data.kind === 'mixed') {
-    if (!data.charts || data.charts.length !== 2) {
-      errors.push('Mixed chart requires exactly two independently renderable chart objects')
+    if (!data.charts || data.charts.length < 2) {
+      errors.push('Mixed chart requires at least two independently renderable chart objects')
     } else {
       data.charts.forEach((chart, index) => {
         errors.push(...standaloneValidationErrors(chart, `charts.${index}`))
@@ -525,8 +532,9 @@ export function validateChartSpec(spec: unknown, expectedKind?: Task1ChartKind):
       errors.push('Pie chart requires pieData')
     }
     if (data.pieData) {
-      const total = data.pieData.reduce((sum, d) => sum + d.value, 0)
-      if (Math.abs(total - 100) > 5) {
+      const knownValues = data.pieData.flatMap((item) => item.value === null ? [] : [item.value])
+      const total = knownValues.reduce((sum, value) => sum + value, 0)
+      if (knownValues.length === data.pieData.length && Math.abs(total - 100) > 5) {
         errors.push(`Pie data total is ${total}, expected ~100`)
       }
     }
