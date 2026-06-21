@@ -102,9 +102,9 @@ export async function POST(request: Request) {
       .update({ consumed_at: now.toISOString() })
       .eq('id', verification.id)
 
-    sendWelcomeEmail(email).catch((error) => {
-      console.error('[welcome-email]', error instanceof Error ? error.message : 'send failed')
-    })
+    // sendWelcomeEmail(email).catch((error) => {
+    //   console.error('[welcome-email]', error instanceof Error ? error.message : 'send failed')
+    // })
 
     return json({ success: true, message: '账号已创建，现在可以登录。' })
   } catch (error) {
