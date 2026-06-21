@@ -2760,6 +2760,37 @@ img {
   animation: subtle-spin 900ms linear infinite;
 }
 
+.analytics-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.analytics-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.analytics-refresh-btn .is-spinning {
+  animation: subtle-spin 900ms linear infinite;
+}
+
+.analytics-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(186, 26, 26, 0.08);
+  color: #ba1a1a;
+  font-size: 13px;
+}
+
 .analytics-main {
   width: min(1280px, calc(100% - 80px));
   margin: 0 auto;
@@ -8865,6 +8896,16 @@ body.is-resizing-editor * {
   }
 
   .history-refresh-btn span {
+    display: none;
+  }
+
+  .analytics-refresh-btn {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .analytics-refresh-btn span {
     display: none;
   }
 
