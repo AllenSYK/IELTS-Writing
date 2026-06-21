@@ -157,7 +157,7 @@ export default function SettingsPage() {
             <ProfileAvatar profile={draftProfile} size="lg" label="个人资料头像" />
             <div className="settings-profile-copy">
               <span className="settings-profile-kicker">个人资料</span>
-              <h1 className="ui-title-headline">{draftProfile.fullName}</h1>
+              <h2 className="ui-title-headline">{draftProfile.fullName}</h2>
               <p className="settings-account-label" title={accountLabel || undefined}>
                 {accountLabel || '账号信息加载中'}
               </p>

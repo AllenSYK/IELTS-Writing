@@ -137,19 +137,26 @@ test('User Home navigation targets the account center without a client redirect 
   assert.doesNotMatch(appShell, /写作概览/)
 })
 
-test('shared app header keeps creation access and removes the top-right avatar', async () => {
+test('shared app header keeps one aligned title and removes duplicate creation controls', async () => {
   const [header, shell, css] = await Promise.all([
     readFile(new URL('../components/layout/AppHeader.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
-  assert.match(header, /href="\/practice"[\s\S]*?开始创作/)
+  assert.doesNotMatch(header, /开始创作|Start Writing|app-header-create/)
+  assert.doesNotMatch(header, /subtitle|ui-label/)
+  assert.match(header, /<h1 className="app-header-title">/)
+  assert.match(header, /className="app-header-inner"/)
   assert.match(header, /MaterialIcon name="share"/)
   assert.match(header, /MaterialIcon name="settings"/)
   assert.doesNotMatch(header, /ProfileAvatar|useUserProfile/)
-  assert.match(shell, /<AppHeader title=\{meta\.title\} subtitle=\{meta\.subtitle\}/)
+  assert.match(shell, /<AppHeader title=\{meta\.title\} \/>/)
+  assert.match(shell, /useLayoutEffect/)
+  assert.match(shell, /containerScrolls[\s\S]*?scrollTo\(\{ top: 0/)
+  assert.match(shell, /document\.scrollingElement/)
   assert.match(css, /\.app-header\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?z-index:\s*40;/)
+  assert.match(css, /\.app-header-inner\s*\{[\s\S]*?width:\s*min\(var\(--content-max\), 100%\);[\s\S]*?margin-inline:\s*auto;/)
 })
 
 test('auth forms require explicit agreement consent and record versions server-side', async () => {

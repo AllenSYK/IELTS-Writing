@@ -1,9 +1,9 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
+import { useToast } from '@/components/interaction-system'
 import {
   DefaultPromptSelection,
   Task1ChartLabels,
@@ -20,7 +20,9 @@ import {
 import type { WritingTaskType } from '@/lib/writing-records'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { userScopedStorageKey } from '@/lib/user-storage'
+import { createDraftRequestId, createManagedDraft, DraftErrorMessages } from '@/lib/writing-drafts'
 import { UploadedTaskPanel } from '@/components/practice/UploadedTaskPanel'
+import { DraftManager } from '@/components/practice/DraftManager'
 
 type ModeCard = {
   mode: WritingTaskType
@@ -112,9 +114,12 @@ function PracticeSettingRow({
   )
 }
 
-export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
+export function WritingModeSelector({ modes, initialDraftsOpen = false }: { modes: ModeCard[]; initialDraftsOpen?: boolean }) {
   const router = useRouter()
   const { userId } = useUserSession()
+  const { pushToast } = useToast()
+  const startingRef = useRef(false)
+  const startRequestIdsRef = useRef<Partial<Record<WritingTaskType, string>>>({})
   const [selection, setSelection] = useState<PromptSelection>(() => {
     if (typeof window === 'undefined' || !userId) return DefaultPromptSelection
     try {
@@ -124,6 +129,7 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
     }
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [startingMode, setStartingMode] = useState<WritingTaskType | null>(null)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
 
@@ -143,15 +149,43 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
     router.prefetch(buildHref(mode, selection))
   }
 
+  async function startMode(mode: WritingTaskType) {
+    if (!userId || startingRef.current) return
+    startingRef.current = true
+    setStartingMode(mode)
+    try {
+      const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
+      startRequestIdsRef.current[mode] = requestId
+      const payload = await createManagedDraft(mode, selection, requestId)
+      delete startRequestIdsRef.current[mode]
+      const params = searchParamsForSelection(mode, selection)
+      params.set('draft', payload.draft.id)
+      router.push(`/write/${mode}?${params.toString()}`)
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+      pushToast({
+        kind: 'error',
+        title: '暂时无法创建草稿',
+        message: DraftErrorMessages[code] || (error instanceof Error ? error.message : '请稍后重试。')
+      })
+    } finally {
+      startingRef.current = false
+      setStartingMode(null)
+    }
+  }
+
   return (
     <>
       <div className="mode-grid">
         {modes.map((mode) => (
-          <Link
+          <button
             key={mode.mode}
-            href={buildHref(mode.mode, selection)}
-            prefetch
-            aria-label={`Start ${mode.title}`}
+            className="mode-card-trigger"
+            type="button"
+            aria-label={`开始 ${mode.title}`}
+            disabled={startingMode !== null}
+            aria-busy={startingMode === mode.mode || undefined}
+            onClick={() => void startMode(mode.mode)}
             onPointerEnter={() => prefetchMode(mode.mode)}
             onFocus={() => prefetchMode(mode.mode)}
           >
@@ -181,13 +215,15 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
                   {mode.words}
                 </span>
                 <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
-                  {mode.action}
+                  {startingMode === mode.mode ? '正在创建…' : mode.action}
                 </span>
               </div>
             </GlassPanel>
-          </Link>
+          </button>
         ))}
       </div>
+
+      <DraftManager initialOpen={initialDraftsOpen} />
 
       <GlassPanel level={2} className="prompt-choice-panel">
         <div className="settings-section-header">
@@ -211,16 +247,17 @@ export function WritingModeSelector({ modes }: { modes: ModeCard[] }) {
           <PracticeSettingRow title="练习模式" description="选择单项练习或完整 60 分钟模考。">
             <div className="choice-chip-row">
               {modes.map((mode) => (
-                <Link
+                <button
                   key={mode.mode}
                   className="choice-chip choice-link"
-                  href={buildHref(mode.mode, selection)}
-                  prefetch
+                  type="button"
+                  disabled={startingMode !== null}
+                  onClick={() => void startMode(mode.mode)}
                   onPointerEnter={() => prefetchMode(mode.mode)}
                   onFocus={() => prefetchMode(mode.mode)}
                 >
-                  {mode.title}
-                </Link>
+                  {startingMode === mode.mode ? '正在创建…' : mode.title}
+                </button>
               ))}
             </div>
           </PracticeSettingRow>

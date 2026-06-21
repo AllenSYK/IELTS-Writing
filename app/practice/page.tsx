@@ -48,7 +48,7 @@ const modes = [
 export default async function PracticePage({
   searchParams
 }: {
-  searchParams?: Promise<{ focus?: string }>
+  searchParams?: Promise<{ focus?: string; drafts?: string }>
 }) {
   const params = searchParams ? await searchParams : {}
   const focus = params.focus && params.focus in focusLabels ? (params.focus as PracticeFocus) : null
@@ -56,11 +56,6 @@ export default async function PracticePage({
   return (
     <main className="mode-page" data-main-content tabIndex={-1}>
       <section className="mode-main">
-        <header className="mode-header">
-          <h1 className="ui-title-display">IELTS Writing</h1>
-          <p className="ui-body-lg">选择练习模式，按考试时间完成写作。</p>
-        </header>
-
         {focus ? (
           <GlassPanel level={2} className="practice-focus-banner">
             <span className="mode-icon">
@@ -74,7 +69,10 @@ export default async function PracticePage({
           </GlassPanel>
         ) : null}
 
-        <WritingModeSelector modes={modes.map((mode) => ({ ...mode, recommended: Boolean(focus && mode.focuses.includes(focus)) }))} />
+        <WritingModeSelector
+          initialDraftsOpen={params.drafts === '1'}
+          modes={modes.map((mode) => ({ ...mode, recommended: Boolean(focus && mode.focuses.includes(focus)) }))}
+        />
       </section>
     </main>
   )

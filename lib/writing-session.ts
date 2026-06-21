@@ -97,8 +97,8 @@ export function mockDraftKey(userId: string, taskType: Exclude<WritingTaskType, 
   return userScopedStorageKey(`ielts-writing-draft-mock-${taskType}`, userId)
 }
 
-export function timerKeyFor(userId: string, mode: WritingTaskType) {
-  return userScopedStorageKey(`ielts-writing-timer-${mode}`, userId)
+export function timerKeyFor(userId: string, mode: WritingTaskType, draftId?: string | null) {
+  return userScopedStorageKey(`ielts-writing-timer-${mode}${draftId ? `-${draftId}` : ''}`, userId)
 }
 
 function questionCacheKey(
@@ -343,7 +343,7 @@ export function restoreQuestionFromRecord(source: QuestionSource): WritingQuesti
   }
 }
 
-export function readTimerEnd(timerKey: string, durationMinutes: number) {
+export function readTimerEnd(timerKey: string, durationMinutes: number, restoredSeconds?: number) {
   const durationMs = durationMinutes * 60 * 1_000
   const raw = window.localStorage.getItem(timerKey)
   if (raw) {
@@ -355,7 +355,10 @@ export function readTimerEnd(timerKey: string, durationMinutes: number) {
     }
   }
 
-  const endAt = Date.now() + durationMs
+  const restoredMs = typeof restoredSeconds === 'number'
+    ? Math.max(0, Math.min(durationMs, restoredSeconds * 1_000))
+    : durationMs
+  const endAt = Date.now() + restoredMs
   window.localStorage.setItem(timerKey, JSON.stringify({ endAt, durationMs, startedAt: Date.now() }))
   return endAt
 }

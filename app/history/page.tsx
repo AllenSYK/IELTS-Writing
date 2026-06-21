@@ -237,8 +237,8 @@ export default function HistoryPage() {
             />
           </label>
           <select className="filter-select" value={sortFilter} onChange={(event) => setSortFilter(event.target.value as SortFilter)} aria-label="排序方式">
-            <option value="newest">Newest first</option>
-            <option value="oldest">Oldest first</option>
+            <option value="newest">最新优先</option>
+            <option value="oldest">最早优先</option>
             <option value="score-high">分数从高到低</option>
             <option value="score-low">分数从低到高</option>
           </select>

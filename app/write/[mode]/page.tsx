@@ -34,15 +34,10 @@ import {
   type EssayEvaluationRequest
 } from '@/lib/writing-evaluation'
 import {
-  mockDraftKey,
-  deleteAccountDraft,
-  readAccountDraft,
   readTimerEnd,
   normalizeGeneratedQuestion,
   restoreQuestionFromRecord,
-  singleDraftKey,
-  timerKeyFor,
-  writeDraft
+  timerKeyFor
 } from '@/lib/writing-session'
 import { markGeneratedPromptCompleted } from '@/lib/generated-prompt-history'
 import { generateQuestionForSelection } from '@/lib/writing-question-generation'
@@ -52,6 +47,9 @@ import {
   Task1SubtypeLabels,
   Task2EssayLabels,
   Task2TopicLabels,
+  normalizeTask1ChartType,
+  normalizeTask2EssayType,
+  normalizeTask2Topic,
   selectionFromSearchParams,
   type PromptSelection
 } from '@/lib/writing-options'
@@ -63,6 +61,19 @@ import {
   parseWritingEditorSplitRatio,
   WritingEditorDividerWidth
 } from '@/lib/writing-editor-layout'
+import {
+  DraftErrorMessages,
+  completeManagedDraft,
+  createManagedDraft,
+  draftTaskFromQuestion,
+  fetchManagedDraft,
+  initialManagedDraft,
+  saveManagedDraft,
+  type DraftTask,
+  type FullTestDraftData,
+  type ManagedDraftData,
+  type SingleDraftData
+} from '@/lib/writing-drafts'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
@@ -100,6 +111,39 @@ function defaultQuestionFor(mode: WritingTaskType, selection = DefaultPromptSele
   return randomQuestionForSelection(mode === 'task1' ? 'task1' : 'task2', selection)
 }
 
+function questionFromDraftTask(task: DraftTask | undefined, taskType: MockTaskType) {
+  if (!task) return null
+  const bankQuestion = getQuestionById(task.questionId)
+  if (!task.promptLead && !task.title && !task.questionType) return bankQuestion
+
+  const restored = restoreQuestionFromRecord({
+    id: `draft-${taskType}`,
+    questionId: task.questionId,
+    taskType,
+    title: task.title || bankQuestion?.title || '',
+    prompt: '',
+    promptLead: task.promptLead,
+    promptDetail: task.promptDetail,
+    questionType: task.questionType,
+    trainingType: task.trainingType,
+    chartSpec: task.chartSpec,
+    processSpec: task.processSpec,
+    mapSpec: task.mapSpec,
+    imageUrl: task.imageUrl
+  })
+
+  return {
+    ...restored,
+    topic: task.topic,
+    structuredData: task.structuredData,
+    chartSpec: restored.chartSpec || bankQuestion?.chartSpec,
+    processSpec: restored.processSpec || bankQuestion?.processSpec,
+    mapSpec: restored.mapSpec || bankQuestion?.mapSpec,
+    image: restored.image || bankQuestion?.image,
+    imageAlt: restored.imageAlt || bankQuestion?.imageAlt
+  }
+}
+
 export default function WritePage() {
   const params = useParams()
   const router = useRouter()
@@ -112,7 +156,9 @@ export default function WritePage() {
   const resizeCleanupRef = useRef<(() => void) | null>(null)
   const splitRatioRef = useRef(defaultWritingEditorSplitRatio({ hasTaskVisuals: mode !== 'task2' }))
   const loadedSplitKeyRef = useRef('')
+  const initialSnapshotSavedRef = useRef('')
   const lastAutoSaveAtRef = useRef(0)
+  const timeLeftRef = useRef(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
   const [mockQuestions, setMockQuestions] = useState<MockQuestions | null>(null)
@@ -141,6 +187,7 @@ export default function WritePage() {
   const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [customTaskId, setCustomTaskId] = useState<string | null>(null)
+  const [draftId, setDraftId] = useState('')
 
   const activeQuestion = mode === 'mock' ? mockQuestions?.[activeMockTask] ?? null : singleQuestion
   const activeEssay = mode === 'mock' ? mockEssays[activeMockTask] : essay
@@ -169,40 +216,71 @@ export default function WritePage() {
       : mode === 'task2'
         ? `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
         : `${Task1ChartLabels[promptSelection.task1ChartType]} + ${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
-  const timerKey = userId ? timerKeyFor(userId, mode) : ''
+  const mockTask1Label = mockQuestions
+    ? Task1ChartLabels[normalizeTask1ChartType(mockQuestions.task1.questionType)]
+    : Task1ChartLabels[promptSelection.task1ChartType]
+  const mockTask2Label = mockQuestions
+    ? `${Task2EssayLabels[normalizeTask2EssayType(mockQuestions.task2.questionType)]} · ${Task2TopicLabels[normalizeTask2Topic(mockQuestions.task2.topic || promptSelection.task2Topic)]}`
+    : `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
+  const timerKey = userId && draftId ? timerKeyFor(userId, mode, draftId) : ''
   const positionKey = userId ? userScopedStorageKey(`ielts-writing-editor-position-${mode}-${activeTaskType}`, userId) : ''
   const splitKey = userId ? userScopedStorageKey(`writingEditorSplitRatio-${mode}`, userId) : ''
   const legacySplitKey = userId ? userScopedStorageKey(`ielts-writing-editor-split-${mode}`, userId) : ''
-  const activeSingleDraftKey = userId ? singleDraftKey(userId, mode, customTaskId) : ''
-
   const saveAllDrafts = useCallback(
-    (showToast = false) => {
-      if (!userId) return
+    async (showToast = false, options?: { keepalive?: boolean; activeTask?: MockTaskType }) => {
+      if (!userId || !draftId) return
       try {
+        setSaveStatus(online ? 'saving' : 'offline')
+        let draft: ManagedDraftData
         if (mode === 'mock') {
-          if (mockQuestions) {
-            writeDraft(mockDraftKey(userId, 'task1'), mockEssays.task1, mockQuestions.task1.id, mockQuestions.task1, { userId, taskType: 'task1' })
-            writeDraft(mockDraftKey(userId, 'task2'), mockEssays.task2, mockQuestions.task2.id, mockQuestions.task2, { userId, taskType: 'task2' })
-          }
-        } else if (singleQuestion) {
-          writeDraft(activeSingleDraftKey, essay, singleQuestion.id, singleQuestion, { userId, taskType: mode })
+          if (!mockQuestions) return
+          draft = {
+            version: 2,
+            kind: 'full_test',
+            selection: promptSelection,
+            activeTask: options?.activeTask || activeMockTask,
+            remainingSeconds: timeLeftRef.current,
+            task1: draftTaskFromQuestion(mockEssays.task1, mockQuestions.task1, mockWordCounts.task1),
+            task2: draftTaskFromQuestion(mockEssays.task2, mockQuestions.task2, mockWordCounts.task2)
+          } satisfies FullTestDraftData
+        } else {
+          if (!singleQuestion) return
+          draft = {
+            version: 2,
+            kind: 'single',
+            selection: promptSelection,
+            remainingSeconds: timeLeftRef.current,
+            task: draftTaskFromQuestion(essay, singleQuestion, countWords(essay))
+          } satisfies SingleDraftData
         }
+
+        const result = await saveManagedDraft(userId, draftId, mode, draft, options)
         lastAutoSaveAtRef.current = Date.now()
-        setSaveStatus(online ? 'saved' : 'offline')
+        setSaveStatus(result.offline ? 'offline' : 'saved')
         if (showToast) {
           pushToast({
-            kind: online ? 'success' : 'info',
-            title: online ? '草稿已保存' : '已保存到本地',
-            message: online ? undefined : '网络恢复后可以继续提交。'
+            kind: result.offline ? 'info' : 'success',
+            title: result.offline ? '已保存到本地' : '草稿已保存',
+            message: result.offline ? '网络恢复后会继续同步。' : undefined
           })
         }
-      } catch {
+      } catch (caught) {
         setSaveStatus('error')
-        if (showToast) pushToast({ kind: 'error', title: '保存失败', message: '请检查磁盘空间后重试。' })
+        if (showToast) {
+          const code = caught && typeof caught === 'object' && 'code' in caught ? String(caught.code) : ''
+          pushToast({
+            kind: 'error',
+            title: '保存失败',
+            message: DraftErrorMessages[code] || (caught instanceof Error ? caught.message : '请稍后重试。')
+          })
+        }
       }
     },
-    [activeSingleDraftKey, essay, mockEssays, mockQuestions, mode, online, pushToast, singleQuestion, userId]
+    [activeMockTask, draftId, essay, mockEssays, mockQuestions, mockWordCounts.task1, mockWordCounts.task2, mode, online, promptSelection, pushToast, singleQuestion, userId]
   )
+  const saveCurrentDraft = useEffectEvent((keepalive = false) => {
+    void saveAllDrafts(false, keepalive ? { keepalive: true } : undefined)
+  })
   const generateInitialQuestion = useEffectEvent(generateQuestionFor)
   const notifyInitialRestore = useEffectEvent(pushToast)
 
@@ -224,23 +302,52 @@ export default function WritePage() {
 
     window.queueMicrotask(() => {
       void (async () => {
-        const params = new URLSearchParams(window.location.search)
-        const selection = selectionFromSearchParams(params)
-        const recordId = params.get('record')
-        const uploadedTaskId = mode === 'mock' ? null : params.get('customTask')
+        const searchParams = new URLSearchParams(window.location.search)
+        const requestedSelection = selectionFromSearchParams(searchParams)
+        const recordId = searchParams.get('record')
+        const uploadedTaskId = mode === 'mock' ? null : searchParams.get('customTask')
         setCustomTaskId(uploadedTaskId)
+        let currentDraftId = searchParams.get('draft') || ''
+        let managedDraft: ManagedDraftData | null = null
+
+        try {
+          if (currentDraftId) {
+            managedDraft = await fetchManagedDraft(userId, currentDraftId)
+            if (!managedDraft) throw new Error(DraftErrorMessages.DRAFT_NOT_FOUND)
+          } else {
+            const created = await createManagedDraft(mode, requestedSelection)
+            currentDraftId = created.draft.id
+            managedDraft = created.draft.draftData
+            const nextUrl = new URL(window.location.href)
+            nextUrl.searchParams.set('draft', currentDraftId)
+            window.history.replaceState(window.history.state, '', nextUrl)
+          }
+        } catch (caught) {
+          if (cancelled) return
+          const code = caught && typeof caught === 'object' && 'code' in caught ? String(caught.code) : ''
+          notifyInitialRestore({
+            kind: 'error',
+            title: '无法打开写作草稿',
+            message: DraftErrorMessages[code] || (caught instanceof Error ? caught.message : '请返回 IELTS 页面重试。')
+          })
+          router.replace('/practice?drafts=1')
+          return
+        }
+
+        if (cancelled) return
+        setDraftId(currentDraftId)
+        const selection = managedDraft?.selection || requestedSelection
         const sourceRecord = recordId ? await getWritingRecordFromServer(userId, recordId) : null
         if (cancelled) return
         setPromptSelection(selection)
 
         if (mode === 'mock') {
+          const fullDraft = managedDraft?.kind === 'full_test'
+            ? managedDraft
+            : initialManagedDraft('mock', selection) as FullTestDraftData
           const fallback = buildMockQuestionSetForSelection(selection)
-          const [task1Draft, task2Draft] = await Promise.all([
-            readAccountDraft(mockDraftKey(userId, 'task1')),
-            readAccountDraft(mockDraftKey(userId, 'task2'))
-          ])
-          const restoredTask1 = sourceRecord?.components?.task1?.essay || task1Draft?.essay || ''
-          const restoredTask2 = sourceRecord?.components?.task2?.essay || task2Draft?.essay || ''
+          const restoredTask1 = sourceRecord?.components?.task1?.essay || fullDraft.task1.essay
+          const restoredTask2 = sourceRecord?.components?.task2?.essay || fullDraft.task2.essay
 
           const task1QuestionPromise = (async () => {
             if (sourceRecord) {
@@ -275,24 +382,7 @@ export default function WritePage() {
               }
               return restored
             }
-            if (task1Draft && (task1Draft.chartSpec || task1Draft.processSpec || task1Draft.mapSpec)) {
-              return restoreQuestionFromRecord({
-                id: 'draft-mock-task1',
-                questionId: task1Draft.questionId,
-                taskType: 'task1',
-                title: task1Draft.title || '',
-                prompt: '',
-                promptLead: task1Draft.promptLead,
-                promptDetail: task1Draft.promptDetail,
-                questionType: task1Draft.questionType,
-                trainingType: task1Draft.trainingType,
-                chartSpec: task1Draft.chartSpec,
-                processSpec: task1Draft.processSpec,
-                mapSpec: task1Draft.mapSpec,
-                imageUrl: task1Draft.imageUrl
-              })
-            }
-            return getQuestionById(task1Draft?.questionId)
+            return questionFromDraftTask(fullDraft.task1, 'task1')
               || (restoredTask1 ? fallback.task1 : generateInitialQuestion('task1', selection))
           })()
 
@@ -315,7 +405,7 @@ export default function WritePage() {
                 imageUrl: task2Comp?.imageUrl
               })
             }
-            return getQuestionById(task2Draft?.questionId)
+            return questionFromDraftTask(fullDraft.task2, 'task2')
               || (restoredTask2 ? fallback.task2 : generateInitialQuestion('task2', selection))
           })()
 
@@ -327,6 +417,7 @@ export default function WritePage() {
           if (cancelled) return
           setMockQuestions({ task1: task1Question, task2: task2Question })
           setMockEssays({ task1: restoredTask1, task2: restoredTask2 })
+          setActiveMockTask(fullDraft.activeTask)
           if (restoredTask1 || restoredTask2) {
             setDraftRestored(true)
             setSaveStatus('saved')
@@ -336,9 +427,10 @@ export default function WritePage() {
           }
         } else {
           const taskType = mode === 'task1' ? 'task1' : 'task2'
-          const singleDraftStorageKey = singleDraftKey(userId, mode, uploadedTaskId)
-          const draft = await readAccountDraft(singleDraftStorageKey)
-          const restoredEssay = sourceRecord?.essay || draft?.essay || ''
+          const singleDraft = managedDraft?.kind === 'single'
+            ? managedDraft
+            : initialManagedDraft(mode, selection) as SingleDraftData
+          const restoredEssay = sourceRecord?.essay || singleDraft.task.essay
           let question: WritingQuestion | null = null
 
           if (sourceRecord) {
@@ -369,26 +461,7 @@ export default function WritePage() {
               setError(caught instanceof Error ? caught.message : '自定义题目读取失败')
             }
           }
-          if (!question && draft && (draft.chartSpec || draft.processSpec || draft.mapSpec)) {
-            question = restoreQuestionFromRecord({
-              id: `draft-${mode}`,
-              questionId: draft.questionId,
-              taskType,
-              title: draft.title || '',
-              prompt: '',
-              promptLead: draft.promptLead,
-              promptDetail: draft.promptDetail,
-              questionType: draft.questionType,
-              trainingType: draft.trainingType,
-              chartSpec: draft.chartSpec,
-              processSpec: draft.processSpec,
-              mapSpec: draft.mapSpec,
-              imageUrl: draft.imageUrl
-            })
-          }
-          if (!question && draft?.questionId) {
-            question = getQuestionById(draft.questionId)
-          }
+          if (!question) question = questionFromDraftTask(singleDraft.task, taskType)
           if (!question) {
             question = restoredEssay ? defaultQuestionFor(taskType, selection) : await generateInitialQuestion(taskType, selection)
           }
@@ -399,19 +472,23 @@ export default function WritePage() {
             setDraftRestored(true)
             setSaveStatus('saved')
             notifyInitialRestore({ kind: 'info', title: '已带回原文', message: '你可以继续修改，原批改结果仍保留在历史记录中。' })
-          } else if (draft?.essay) {
-            setEssay(draft.essay)
+          } else if (singleDraft.task.essay) {
+            setEssay(singleDraft.task.essay)
             setDraftRestored(true)
             setSaveStatus('saved')
-            notifyInitialRestore({ kind: 'success', title: '已恢复草稿', message: `上次保存于 ${new Date(draft.updatedAt).toLocaleTimeString()}` })
+            notifyInitialRestore({ kind: 'success', title: '已恢复草稿', message: `上次保存于 ${new Date(singleDraft.task.updatedAt).toLocaleTimeString()}` })
           } else {
             setSaveStatus('idle')
           }
         }
 
         const initialDurationMinutes = mode === 'mock' ? 60 : mode === 'task1' ? 20 : 40
-        const endAt = readTimerEnd(timerKey, initialDurationMinutes)
-        setTimeLeft(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)))
+        const restoredSeconds = managedDraft?.remainingSeconds ?? initialDurationMinutes * 60
+        const localTimerKey = timerKeyFor(userId, mode, currentDraftId)
+        const endAt = readTimerEnd(localTimerKey, initialDurationMinutes, restoredSeconds)
+        const initialTimeLeft = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
+        timeLeftRef.current = initialTimeLeft
+        setTimeLeft(initialTimeLeft)
 
         setHydrated(true)
       })()
@@ -420,7 +497,7 @@ export default function WritePage() {
     return () => {
       cancelled = true
     }
-  }, [mode, splitKey, timerKey, userId])
+  }, [mode, router, userId])
 
   useEffect(() => {
     if (!hydrated || !splitKey || loadedSplitKeyRef.current === splitKey) return
@@ -462,7 +539,9 @@ export default function WritePage() {
     if (!timerKey) return
     const timer = window.setInterval(() => {
       const endAt = readTimerEnd(timerKey, durationMinutes)
-      setTimeLeft(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)))
+      const next = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
+      timeLeftRef.current = next
+      setTimeLeft(next)
     }, 1000)
     return () => window.clearInterval(timer)
   }, [durationMinutes, timerKey])
@@ -477,12 +556,26 @@ export default function WritePage() {
     const statusTimer = window.setTimeout(() => setSaveStatus(online ? 'saving' : 'offline'), 0)
     const elapsed = Date.now() - lastAutoSaveAtRef.current
     const delay = Math.max(0, 3500 - elapsed)
-    const timer = window.setTimeout(() => saveAllDrafts(false), delay)
+    const timer = window.setTimeout(() => void saveAllDrafts(false), delay)
     return () => {
       window.clearTimeout(statusTimer)
       window.clearTimeout(timer)
     }
   }, [debouncedEssay, debouncedMockEssays, hydrated, mode, online, saveAllDrafts])
+
+  useEffect(() => {
+    if (!hydrated || !draftId) return
+    const timer = window.setInterval(() => {
+      saveCurrentDraft()
+    }, 30_000)
+    return () => window.clearInterval(timer)
+  }, [draftId, hydrated])
+
+  useEffect(() => {
+    if (!hydrated || !draftId || !activeQuestion || initialSnapshotSavedRef.current === draftId) return
+    initialSnapshotSavedRef.current = draftId
+    saveCurrentDraft()
+  }, [activeQuestion, draftId, hydrated])
 
   useEffect(() => {
     if (timeLeft === 0 && hydrated && submitStatus === 'idle') {
@@ -497,8 +590,15 @@ export default function WritePage() {
         event.preventDefault()
       }
     }
+    const handlePageHide = () => {
+      saveCurrentDraft(true)
+    }
     window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('pagehide', handlePageHide)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handlePageHide)
+    }
   }, [saveStatus])
 
   const saveNow = useCallback(() => saveAllDrafts(true), [saveAllDrafts])
@@ -509,7 +609,7 @@ export default function WritePage() {
       const modifier = event.metaKey || event.ctrlKey
       if (modifier && event.key.toLowerCase() === 's') {
         event.preventDefault()
-        saveNow()
+        void saveNow()
       }
       if (modifier && event.key === 'Enter') {
         event.preventDefault()
@@ -626,7 +726,7 @@ export default function WritePage() {
     setEvaluationStartTime(Date.now())
     setElapsedTime(0)
     try {
-      saveAllDrafts(false)
+      await saveAllDrafts(false)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
       if (abortController.signal.aborted) {
         throw new WritingEvaluationError('cancelled', '批改已取消。')
@@ -685,7 +785,13 @@ export default function WritePage() {
 
       await saveWritingRecord(userId, record)
       if (activeQuestion.generatedSource !== 'user_upload') markGeneratedPromptCompleted(activeQuestion.id, userId)
-      deleteAccountDraft(activeSingleDraftKey)
+      if (draftId) {
+        try {
+          await completeManagedDraft(userId, draftId, record.id)
+        } catch {
+          pushToast({ kind: 'warning', title: '批改已保存', message: '草稿状态同步稍后会自动重试。' })
+        }
+      }
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')
@@ -745,7 +851,7 @@ export default function WritePage() {
     setEvaluationStartTime(Date.now())
     setElapsedTime(0)
     try {
-      saveAllDrafts(false)
+      await saveAllDrafts(false)
       await new Promise((resolve) => window.setTimeout(resolve, 180))
       setSubmitStatus('submitting')
       setStageIndex(1)
@@ -842,8 +948,13 @@ export default function WritePage() {
       await saveWritingRecord(userId, record)
       markGeneratedPromptCompleted(mockQuestions.task1.id, userId)
       markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
-      deleteAccountDraft(mockDraftKey(userId, 'task1'))
-      deleteAccountDraft(mockDraftKey(userId, 'task2'))
+      if (draftId) {
+        try {
+          await completeManagedDraft(userId, draftId, record.id)
+        } catch {
+          pushToast({ kind: 'warning', title: '模考结果已保存', message: '草稿状态同步稍后会自动重试。' })
+        }
+      }
       window.localStorage.removeItem(timerKey)
       setStageIndex(5)
       setSubmitStatus('success')
@@ -998,7 +1109,7 @@ export default function WritePage() {
           </div>
           <div className="exam-divider" />
           <div className="exam-info-item">
-            <span className="ui-label">Words</span>
+            <span className="ui-label">{mode === 'mock' ? (activeMockTask === 'task1' ? 'Task 1' : 'Task 2') : '字数'}</span>
             <span 
               className={`exam-word-count ${wordCount >= wordTarget ? 'word-count-good' : wordCount >= wordTarget * 0.8 ? 'word-count-medium' : wordCount < wordTarget * 0.5 ? 'word-count-low' : ''}`}
               title="字数统计按空格分词计算，与 IELTS 官方标准可能略有差异"
@@ -1007,6 +1118,18 @@ export default function WritePage() {
               <span>/{wordTarget}</span>
             </span>
           </div>
+          {mode === 'mock' ? (
+            <>
+              <div className="exam-divider" />
+              <div className="exam-info-item">
+                <span className="ui-label">总字数</span>
+                <span className={`exam-word-count ${totalMockWords >= 400 ? 'word-count-good' : totalMockWords >= 320 ? 'word-count-medium' : 'word-count-low'}`}>
+                  {totalMockWords}
+                  <span>/400</span>
+                </span>
+              </div>
+            </>
+          ) : null}
         </div>
 
         <div className="exam-actions">
@@ -1033,28 +1156,45 @@ export default function WritePage() {
       </header>
 
       <div className="exam-status-bar" role="status" aria-live="polite">
-        <span>
-          <MaterialIcon name="assignment" size={15} />
-          {questionLabel(activeQuestion)}
-        </span>
+        {mode === 'mock' ? (
+          <>
+            <span>
+              <MaterialIcon name="bar_chart" size={15} />
+              Task 1：{mockTask1Label}
+            </span>
+            <span>
+              <MaterialIcon name="edit_document" size={15} />
+              Task 2：{mockTask2Label}
+            </span>
+            <span>
+              <MaterialIcon name="notes" size={15} />
+              当前：{activeMockTask === 'task1' ? 'Task 1' : 'Task 2'} {wordCount}/{wordTarget}
+            </span>
+            <span>
+              <MaterialIcon name="functions" size={15} />
+              总计：{totalMockWords}/400
+            </span>
+          </>
+        ) : (
+          <>
+            <span>
+              <MaterialIcon name="assignment" size={15} />
+              {questionLabel(activeQuestion)}
+            </span>
+            <span title={mode === 'task1' ? Task1SubtypeLabels[promptSelection.task1Subtype] : undefined}>
+              <MaterialIcon name="tune" size={15} />
+              {promptChoiceSummary}
+            </span>
+          </>
+        )}
         <span>
           <MaterialIcon name={online ? 'wifi' : 'wifi_off'} size={15} />
-          {online ? 'Online' : 'Offline'}
+          {online ? '在线' : '离线'}
         </span>
         <span>
           <MaterialIcon name={draftRestored ? 'restore' : 'draft'} size={15} />
-          {draftRestored ? 'Draft restored' : 'New draft'}
+          {draftRestored ? '已恢复草稿' : '新草稿'}
         </span>
-        <span title={mode === 'task1' ? Task1SubtypeLabels[promptSelection.task1Subtype] : undefined}>
-          <MaterialIcon name="tune" size={15} />
-          {promptChoiceSummary}
-        </span>
-        {mode === 'mock' ? (
-          <span>
-            <MaterialIcon name="functions" size={15} />
-            Total {totalMockWords}/400 words
-          </span>
-        ) : null}
       </div>
 
       <section
@@ -1065,7 +1205,7 @@ export default function WritePage() {
         <aside className="exam-left-pane">
           <div className="exam-left-inner">
             {mode === 'mock' ? (
-              <div className="result-tabs" role="tablist" aria-label="模考任务切换" style={{ marginBottom: 16 }}>
+              <div className="result-tabs full-test-tabs" role="tablist" aria-label="模考任务切换">
                 {mockTaskOrder.map((taskType) => (
                   <button
                     key={taskType}
@@ -1073,7 +1213,12 @@ export default function WritePage() {
                     type="button"
                     role="tab"
                     aria-selected={activeMockTask === taskType}
-                    onClick={() => setActiveMockTask(taskType)}
+                    onClick={() => {
+                      if (taskType !== activeMockTask) {
+                        void saveAllDrafts(false, { activeTask: taskType })
+                        setActiveMockTask(taskType)
+                      }
+                    }}
                   >
                     {taskType === 'task1' ? 'Task 1' : 'Task 2'}
                   </button>

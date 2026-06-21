@@ -2,8 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { readStorageValue, userScopedStorageKey } from '@/lib/user-storage'
+import { readStorageValue } from '@/lib/user-storage'
 import {
   createContext,
   useCallback,
@@ -16,7 +15,6 @@ import {
   type ReactNode
 } from 'react'
 import { MaterialIcon } from '@/components/app-ui'
-import type { WritingTaskType } from '@/lib/writing-records'
 
 type ToastKind = 'success' | 'error' | 'warning' | 'info' | 'loading'
 
@@ -52,31 +50,15 @@ function isTypingTarget(target: EventTarget | null) {
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
 }
 
-function saveScrollPosition(routeKey: string) {
-  if (typeof window === 'undefined') return
-  window.sessionStorage.setItem(`ielts-writing-scroll:${routeKey}`, String(window.scrollY))
-}
-
 function useScrollAndFocusRestoration(routeKey: string) {
   useEffect(() => {
-    const stored = readStorageValue(window.sessionStorage, `ielts-writing-scroll:${routeKey}`)
     window.requestAnimationFrame(() => {
-      if (stored) {
-        window.scrollTo({ top: Number(stored), behavior: 'instant' as ScrollBehavior })
-      }
       const main = document.querySelector<HTMLElement>('[data-main-content], main')
       if (main && !main.hasAttribute('tabindex')) {
         main.setAttribute('tabindex', '-1')
       }
       main?.focus({ preventScroll: true })
     })
-
-    const handlePageHide = () => saveScrollPosition(routeKey)
-    window.addEventListener('pagehide', handlePageHide)
-    return () => {
-      saveScrollPosition(routeKey)
-      window.removeEventListener('pagehide', handlePageHide)
-    }
   }, [routeKey])
 }
 
@@ -207,13 +189,6 @@ type CommandAction = {
   keywords: string
 }
 
-function getDraftMode(userId: string | null): WritingTaskType {
-  if (!userId) return 'task2'
-  const modes: WritingTaskType[] = ['task2', 'task1', 'mock']
-  const found = modes.find((mode) => window.localStorage.getItem(userScopedStorageKey(`ielts-writing-draft-${mode}`, userId))?.trim())
-  return found ?? 'task2'
-}
-
 function readRecents() {
   try {
     const parsed: unknown = JSON.parse(readStorageValue(window.localStorage, CommandRecentsStorageKey) || '[]')
@@ -230,7 +205,6 @@ function writeRecent(id: string) {
 
 function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
-  const { userId } = useUserSession()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -247,9 +221,9 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
       {
         id: 'draft',
         title: '查看当前草稿',
-        subtitle: '打开最近有内容的写作任务',
+        subtitle: '打开草稿记录并选择要继续的练习',
         icon: 'draft',
-        run: () => router.push(`/write/${getDraftMode(userId)}`),
+        run: () => router.push('/practice?drafts=1'),
         keywords: 'draft 草稿 current'
       },
       {
@@ -261,7 +235,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         keywords: 'search history 搜索 历史'
       }
     ],
-    [query, router, userId]
+    [query, router]
   )
 
   const recents = useMemo(() => (open ? readRecents() : []), [open])
@@ -277,7 +251,6 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
     (action: CommandAction | undefined) => {
       if (!action) return
       writeRecent(action.id)
-      saveScrollPosition(`${window.location.pathname}${window.location.search}`)
       onOpenChange(false)
       setQuery('')
       setSelected(0)
