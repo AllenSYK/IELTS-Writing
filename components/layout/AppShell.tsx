@@ -36,22 +36,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     const container = contentRef.current
-    const containerStyle = container ? window.getComputedStyle(container) : null
-    const containerScrolls = Boolean(
-      container
-      && containerStyle
-      && /(auto|scroll)/.test(containerStyle.overflowY)
-      && container.scrollHeight > container.clientHeight
-    )
-
-    if (containerScrolls) {
-      container?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-      return
+    if (container) {
+      container.scrollTo({ top: 0, left: 0, behavior: 'auto' })
     }
-
-    const scrollingElement = document.scrollingElement
-    if (scrollingElement) scrollingElement.scrollTop = 0
-    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [pathname])
 
   if (fullScreenRoute) {

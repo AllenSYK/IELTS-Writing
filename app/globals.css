@@ -106,10 +106,13 @@
 
 html,
 body {
+  width: 100%;
+  height: 100%;
   min-height: 100%;
   margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
   background-color: #f0f4ff;
-  overscroll-behavior-x: none;
 }
 
 body {
@@ -2193,8 +2196,7 @@ img {
 }
 
 .annotation-inspector {
-  position: sticky;
-  top: 112px;
+  position: static;
   display: grid;
   gap: 16px;
   align-self: start;
@@ -5217,13 +5219,15 @@ img {
 }
 
 .app-shell {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 }
 
 .app-route-root {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   background:
     radial-gradient(at 0% 0%, rgba(240, 244, 255, 0.92) 0, transparent 50%),
     radial-gradient(at 100% 0%, rgba(249, 240, 255, 0.9) 0, transparent 50%),
@@ -5231,7 +5235,7 @@ img {
 }
 
 .app-route-root.is-full-screen {
-  min-height: 100dvh;
+  height: 100dvh;
   overflow-x: hidden;
 }
 
@@ -5391,14 +5395,13 @@ img {
 
 .app-main {
   min-width: 0;
-  min-height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .app-header {
-  position: sticky;
-  top: 0;
   z-index: 40;
   height: var(--app-header-height);
   flex: 0 0 var(--app-header-height);
@@ -5486,9 +5489,13 @@ img {
 
 .app-content {
   min-width: 0;
+  min-height: 0;
   flex: 1;
   padding: 8px var(--container-padding) 48px;
-  contain: layout paint;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   background: transparent;
 }
 
@@ -8393,7 +8400,7 @@ body.is-resizing-editor * {
 }
 
 .app-content {
-  scroll-padding-top: var(--app-header-height);
+  padding-inline: var(--container-padding);
 }
 
 .app-content .mode-main {
@@ -8817,7 +8824,6 @@ body.is-resizing-editor * {
   }
 
   .app-header {
-    top: 77px;
     height: auto;
     min-height: var(--app-header-height);
     flex: 0 0 auto;
