@@ -14,9 +14,13 @@ export function TableQuestion({ spec }: Props) {
   const { columns, rows } = spec.tableData
 
   return (
-    <div className="task1-chart-wrapper">
-      {spec.title && <h3 className="task1-chart-title">{spec.title}</h3>}
-      {spec.subtitle && <p className="task1-chart-subtitle">{spec.subtitle}</p>}
+    <section className="task1-chart-wrapper" data-chart-type="table">
+      {(spec.title || spec.subtitle) && (
+        <header className="task1-chart-heading">
+          {spec.title && <h3 className="task1-chart-title">{spec.title}</h3>}
+          {spec.subtitle && <p className="task1-chart-subtitle">{spec.subtitle}</p>}
+        </header>
+      )}
       <div className="task1-table-container">
         <table className="task1-table">
           <thead>
@@ -40,6 +44,6 @@ export function TableQuestion({ spec }: Props) {
         </table>
       </div>
       {spec.source && <p className="task1-chart-source">{spec.source}</p>}
-    </div>
+    </section>
   )
 }

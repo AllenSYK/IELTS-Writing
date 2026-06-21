@@ -56,6 +56,13 @@ import {
   type PromptSelection
 } from '@/lib/writing-options'
 import { userScopedStorageKey } from '@/lib/user-storage'
+import {
+  clampWritingEditorSplitRatio,
+  defaultWritingEditorSplitRatio,
+  getWritingEditorSplitBounds,
+  parseWritingEditorSplitRatio,
+  WritingEditorDividerWidth
+} from '@/lib/writing-editor-layout'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
@@ -102,6 +109,9 @@ export default function WritePage() {
   const mode = normalizeMode(params.mode)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const layoutRef = useRef<HTMLElement>(null)
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+  const splitRatioRef = useRef(defaultWritingEditorSplitRatio({ hasTaskVisuals: mode !== 'task2' }))
+  const loadedSplitKeyRef = useRef('')
   const lastAutoSaveAtRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
@@ -122,7 +132,9 @@ export default function WritePage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [showTimeConfirm, setShowTimeConfirm] = useState(false)
-  const [splitWidth, setSplitWidth] = useState(50)
+  const [splitWidth, setSplitWidth] = useState(splitRatioRef.current)
+  const [layoutWidth, setLayoutWidth] = useState(1440)
+  const [isResizing, setIsResizing] = useState(false)
   const [error, setError] = useState('')
   const [promptSelection, setPromptSelection] = useState<PromptSelection>(DefaultPromptSelection)
   const [promptGenerationNotice, setPromptGenerationNotice] = useState('')
@@ -133,6 +145,8 @@ export default function WritePage() {
   const activeQuestion = mode === 'mock' ? mockQuestions?.[activeMockTask] ?? null : singleQuestion
   const activeEssay = mode === 'mock' ? mockEssays[activeMockTask] : essay
   const activeTaskType: MockTaskType = mode === 'mock' ? activeMockTask : mode === 'task1' ? 'task1' : 'task2'
+  const hasTaskVisuals = activeQuestion?.taskType === 'task1'
+    && Boolean(activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec || activeQuestion.image)
   const durationMinutes = mode === 'mock' ? 60 : activeQuestion?.durationMinutes ?? (mode === 'task1' ? 20 : 40)
   const wordTarget = activeQuestion?.wordTarget ?? (activeTaskType === 'task1' ? 150 : 250)
   const wordCount = useMemo(() => countWords(activeEssay), [activeEssay])
@@ -157,7 +171,8 @@ export default function WritePage() {
         : `${Task1ChartLabels[promptSelection.task1ChartType]} + ${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
   const timerKey = userId ? timerKeyFor(userId, mode) : ''
   const positionKey = userId ? userScopedStorageKey(`ielts-writing-editor-position-${mode}-${activeTaskType}`, userId) : ''
-  const splitKey = userId ? userScopedStorageKey(`ielts-writing-editor-split-${mode}`, userId) : ''
+  const splitKey = userId ? userScopedStorageKey(`writingEditorSplitRatio-${mode}`, userId) : ''
+  const legacySplitKey = userId ? userScopedStorageKey(`ielts-writing-editor-split-${mode}`, userId) : ''
   const activeSingleDraftKey = userId ? singleDraftKey(userId, mode, customTaskId) : ''
 
   const saveAllDrafts = useCallback(
@@ -398,11 +413,6 @@ export default function WritePage() {
         const endAt = readTimerEnd(timerKey, initialDurationMinutes)
         setTimeLeft(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)))
 
-        const storedSplit = Number(window.localStorage.getItem(splitKey))
-        if (Number.isFinite(storedSplit) && storedSplit >= 34 && storedSplit <= 66) {
-          setSplitWidth(storedSplit)
-        }
-
         setHydrated(true)
       })()
     })
@@ -411,6 +421,42 @@ export default function WritePage() {
       cancelled = true
     }
   }, [mode, splitKey, timerKey, userId])
+
+  useEffect(() => {
+    if (!hydrated || !splitKey || loadedSplitKeyRef.current === splitKey) return
+    const layoutWidth = layoutRef.current?.getBoundingClientRect().width || window.innerWidth
+    const storedRatio = parseWritingEditorSplitRatio(window.localStorage.getItem(splitKey))
+      ?? parseWritingEditorSplitRatio(window.localStorage.getItem(legacySplitKey))
+    const next = clampWritingEditorSplitRatio(
+      storedRatio ?? defaultWritingEditorSplitRatio({ hasTaskVisuals }),
+      layoutWidth,
+      { hasTaskVisuals }
+    )
+    loadedSplitKeyRef.current = splitKey
+    splitRatioRef.current = next
+    setSplitWidth(next)
+    window.localStorage.setItem(splitKey, String(next))
+  }, [hasTaskVisuals, hydrated, legacySplitKey, splitKey])
+
+  useEffect(() => {
+    if (!hydrated) return
+    const layout = layoutRef.current
+    if (!layout) return
+    const observer = new ResizeObserver(([entry]) => {
+      setLayoutWidth((current) => Math.abs(current - entry.contentRect.width) > 0.5 ? entry.contentRect.width : current)
+      const next = clampWritingEditorSplitRatio(
+        splitRatioRef.current,
+        entry.contentRect.width,
+        { hasTaskVisuals }
+      )
+      splitRatioRef.current = next
+      setSplitWidth((current) => Math.abs(current - next) > 0.01 ? next : current)
+    })
+    observer.observe(layout)
+    return () => observer.disconnect()
+  }, [hasTaskVisuals, hydrated])
+
+  useEffect(() => () => resizeCleanupRef.current?.(), [])
 
   useEffect(() => {
     if (!timerKey) return
@@ -837,26 +883,69 @@ export default function WritePage() {
 
   function handleResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
     const layout = layoutRef.current
-    if (!layout) return
+    if (!layout || (event.pointerType === 'mouse' && event.button !== 0)) return
+    event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     const rect = layout.getBoundingClientRect()
+    const usableWidth = Math.max(1, rect.width - WritingEditorDividerWidth)
+    let animationFrame: number | null = null
+    let latestClientX = event.clientX
+    let ended = false
+
+    const applyPosition = () => {
+      animationFrame = null
+      const proposed = ((latestClientX - rect.left) / usableWidth) * 100
+      const next = clampWritingEditorSplitRatio(proposed, rect.width, { hasTaskVisuals })
+      splitRatioRef.current = next
+      setSplitWidth(next)
+    }
+
     const move = (moveEvent: PointerEvent) => {
-      const next = ((moveEvent.clientX - rect.left) / rect.width) * 100
-      const clamped = Math.min(66, Math.max(34, next))
-      setSplitWidth(clamped)
-      window.localStorage.setItem(splitKey, String(clamped))
+      latestClientX = moveEvent.clientX
+      if (animationFrame === null) animationFrame = window.requestAnimationFrame(applyPosition)
     }
-    const up = () => {
+
+    const finish = (upEvent?: Event, commit = true) => {
+      if (ended) return
+      ended = true
+      if (upEvent instanceof PointerEvent) latestClientX = upEvent.clientX
+      if (animationFrame !== null) window.cancelAnimationFrame(animationFrame)
+      if (commit) applyPosition()
       window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      window.removeEventListener('blur', end)
+      document.body.classList.remove('is-resizing-editor')
+      if (commit) {
+        setIsResizing(false)
+        if (splitKey) window.localStorage.setItem(splitKey, String(splitRatioRef.current))
+      }
+      resizeCleanupRef.current = null
     }
+
+    const end = (upEvent?: Event) => finish(upEvent, true)
+    const cleanup = () => finish(undefined, false)
+
+    resizeCleanupRef.current?.()
+    resizeCleanupRef.current = cleanup
+    document.body.classList.add('is-resizing-editor')
+    setIsResizing(true)
     window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    window.addEventListener('blur', end)
   }
 
   function resetSplit() {
-    setSplitWidth(50)
-    window.localStorage.setItem(splitKey, '50')
+    const layoutWidth = layoutRef.current?.getBoundingClientRect().width || window.innerWidth
+    const next = clampWritingEditorSplitRatio(
+      defaultWritingEditorSplitRatio({ hasTaskVisuals }),
+      layoutWidth,
+      { hasTaskVisuals }
+    )
+    splitRatioRef.current = next
+    setSplitWidth(next)
+    window.localStorage.setItem(splitKey, String(next))
     pushToast({ kind: 'info', title: '布局已恢复默认' })
   }
 
@@ -968,8 +1057,12 @@ export default function WritePage() {
         ) : null}
       </div>
 
-      <section ref={layoutRef} className="exam-layout">
-        <aside className="exam-left-pane" style={{ width: `${splitWidth}%` }}>
+      <section
+        ref={layoutRef}
+        className="exam-layout"
+        style={{ gridTemplateColumns: `${splitWidth}fr ${WritingEditorDividerWidth}px ${100 - splitWidth}fr` }}
+      >
+        <aside className="exam-left-pane">
           <div className="exam-left-inner">
             {mode === 'mock' ? (
               <div className="result-tabs" role="tablist" aria-label="模考任务切换" style={{ marginBottom: 16 }}>
@@ -1023,18 +1116,35 @@ export default function WritePage() {
             ) : null}
 
             {activeQuestion.image ? (
-              <div className="exam-graph-frame">
-                {activeQuestion.generatedSource === 'user_upload' ? <p className="ui-label">原始图片核对</p> : null}
-                <Image
-                  alt={activeQuestion.imageAlt || activeQuestion.title}
-                  src={activeQuestion.image}
-                  width={720}
-                  height={400}
-                  priority
-                  style={{ width: '100%', height: 'auto' }}
-                  unoptimized
-                />
-              </div>
+              activeQuestion.generatedSource === 'user_upload'
+                && Boolean(activeQuestion.chartSpec || activeQuestion.processSpec || activeQuestion.mapSpec) ? (
+                  <details className="exam-original-image">
+                    <summary>查看原始图片</summary>
+                    <div className="exam-graph-frame">
+                      <p className="ui-label">原始图片核对</p>
+                      <Image
+                        alt={activeQuestion.imageAlt || activeQuestion.title}
+                        src={activeQuestion.image}
+                        width={720}
+                        height={400}
+                        style={{ width: '100%', height: 'auto' }}
+                        unoptimized
+                      />
+                    </div>
+                  </details>
+                ) : (
+                  <div className="exam-graph-frame">
+                    <Image
+                      alt={activeQuestion.imageAlt || activeQuestion.title}
+                      src={activeQuestion.image}
+                      width={720}
+                      height={400}
+                      priority
+                      style={{ width: '100%', height: 'auto' }}
+                      unoptimized
+                    />
+                  </div>
+                )
             ) : null}
 
             <div className="exam-requirement">
@@ -1047,24 +1157,33 @@ export default function WritePage() {
         </aside>
 
         <div
-          className="resizer-handle"
+          className={`resizer-handle ${isResizing ? 'is-active' : ''}`}
           role="separator"
           aria-label="调整题目区和写作区宽度"
           aria-orientation="vertical"
+          aria-valuemin={Math.round(getWritingEditorSplitBounds(layoutWidth, { hasTaskVisuals }).minimum)}
+          aria-valuemax={Math.round(getWritingEditorSplitBounds(layoutWidth, { hasTaskVisuals }).maximum)}
+          aria-valuenow={Math.round(splitWidth)}
           tabIndex={0}
           onPointerDown={handleResizeStart}
           onDoubleClick={resetSplit}
           onKeyDown={(event) => {
             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
               event.preventDefault()
-              const next = Math.min(66, Math.max(34, splitWidth + (event.key === 'ArrowRight' ? 2 : -2)))
+              const layoutWidth = layoutRef.current?.getBoundingClientRect().width || window.innerWidth
+              const next = clampWritingEditorSplitRatio(
+                splitWidth + (event.key === 'ArrowRight' ? 2 : -2),
+                layoutWidth,
+                { hasTaskVisuals }
+              )
+              splitRatioRef.current = next
               setSplitWidth(next)
               window.localStorage.setItem(splitKey, String(next))
             }
           }}
         />
 
-        <section className="exam-right-pane" style={{ width: `${100 - splitWidth}%` }}>
+        <section className="exam-right-pane">
           <div className="editor-toolbar">
             <button className="spell-toggle" type="button" onClick={() => setSpellcheck((current) => !current)}>
               <MaterialIcon name="spellcheck" size={18} />

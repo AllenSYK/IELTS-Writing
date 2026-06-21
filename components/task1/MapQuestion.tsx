@@ -12,8 +12,12 @@ export function MapQuestion({ spec }: Props) {
   const afterFeatures = features.filter(f => f.change !== 'removed')
 
   return (
-    <div className="task1-chart-wrapper">
-      {spec.title && <h3 className="task1-chart-title">{spec.title}</h3>}
+    <section className="task1-chart-wrapper" data-chart-type="map">
+      {spec.title && (
+        <header className="task1-chart-heading">
+          <h3 className="task1-chart-title">{spec.title}</h3>
+        </header>
+      )}
       <div className="task1-map-container">
         <div className="task1-map-panel">
           <h4 className="task1-map-panel-title">{spec.beforeLabel}</h4>
@@ -85,6 +89,6 @@ export function MapQuestion({ spec }: Props) {
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 }
