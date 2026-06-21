@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MaterialIcon } from '@/components/app-ui'
 import { AsyncButton, useToast } from '@/components/interaction-system'
@@ -10,20 +10,12 @@ import {
   DraftErrorMessages,
   DraftLimits,
   deleteManagedDraft,
-  draftDisplayTitle,
-  draftRemainingSeconds,
-  listManagedDrafts,
+  fetchDraftDeleteQuota,
+  fetchManagedDraft,
+  listDraftsLightweight,
   type DraftDeleteQuota,
-  type DraftRecord
+  type DraftListItem
 } from '@/lib/writing-drafts'
-import {
-  Task1ChartLabels,
-  Task2EssayLabels,
-  Task2TopicLabels,
-  normalizeTask1ChartType,
-  normalizeTask2EssayType,
-  normalizeTask2Topic
-} from '@/lib/writing-options'
 import type { WritingTaskType } from '@/lib/writing-records'
 
 type DraftTab = WritingTaskType
@@ -42,13 +34,6 @@ const emptyQuota: DraftDeleteQuota = {
   date: ''
 }
 
-function formatTime(seconds: number) {
-  const safe = Math.max(0, Math.round(seconds))
-  const minutes = Math.floor(safe / 60)
-  const remaining = safe % 60
-  return `${minutes}:${String(remaining).padStart(2, '0')}`
-}
-
 function formatUpdatedAt(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
@@ -61,82 +46,30 @@ function formatUpdatedAt(value: string) {
       })
 }
 
-function questionSummary(record: DraftRecord) {
-  const data = record.draftData
-  if (data.kind === 'full_test') {
-    return {
-      task1: Task1ChartLabels[normalizeTask1ChartType(data.task1.questionType || data.selection.task1ChartType)],
-      task2: `${Task2EssayLabels[normalizeTask2EssayType(data.task2.questionType || data.selection.task2EssayType)]} · ${Task2TopicLabels[normalizeTask2Topic(data.task2.topic || data.selection.task2Topic)]}`
-    }
-  }
-  if (record.taskType === 'task1') {
-    return {
-      task1: Task1ChartLabels[normalizeTask1ChartType(data.task.questionType || data.selection.task1ChartType)]
-    }
-  }
-  return {
-    task2: `${Task2EssayLabels[normalizeTask2EssayType(data.task.questionType || data.selection.task2EssayType)]} · ${Task2TopicLabels[normalizeTask2Topic(data.task.topic || data.selection.task2Topic)]}`
-  }
-}
-
 function DraftCard({
   record,
   onContinue,
   onDelete,
   deleteDisabled
 }: {
-  record: DraftRecord
-  onContinue: (record: DraftRecord) => void
-  onDelete: (record: DraftRecord) => void
+  record: DraftListItem
+  onContinue: (record: DraftListItem) => void
+  onDelete: (record: DraftListItem) => void
   deleteDisabled: boolean
 }) {
-  const summary = questionSummary(record)
-  const data = record.draftData
+  const taskLabel = record.taskType === 'task1' ? 'Task 1' : record.taskType === 'task2' ? 'Task 2' : '完整测试'
 
   return (
     <article className="draft-card">
       <div className="draft-card-heading">
         <div>
-          <span className="task-badge">
-            {record.taskType === 'task1' ? 'Task 1' : record.taskType === 'task2' ? 'Task 2' : '完整测试'}
-          </span>
-          <h3>{draftDisplayTitle(record)}</h3>
+          <span className="task-badge">{taskLabel}</span>
+          <h3>{taskLabel} 草稿</h3>
         </div>
         <span className="draft-updated">
           <MaterialIcon name="schedule" size={15} />
           {formatUpdatedAt(record.updatedAt)}
         </span>
-      </div>
-
-      {data.kind === 'full_test' ? (
-        <div className="draft-full-test-summary">
-          <div>
-            <strong>Task 1：{summary.task1}</strong>
-            <span>{data.task1.wordCount} 词</span>
-          </div>
-          <div>
-            <strong>Task 2：{summary.task2}</strong>
-            <span>{data.task2.wordCount} 词</span>
-          </div>
-        </div>
-      ) : (
-        <div className="draft-single-summary">
-          <span>{record.taskType === 'task1' ? `图表类型：${summary.task1}` : `题型与主题：${summary.task2}`}</span>
-          <span>当前字数：{data.task.wordCount}</span>
-        </div>
-      )}
-
-      <div className="draft-card-meta">
-        <span>
-          <MaterialIcon name="timer" size={16} />
-          剩余 {formatTime(draftRemainingSeconds(record))}
-        </span>
-        {data.kind === 'full_test' ? (
-          <span>
-            <MaterialIcon name="functions" size={16} />
-            总字数 {data.task1.wordCount + data.task2.wordCount}
-          </span>
-        ) : null}
       </div>
 
       <div className="draft-card-actions">
@@ -164,51 +97,52 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
   const { pushToast } = useToast()
   const [open, setOpen] = useState(initialOpen)
   const [activeTab, setActiveTab] = useState<DraftTab>('task1')
-  const [drafts, setDrafts] = useState<DraftRecord[]>([])
+  const [drafts, setDrafts] = useState<DraftListItem[]>([])
   const [quota, setQuota] = useState<DraftDeleteQuota>(emptyQuota)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const [pendingDelete, setPendingDelete] = useState<DraftRecord | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<DraftListItem | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const hasLoadedRef = useRef(false)
+  const quotaLoadedRef = useRef(false)
 
-  const loadDrafts = useCallback(async (showLoading = true) => {
+  const loadDrafts = useCallback(async () => {
     if (!userId) return
-    if (showLoading) setLoading(true)
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
+    setLoading(true)
     setLoadError('')
     try {
-      const payload = await listManagedDrafts()
-      setDrafts(payload.drafts)
-      setQuota(payload.quota)
+      const items = await listDraftsLightweight()
+      setDrafts(items)
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : '草稿读取失败，请稍后重试。')
+      hasLoadedRef.current = false
     } finally {
-      if (showLoading) setLoading(false)
+      setLoading(false)
     }
   }, [userId])
 
-  useEffect(() => {
-    if (!userId) return
-    window.queueMicrotask(() => void loadDrafts(false))
-  }, [loadDrafts, userId])
+  const loadQuota = useCallback(async () => {
+    if (quotaLoadedRef.current) return
+    quotaLoadedRef.current = true
+    const q = await fetchDraftDeleteQuota()
+    setQuota(q)
+  }, [])
 
   useEffect(() => {
-    if (open) window.queueMicrotask(() => void loadDrafts())
-  }, [loadDrafts, open])
+    if (!userId || !open) return
+    void loadDrafts()
+  }, [userId, open, loadDrafts])
 
-  const counts = useMemo(
-    () => ({
-      task1: drafts.filter((draft) => draft.taskType === 'task1').length,
-      task2: drafts.filter((draft) => draft.taskType === 'task2').length,
-      mock: drafts.filter((draft) => draft.taskType === 'mock').length
-    }),
-    [drafts]
-  )
-  const visibleDrafts = useMemo(
-    () => drafts.filter((draft) => draft.taskType === activeTab),
-    [activeTab, drafts]
-  )
+  const counts = {
+    task1: drafts.filter((d) => d.taskType === 'task1').length,
+    task2: drafts.filter((d) => d.taskType === 'task2').length,
+    mock: drafts.filter((d) => d.taskType === 'mock').length
+  }
+  const visibleDrafts = drafts.filter((d) => d.taskType === activeTab)
 
-  function continueDraft(record: DraftRecord) {
+  async function continueDraft(record: DraftListItem) {
     setOpen(false)
     router.push(`/write/${record.taskType}?draft=${encodeURIComponent(record.id)}`)
   }
@@ -218,7 +152,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
     setDeleting(true)
     try {
       const payload = await deleteManagedDraft(userId, pendingDelete.id)
-      setDrafts((current) => current.filter((draft) => draft.id !== pendingDelete.id))
+      setDrafts((current) => current.filter((d) => d.id !== pendingDelete.id))
       setQuota(payload.quota)
       setPendingDelete(null)
       pushToast({
@@ -236,6 +170,11 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
     } finally {
       setDeleting(false)
     }
+  }
+
+  function handleDeleteClick(record: DraftListItem) {
+    setPendingDelete(record)
+    void loadQuota()
   }
 
   return (
@@ -286,7 +225,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
         ) : loadError ? (
           <div className="draft-dialog-state is-error" role="alert">
             <p>{loadError}</p>
-            <button className="ui-secondary-button" type="button" onClick={() => void loadDrafts()}>
+            <button className="ui-secondary-button" type="button" onClick={() => { hasLoadedRef.current = false; void loadDrafts() }}>
               重新加载
             </button>
           </div>
@@ -301,9 +240,9 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
               <DraftCard
                 key={draft.id}
                 record={draft}
-                deleteDisabled={quota.remaining <= 0}
+                deleteDisabled={quota.remaining <= 0 && quotaLoadedRef.current}
                 onContinue={continueDraft}
-                onDelete={setPendingDelete}
+                onDelete={handleDeleteClick}
               />
             ))}
           </div>
@@ -327,7 +266,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
               className="danger-action-button"
               icon="delete"
               loading={deleting}
-              disabled={quota.remaining <= 0}
+              disabled={quota.remaining <= 0 && quotaLoadedRef.current}
               onClick={() => void confirmDelete()}
             >
               确认删除

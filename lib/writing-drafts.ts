@@ -302,6 +302,36 @@ export async function listManagedDrafts() {
   }>(response)
 }
 
+export type DraftListItem = {
+  id: string
+  taskType: WritingTaskType
+  createdAt: string
+  updatedAt: string
+}
+
+export async function listDraftsLightweight(): Promise<DraftListItem[]> {
+  try {
+    const response = await fetch('/api/user/writing-drafts/list', { cache: 'no-store' })
+    const data = await response.json().catch(() => ({})) as { success?: boolean; drafts?: DraftListItem[] }
+    if (!response.ok || !data.success) return []
+    return data.drafts ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function fetchDraftDeleteQuota(): Promise<DraftDeleteQuota> {
+  const emptyQuota: DraftDeleteQuota = { timezone: 'Asia/Shanghai', dailyLimit: 3, used: 0, remaining: 3, date: '' }
+  try {
+    const response = await fetch('/api/user/writing-drafts/quota', { cache: 'no-store' })
+    const data = await response.json().catch(() => ({})) as { success?: boolean; quota?: DraftDeleteQuota }
+    if (!response.ok || !data.success) return emptyQuota
+    return data.quota ?? emptyQuota
+  } catch {
+    return emptyQuota
+  }
+}
+
 export async function saveManagedDraft(
   userId: string,
   draftId: string,

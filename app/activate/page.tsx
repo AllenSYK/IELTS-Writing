@@ -24,8 +24,11 @@ export default function ActivatePage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const runActivation = useRef(createSingleFlight()).current
+  const hasFetchedRef = useRef(false)
 
   useEffect(() => {
+    if (hasFetchedRef.current) return
+    hasFetchedRef.current = true
     const supabase = createSupabaseBrowserClient()
     supabase.auth.getUser().then(({ data }) => {
       if (!data.user) {

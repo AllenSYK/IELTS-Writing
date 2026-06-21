@@ -3,15 +3,9 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { useSWRConfig } from 'swr'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
-import {
-  UserRouteCacheKeys,
-  warmUserRouteCache,
-  type UserRouteCacheKey
-} from '@/lib/user-route-cache'
+import type { UserRouteCacheKey } from '@/lib/user-route-cache'
 
 type SidebarItem = {
   id: string
@@ -25,8 +19,8 @@ type SidebarItem = {
 const mainItems: SidebarItem[] = [
   { id: 'home', href: '/dashboard', label: '账号中心', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
   { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') },
-  { id: 'history', href: '/history', label: '历史记录', icon: 'history', cacheKey: UserRouteCacheKeys.history, match: (pathname) => pathname.startsWith('/history') },
-  { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', cacheKey: UserRouteCacheKeys.analytics, match: (pathname) => pathname.startsWith('/analytics') },
+  { id: 'history', href: '/history', label: '历史记录', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
+  { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
   { id: 'settings', href: '/settings', label: '设置', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
 ]
 
@@ -54,10 +48,8 @@ function useOnlineLabel() {
 }
 
 export function Sidebar() {
-  const { userId } = useUserSession()
   const pathname = usePathname()
   const router = useRouter()
-  const { mutate } = useSWRConfig()
   const online = useOnlineLabel()
   const activeId = useMemo(
     () => [...mainItems, ...supportItems].find((item) => item.match(pathname))?.id ?? 'home',
@@ -66,7 +58,6 @@ export function Sidebar() {
 
   function prefetchItem(item: SidebarItem) {
     router.prefetch(item.href)
-    if (item.cacheKey && userId) void warmUserRouteCache(userId, item.cacheKey, mutate)
   }
 
   return (
