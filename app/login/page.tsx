@@ -8,7 +8,6 @@ import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
-import { PhoneOtpForm } from '@/components/auth/PhoneOtpForm'
 
 type LoginResponse = {
   success?: boolean
@@ -43,7 +42,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
-  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -91,16 +89,11 @@ export default function LoginPage() {
           <p>登录后将进入对应的账号页面。</p>
         </header>
 
-        <div className="auth-method-tabs" role="tablist" aria-label="登录方式">
-          <button type="button" role="tab" aria-selected={authMethod === 'email'} className={authMethod === 'email' ? 'is-active' : ''} onClick={() => setAuthMethod('email')}>
-            邮箱登录
-          </button>
-          <button type="button" role="tab" aria-selected={authMethod === 'phone'} className={authMethod === 'phone' ? 'is-active' : ''} onClick={() => setAuthMethod('phone')}>
-            手机号登录
-          </button>
+        <div className="auth-method-tabs auth-method-tabs-single">
+          <p className="auth-method-label">邮箱登录</p>
         </div>
 
-        {authMethod === 'email' ? <form className="auth-form auth-form-modern" onSubmit={handleSubmit}>
+        <form className="auth-form auth-form-modern" onSubmit={handleSubmit}>
           <label>
             <span>邮箱</span>
             <div className="auth-input-shell">
@@ -160,7 +153,7 @@ export default function LoginPage() {
           >
             登录
           </AuthSubmitButton>
-        </form> : <PhoneOtpForm mode="login" />}
+        </form>
 
         <p className="auth-switch">
           没有账号？<Link href="/register">立即注册</Link>
