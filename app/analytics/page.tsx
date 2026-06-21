@@ -29,8 +29,6 @@ import { userScopedStorageKey } from '@/lib/user-storage'
 type AnalyticsRange = '7' | '30' | 'all'
 
 const ANALYTICS_INVALIDATED_EVENT = 'ielts-writing-analytics-invalidated'
-const ANALYTICS_INVALIDATED_KEY = 'ielts-writing-analytics-invalidated-at'
-const ANALYTICS_LOADED_KEY = 'ielts-writing-analytics-loaded-at'
 const ANALYTICS_CACHE_KEY = 'ielts-writing-analytics-cache'
 
 type AnalyticsApiRecord = {
@@ -178,18 +176,22 @@ export default function AnalyticsPage() {
   const [now, setNow] = useState(0)
   const isFetchingRef = useRef(false)
   const isMountedRef = useRef(true)
+  const hasRequestedRef = useRef(false)
 
   const loadAnalytics = useCallback(async () => {
     if (isFetchingRef.current) return
     isFetchingRef.current = true
-    setRefreshing(true)
+    if (records.length > 0) {
+      setRefreshing(true)
+    } else {
+      setInitialLoading(true)
+    }
     try {
       const result = await fetchAnalyticsRecords()
       if (isMountedRef.current) {
         setRecords(result)
         setFetchError(null)
         writeCachedRecords(result)
-        localStorage.setItem(ANALYTICS_LOADED_KEY, String(Date.now()))
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -202,7 +204,7 @@ export default function AnalyticsPage() {
         setRefreshing(false)
       }
     }
-  }, [])
+  }, [records.length])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -211,15 +213,9 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (!userId) return
-    window.queueMicrotask(() => {
-      const invalidatedAt = Number(localStorage.getItem(ANALYTICS_INVALIDATED_KEY) || 0)
-      const loadedAt = Number(localStorage.getItem(ANALYTICS_LOADED_KEY) || 0)
-      if (invalidatedAt > loadedAt || loadedAt === 0) {
-        void loadAnalytics()
-      } else {
-        setInitialLoading(false)
-      }
-    })
+    if (hasRequestedRef.current) return
+    hasRequestedRef.current = true
+    void loadAnalytics()
   }, [userId, loadAnalytics])
 
   useEffect(() => {
