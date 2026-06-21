@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { RefreshCw } from 'lucide-react'
 import { ErrorDistributionBars } from '@/components/analytics/ErrorDistributionBars'
 import { GoalStatusPanel } from '@/components/analytics/GoalStatusPanel'
 import { IeltsRadarChart } from '@/components/analytics/IeltsRadarChart'
@@ -28,6 +27,10 @@ import { userScopedStorageKey } from '@/lib/user-storage'
 
 type AnalyticsRange = '7' | '30' | 'all'
 
+const ANALYTICS_INVALIDATED_EVENT = 'ielts-writing-analytics-invalidated'
+const ANALYTICS_INVALIDATED_KEY = 'ielts-writing-analytics-invalidated-at'
+const ANALYTICS_LOADED_KEY = 'ielts-writing-analytics-loaded-at'
+
 type AnalyticsApiRecord = {
   id: string
   taskType: string
@@ -40,10 +43,6 @@ type AnalyticsApiRecord = {
   lexicalResource: { score: string; feedback: string } | null
   grammaticalRangeAccuracy: { score: string; feedback: string } | null
   annotations: EssayAnnotation[]
-}
-
-type AnalyticsData = {
-  records: WritingRecord[]
 }
 
 function toCriterionScore(raw: { score: string; feedback: string } | null): EssayEvaluation['taskAchievement'] {
@@ -98,10 +97,10 @@ function adaptRecord(r: AnalyticsApiRecord): WritingRecord {
   }
 }
 
-async function fetchAnalytics(): Promise<WritingRecord[]> {
+async function fetchAnalyticsRecords(): Promise<WritingRecord[]> {
   const response = await fetch('/api/user/writing-records/analytics', { cache: 'no-store' })
   const data = await response.json().catch(() => ({})) as { success?: boolean; records?: AnalyticsApiRecord[]; message?: string }
-  if (!response.ok) throw new Error(data.message || '学习分析数据加载失败')
+  if (!response.ok || !data.success) throw new Error(data.message || '学习分析数据加载失败')
   return (data.records ?? []).map(adaptRecord)
 }
 
@@ -129,42 +128,30 @@ function buildTrend(records: WritingRecord[]) {
 export default function AnalyticsPage() {
   const { userId } = useUserSession()
   const { profile } = useUserProfile()
-
-  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
-  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+  const [records, setRecords] = useState<WritingRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [range, setRange] = useState<AnalyticsRange>('30')
   const [now, setNow] = useState(0)
-  const hasLoadedRef = useRef(false)
   const isFetchingRef = useRef(false)
   const isMountedRef = useRef(true)
 
-  const loadAnalytics = useCallback(async (options?: { manual?: boolean }) => {
-    if (!userId || isFetchingRef.current) return
-
+  const loadAnalytics = useCallback(async () => {
+    if (isFetchingRef.current) return
     isFetchingRef.current = true
-    if (options?.manual) setRefreshing(true)
-
     try {
-      const records = await fetchAnalytics()
+      const result = await fetchAnalyticsRecords()
       if (isMountedRef.current) {
-        setAnalyticsData({ records })
-        setAnalyticsError(null)
+        setRecords(result)
+        localStorage.setItem(ANALYTICS_LOADED_KEY, String(Date.now()))
       }
-    } catch (err) {
-      if (isMountedRef.current) {
-        setAnalyticsError(err instanceof Error ? err.message : '加载失败，请稍后重试。')
-      }
+    } catch {
+      // keep existing records on failure
     } finally {
       isFetchingRef.current = false
-      if (isMountedRef.current) {
-        setRefreshing(false)
-        setIsLoading(false)
-      }
+      if (isMountedRef.current) setIsLoading(false)
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     isMountedRef.current = true
@@ -172,13 +159,24 @@ export default function AnalyticsPage() {
   }, [])
 
   useEffect(() => {
-    if (!userId || hasLoadedRef.current) return
-    hasLoadedRef.current = true
-    void loadAnalytics()
+    if (!userId) return
+    window.queueMicrotask(() => {
+      const invalidatedAt = Number(localStorage.getItem(ANALYTICS_INVALIDATED_KEY) || 0)
+      const loadedAt = Number(localStorage.getItem(ANALYTICS_LOADED_KEY) || 0)
+      if (invalidatedAt > loadedAt || loadedAt === 0) {
+        void loadAnalytics()
+      } else {
+        setIsLoading(false)
+      }
+    })
   }, [userId, loadAnalytics])
 
-  const handleRefresh = useCallback(() => {
-    void loadAnalytics({ manual: true })
+  useEffect(() => {
+    const handleInvalidated = () => {
+      if (isMountedRef.current) void loadAnalytics()
+    }
+    window.addEventListener(ANALYTICS_INVALIDATED_EVENT, handleInvalidated)
+    return () => window.removeEventListener(ANALYTICS_INVALIDATED_EVENT, handleInvalidated)
   }, [loadAnalytics])
 
   useEffect(() => {
@@ -193,8 +191,6 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (preferencesLoaded && userId) window.localStorage.setItem(userScopedStorageKey('ielts-writing-analytics-range', userId), range)
   }, [preferencesLoaded, range, userId])
-
-  const records = useMemo(() => analyticsData?.records ?? [], [analyticsData])
 
   const scopedRecords = useMemo(() => {
     if (range === 'all') return records
@@ -217,59 +213,6 @@ export default function AnalyticsPage() {
 
   if (!preferencesLoaded || isLoading) return <PageSkeleton />
 
-  if (analyticsError && records.length === 0) {
-    return (
-      <main className="ui-page" data-main-content tabIndex={-1}>
-        <section className="analytics-main">
-          <div className="analytics-error" style={{ marginTop: 120 }}>
-            <MaterialIcon name="error" size={20} />
-            <span>{analyticsError}</span>
-            <button
-              className="ui-secondary-button analytics-refresh-btn"
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              style={{ marginLeft: 'auto' }}
-            >
-              <RefreshCw size={16} className={refreshing ? 'is-spinning' : ''} />
-              <span>{refreshing ? '刷新中…' : '重试'}</span>
-            </button>
-          </div>
-        </section>
-      </main>
-    )
-  }
-
-  if (records.length === 0) {
-    return (
-      <main className="ui-page" data-main-content tabIndex={-1}>
-        <section className="analytics-main">
-          <header className="page-section-header" style={{ paddingTop: 120 }}>
-            <p className="ui-body-lg analytics-intro">根据当前账号的真实批改记录生成。</p>
-            <button
-              className="ui-secondary-button analytics-refresh-btn"
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshing}
-            >
-              <RefreshCw size={16} className={refreshing ? 'is-spinning' : ''} />
-              <span>{refreshing ? '刷新中…' : '刷新分析'}</span>
-            </button>
-          </header>
-          <GlassPanel className="empty-state">
-            <MaterialIcon name="edit_note" size={48} className="text-primary" />
-            <p className="ui-title-md">暂无已完成的作文记录</p>
-            <p className="ui-body-md">完成至少一篇作文批改后，学习分析将自动生成。</p>
-            <Link className="ui-primary-button" href="/practice" style={{ marginTop: 18 }}>
-              开始练习
-              <MaterialIcon name="arrow_forward" size={16} />
-            </Link>
-          </GlassPanel>
-        </section>
-      </main>
-    )
-  }
-
   const rangeOptions: Array<{ id: AnalyticsRange; label: string }> = [
     { id: '7', label: '近7天' },
     { id: '30', label: '近30天' },
@@ -279,39 +222,20 @@ export default function AnalyticsPage() {
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="analytics-main">
-        {analyticsError ? (
-          <div className="analytics-error">
-            <MaterialIcon name="warning" size={18} />
-            <span>{analyticsError}</span>
-          </div>
-        ) : null}
-
         <header className="page-section-header">
           <p className="ui-body-lg analytics-intro">根据当前账号的真实批改记录生成。</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div className="filter-chip-row" role="toolbar" aria-label="分析时间范围">
-              {rangeOptions.map((option) => (
-                <button
-                  key={option.id}
-                  className={`filter-chip ${range === option.id ? 'is-active' : ''}`}
-                  type="button"
-                  aria-pressed={range === option.id}
-                  onClick={() => setRange(option.id)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <button
-              className="ui-secondary-button analytics-refresh-btn"
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              aria-label="刷新分析"
-            >
-              <RefreshCw size={16} className={refreshing ? 'is-spinning' : ''} />
-              <span>{refreshing ? '刷新中…' : '刷新分析'}</span>
-            </button>
+          <div className="filter-chip-row" role="toolbar" aria-label="分析时间范围">
+            {rangeOptions.map((option) => (
+              <button
+                key={option.id}
+                className={`filter-chip ${range === option.id ? 'is-active' : ''}`}
+                type="button"
+                aria-pressed={range === option.id}
+                onClick={() => setRange(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </header>
 

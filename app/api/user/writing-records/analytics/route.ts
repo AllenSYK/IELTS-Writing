@@ -117,8 +117,10 @@ function extractAnnotations(
   return safeParseAnnotations(rowAnnotations)
 }
 
+const COMPLETED_STATUSES = ['complete', 'completed']
+
 function buildAnalyticsRecord(row: Record<string, unknown>): AnalyticsRecord | null {
-  if (row.processing_status !== 'completed') return null
+  if (!COMPLETED_STATUSES.includes(row.processing_status as string)) return null
 
   let evaluation: Record<string, unknown> | null = null
   if (row.evaluation && typeof row.evaluation === 'object') {
@@ -173,7 +175,7 @@ export async function GET() {
     .from('writing_records')
     .select('id, task_type, submitted_at, processing_status, evaluation, annotations')
     .eq('user_id', user.id)
-    .eq('processing_status', 'completed')
+    .in('processing_status', ['complete', 'completed'])
     .order('submitted_at', { ascending: true })
     .limit(50)
 

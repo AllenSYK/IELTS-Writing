@@ -151,6 +151,8 @@ export default function HistoryPage() {
     setIsRefreshing(true)
     try {
       await refreshList()
+      localStorage.setItem('ielts-writing-analytics-invalidated-at', String(Date.now()))
+      window.dispatchEvent(new CustomEvent('ielts-writing-analytics-invalidated'))
     } finally {
       setIsRefreshing(false)
     }
