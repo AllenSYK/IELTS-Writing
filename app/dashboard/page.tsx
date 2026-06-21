@@ -1,9 +1,7 @@
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CalendarDays, CheckCircle2, Clock3, PenLine } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Clock3 } from 'lucide-react'
 import { WritingActivityHeatmap } from '@/components/dashboard/WritingActivityHeatmap'
 import { checkActiveWebLicenseForUser, getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
-import { LogoutButton } from './LogoutButton'
 import { accountDisplayName } from '@/lib/phone-auth'
 
 function formatDate(value?: string | null) {
@@ -30,21 +28,6 @@ export default async function DashboardPage() {
   return (
     <main className="ui-page dashboard-page" data-main-content tabIndex={-1}>
       <section className="dashboard-main">
-        <header className="dashboard-header">
-          <div>
-            <p className="ui-label">练习概览</p>
-            <h2>账号信息</h2>
-            <p className="ui-body-md">{accountDisplayName(user)}</p>
-          </div>
-          <div className="dashboard-actions">
-            <Link className="ui-primary-button" href="/practice">
-              <PenLine size={16} />
-              进入练习
-            </Link>
-            <LogoutButton />
-          </div>
-        </header>
-
         <section className="dashboard-grid">
           <article className="dashboard-card">
             <CheckCircle2 size={20} />

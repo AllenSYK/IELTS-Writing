@@ -3,8 +3,9 @@
 import Link from 'next/link'
 import { FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Loader2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { AuthSpinner, AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 import { PhoneOtpForm } from '@/components/auth/PhoneOtpForm'
 
@@ -370,10 +371,15 @@ export default function RegisterPage() {
                 onChange={setAgreementsAccepted}
               />
 
-              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || !agreementsAccepted}>
-                {loading === 'send' ? <Loader2 className="admin-spin" size={18} /> : <UserPlus size={18} />}
-                {loading === 'send' ? '正在发送' : '发送邮箱验证码'}
-              </button>
+              <AuthSubmitButton
+                type="submit"
+                loading={loading === 'send'}
+                loadingLabel="正在发送"
+                disabled={Boolean(loading) || !agreementsAccepted}
+                icon={<UserPlus size={18} aria-hidden="true" />}
+              >
+                发送邮箱验证码
+              </AuthSubmitButton>
             </form>
 
             <p className="auth-switch">
@@ -413,7 +419,7 @@ export default function RegisterPage() {
               <div className="code-meta">
                 <span><ShieldCheck size={15} />剩余有效时间 {formatSeconds(validLeft)}</span>
                 <button type="button" onClick={() => sendCode('resend')} disabled={Boolean(loading) || cooldownLeft > 0}>
-                  <RotateCcw size={15} />
+                  {loading === 'resend' ? <AuthSpinner size={15} /> : <RotateCcw size={15} />}
                   {cooldownLeft > 0 ? `${cooldownLeft} 秒后重新发送` : '重新发送'}
                 </button>
               </div>
@@ -421,10 +427,15 @@ export default function RegisterPage() {
               {message ? <p className="auth-success" role="status">{message}</p> : null}
               {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-              <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0 || !agreementsAccepted}>
-                {loading === 'verify' ? <Loader2 className="admin-spin" size={18} /> : <ShieldCheck size={18} />}
-                {loading === 'verify' ? '正在创建账号' : '验证并创建账号'}
-              </button>
+              <AuthSubmitButton
+                type="submit"
+                loading={loading === 'verify'}
+                loadingLabel="正在创建账号"
+                disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0 || !agreementsAccepted}
+                icon={<ShieldCheck size={18} aria-hidden="true" />}
+              >
+                验证并创建账号
+              </AuthSubmitButton>
 
               <div className="auth-secondary-actions">
                 <button type="button" onClick={invalidateAndReturn} disabled={Boolean(loading)}>

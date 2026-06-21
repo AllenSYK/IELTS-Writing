@@ -28,6 +28,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     pathname.startsWith('/admin') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/register') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password') ||
     pathname.startsWith('/activate')
   const meta = pageMeta(pathname)
 

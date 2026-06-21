@@ -1,9 +1,7 @@
 import type { Metadata } from 'next'
-import { AppShell } from '@/components/layout/AppShell'
 import { UserSessionProvider } from '@/components/auth/UserSessionProvider'
 import { AppInteractionProvider } from '@/components/interaction-system'
-import { UserPerformanceProvider } from '@/components/performance/UserPerformanceProvider'
-import { UserProfileProvider } from '@/stores/user-profile-store'
+import { AppRuntime } from '@/components/layout/AppRuntime'
 import './globals.css'
 import './styles/web-audit-refactor.css'
 import './admin.css'
@@ -19,11 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <UserSessionProvider>
           <AppInteractionProvider>
-            <UserPerformanceProvider>
-              <UserProfileProvider>
-                <AppShell>{children}</AppShell>
-              </UserProfileProvider>
-            </UserPerformanceProvider>
+            <AppRuntime>{children}</AppRuntime>
           </AppInteractionProvider>
         </UserSessionProvider>
       </body>

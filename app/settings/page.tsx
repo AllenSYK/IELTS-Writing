@@ -37,7 +37,7 @@ function formatDateTime(value?: string | null) {
 }
 
 export default function SettingsPage() {
-  const { userId } = useUserSession()
+  const { userId, accountLabel } = useUserSession()
   const { pushToast } = useToast()
   const motion = useMotionPreference()
   const { profile, saveProfile } = useUserProfile()
@@ -153,13 +153,25 @@ export default function SettingsPage() {
     <main className="settings-page" data-main-content tabIndex={-1}>
       <section className="settings-main">
         <GlassPanel className="settings-profile-card ui-hover-glow">
-          <ProfileAvatar profile={draftProfile} size="lg" label="个人资料头像" />
-          <div>
-            <h1 className="ui-title-headline">{draftProfile.fullName}</h1>
-            <p className="ui-body-md" style={{ marginTop: 8 }}>
-              目标总分 {formatBandOption(draftProfile.targetOverall)} · Task 1 {formatBandOption(draftProfile.task1Target)} · Task 2 {formatBandOption(draftProfile.task2Target)}
-            </p>
-            <p className="ui-body-md" style={{ marginTop: 8 }}>{draftProfile.bio}</p>
+          <div className="settings-profile-identity">
+            <ProfileAvatar profile={draftProfile} size="lg" label="个人资料头像" />
+            <div className="settings-profile-copy">
+              <span className="settings-profile-kicker">个人资料</span>
+              <h1 className="ui-title-headline">{draftProfile.fullName}</h1>
+              <p className="settings-account-label" title={accountLabel || undefined}>
+                {accountLabel || '账号信息加载中'}
+              </p>
+              <div className="settings-profile-meta" aria-label="账号摘要">
+                <span>目标 {formatBandOption(draftProfile.targetOverall)}</span>
+                <span>{license.status === 'active' ? '会员已激活' : license.status === 'loading' ? '正在读取会员状态' : '会员未激活'}</span>
+                {userId ? <span title={userId}>ID {userId.slice(0, 8)}</span> : null}
+              </div>
+              {draftProfile.bio ? <p className="settings-profile-bio">{draftProfile.bio}</p> : null}
+            </div>
+          </div>
+          <div className="settings-profile-actions">
+            <p>安全退出当前账号</p>
+            <LogoutButton />
           </div>
         </GlassPanel>
 
@@ -347,9 +359,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24 }}>
-              <LogoutButton />
-            </div>
           </GlassPanel>
 
           <GlassPanel className="settings-section">

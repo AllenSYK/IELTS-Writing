@@ -19,28 +19,30 @@ export function AgreementConsent({
 
   return (
     <>
-      <label className="agreement-consent">
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>
-          我已阅读并同意
-          <button type="button" onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setOpenDocument('terms')
-          }}>《服务条款》</button>
-          和
-          <button type="button" onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setOpenDocument('privacy')
-          }}>《隐私政策》</button>
-        </span>
-      </label>
+      <div className="agreement-row">
+        <label className="agreement-consent">
+          <input
+            type="checkbox"
+            checked={checked}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.checked)}
+          />
+          <span className="agreement-copy">
+            我已阅读并同意
+            <button type="button" onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setOpenDocument('terms')
+            }}>《服务条款》</button>
+            和
+            <button type="button" onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setOpenDocument('privacy')
+            }}>《隐私政策》</button>
+          </span>
+        </label>
+      </div>
 
       <CenteredDialog
         open={Boolean(openDocument)}

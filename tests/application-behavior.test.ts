@@ -12,6 +12,7 @@ import {
 } from '../lib/web-license/admin-license-data'
 import { readStorageValue } from '../lib/user-storage'
 import { accountDisplayName, maskPhone, normalizeMainlandPhone } from '../lib/phone-auth'
+import { LegalContactEmail, PrivacySections, TermsEffectiveDate, TermsSections } from '../lib/legal-content'
 
 test('Word count handles punctuation and contractions', () => {
   assert.equal(countWords("It's a well-developed, high-scoring essay."), 5)
@@ -203,18 +204,116 @@ test('phone OTP routes preserve email auth and never auto-create users from the 
 })
 
 test('agreement controls use one centered dialog and shared legal content without navigation', async () => {
-  const [consent, terms, privacy] = await Promise.all([
+  const [consent, terms, privacy, css] = await Promise.all([
     readFile(new URL('../components/auth/AgreementConsent.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/terms/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/privacy/page.tsx', import.meta.url), 'utf8')
+    readFile(new URL('../app/privacy/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/styles/web-audit-refactor.css', import.meta.url), 'utf8')
   ])
 
   assert.match(consent, /CenteredDialog/)
+  assert.match(consent, /className="agreement-row"/)
+  assert.match(consent, /className="agreement-copy"/)
   assert.match(consent, /setOpenDocument\('terms'\)/)
   assert.match(consent, /setOpenDocument\('privacy'\)/)
+  assert.match(consent, /event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)/)
   assert.doesNotMatch(consent, /next\/link|href="\/terms"|href="\/privacy"/)
   assert.match(terms, /TermsSections/)
   assert.match(privacy, /PrivacySections/)
+  assert.match(css, /\.auth-form \.agreement-consent\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*flex-start;/)
+  assert.match(css, /\.auth-form \.agreement-consent input\[type="checkbox"\]\s*\{[\s\S]*?width:\s*18px;[\s\S]*?min-height:\s*18px;/)
+  assert.match(css, /\.agreement-copy\s*\{[\s\S]*?min-width:\s*0;/)
+  assert.match(css, /\.agreement-copy button\s*\{[\s\S]*?padding:\s*0;[\s\S]*?line-height:\s*inherit;[\s\S]*?vertical-align:\s*baseline;/)
+})
+
+test('public authentication pages stay outside the signed-in data runtime and remain scrollable', async () => {
+  const [runtime, shell, forgotPage, globalCss] = await Promise.all([
+    readFile(new URL('../components/layout/AppRuntime.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/forgot-password/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(runtime, /'\/forgot-password'/)
+  assert.match(runtime, /'\/reset-password'/)
+  assert.match(runtime, /if \(isPublicAuthRoute\(pathname\)\)[\s\S]*?return <AppShell>\{children\}<\/AppShell>/)
+  assert.match(runtime, /<UserPerformanceProvider>[\s\S]*?<UserProfileProvider>/)
+  assert.match(shell, /pathname\.startsWith\('\/forgot-password'\)/)
+  assert.match(shell, /pathname\.startsWith\('\/reset-password'\)/)
+  assert.doesNotMatch(forgotPage, /UserPerformanceProvider|UserProfileProvider|WritingActivity|license\/status|api\/user/)
+  assert.match(globalCss, /\.auth-page\s*\{[\s\S]*?min-height:\s*100dvh;[\s\S]*?env\(safe-area-inset-top\)[\s\S]*?env\(safe-area-inset-bottom\)/)
+  assert.match(globalCss, /\.app-route-root\.is-full-screen\s*\{[\s\S]*?min-height:\s*100dvh;[\s\S]*?overflow-x:\s*hidden;/)
+  assert.doesNotMatch(globalCss, /\.app-route-root\.is-full-screen\s*\{[^}]*overflow:\s*hidden;/)
+})
+
+test('auth submit buttons share one animated spinner across email and phone flows', async () => {
+  const [button, login, register, phone, forgot, reset, css] = await Promise.all([
+    readFile(new URL('../components/auth/AuthSubmitButton.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/login/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/auth/PhoneOtpForm.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/forgot-password/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/reset-password/ResetPasswordClient.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(button, /aria-busy=\{loading \|\| undefined\}/)
+  assert.match(button, /disabled=\{Boolean\(disabled \|\| loading\)\}/)
+  for (const source of [login, register, phone, forgot, reset]) {
+    assert.match(source, /AuthSubmitButton/)
+  }
+  assert.match(css, /\.auth-loading-spinner\s*\{[\s\S]*?animation:\s*auth-spin 900ms linear infinite;/)
+  assert.match(css, /@keyframes auth-spin\s*\{[\s\S]*?transform:\s*rotate\(360deg\);/)
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.auth-loading-spinner/)
+})
+
+test('registration card uses a compact responsive width without fixed height clipping', async () => {
+  const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  assert.match(css, /\.auth-register-panel\s*\{[\s\S]*?width:\s*min\(100%, 460px\);/)
+  assert.doesNotMatch(css, /\.auth-register-panel\s*\{[^}]*height:/)
+  assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.auth-register-panel\s*\{[\s\S]*?padding:\s*20px;/)
+})
+
+test('settings profile exposes account identity and a confirmed cache-safe logout', async () => {
+  const [settings, logout, session, dashboard, css] = await Promise.all([
+    readFile(new URL('../app/settings/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/dashboard/LogoutButton.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/auth/UserSessionProvider.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/dashboard/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(settings, /settings-profile-identity/)
+  assert.match(settings, /accountLabel \|\| '账号信息加载中'/)
+  assert.match(settings, /settings-profile-actions[\s\S]*?<LogoutButton \/>/)
+  assert.equal((settings.match(/<LogoutButton \/>/g) || []).length, 1)
+  assert.match(session, /accountDisplayName/)
+  assert.match(logout, /CenteredDialog/)
+  assert.match(logout, /确定要退出当前账号吗？/)
+  assert.match(logout, /supabase\.auth\.signOut\(\)/)
+  assert.match(logout, /clearUserRouteMemoryCaches\(userId\)/)
+  assert.match(logout, /prepareForLogout\(\)/)
+  assert.match(logout, /loading \? '正在退出' : '退出登录'/)
+  assert.doesNotMatch(dashboard, /dashboard-header|练习概览|<LogoutButton/)
+  assert.match(dashboard, /<section className="dashboard-main">\s*<section className="dashboard-grid">/)
+  assert.doesNotMatch(css, /\.dashboard-header\s*\{/)
+  assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.app-header\s*\{[\s\S]*?top:\s*77px;[\s\S]*?flex:\s*0 0 auto;/)
+})
+
+test('legal pages share the current contact email, AI notice, and final terms effective date', async () => {
+  const legalSource = await readFile(new URL('../lib/legal-content.ts', import.meta.url), 'utf8')
+  const legalSections = await readFile(new URL('../components/legal/LegalSections.tsx', import.meta.url), 'utf8')
+
+  assert.equal(LegalContactEmail, 'qgyxzq@gmail.com')
+  assert.equal(TermsEffectiveDate, '2026年6月20日')
+  assert.equal(TermsSections.at(-1)?.[0], '生效日期')
+  assert.equal(TermsSections.at(-1)?.[1], '生效日期：2026年6月20日')
+  assert.ok(TermsSections.some(([title, body]) => title === '人工智能服务说明' && body.includes('阿里云提供的通义千问相关服务')))
+  assert.ok(TermsSections.some(([, body]) => body.includes(LegalContactEmail)))
+  assert.ok(PrivacySections.some(([, body]) => body.includes(LegalContactEmail)))
+  assert.doesNotMatch(legalSource, /support@ieltswriting\.online/)
+  assert.doesNotMatch(legalSource, /qwen-[a-z0-9._-]+|具体模型版本|官方认证模型/i)
+  assert.match(legalSections, /mailto:\$\{LegalContactEmail\}/)
 })
 
 test('practice settings share one responsive grid and include the authenticated custom-task upload flow', async () => {

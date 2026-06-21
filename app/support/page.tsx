@@ -23,7 +23,7 @@ type FeedbackResult = {
   createdAt: string
 }
 
-const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@ieltswriting.online'
+const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'qgyxzq@gmail.com'
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.ieltswriting.online'
 
 export default function SupportPage() {

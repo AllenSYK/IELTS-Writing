@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { FormEvent, useState } from 'react'
-import { ArrowLeft, Loader2, Mail, Send } from 'lucide-react'
+import { ArrowLeft, Mail, Send } from 'lucide-react'
+import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 
 type ForgotResponse = {
   success?: boolean
@@ -84,10 +85,14 @@ export default function ForgotPasswordPage() {
           {message ? <p className="auth-success" role="status">{message}</p> : null}
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-          <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading}>
-            {loading ? <Loader2 className="admin-spin" size={18} /> : <Send size={18} />}
-            {loading ? '正在发送' : '发送重置邮件'}
-          </button>
+          <AuthSubmitButton
+            type="submit"
+            loading={loading}
+            loadingLabel="正在发送"
+            icon={<Send size={18} aria-hidden="true" />}
+          >
+            发送重置邮件
+          </AuthSubmitButton>
         </form>
 
         <p className="auth-switch">

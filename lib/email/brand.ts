@@ -2,7 +2,7 @@ export const emailBrand = {
   productName: 'IELTS Writing',
   logoUrl: 'https://www.ieltswriting.online/logo.svg',
   websiteUrl: 'https://www.ieltswriting.online',
-  supportEmail: 'support@ieltswriting.online',
+  supportEmail: 'qgyxzq@gmail.com',
   primaryColor: '#0a66ff',
   accentColor: '#12b981',
   fromName: process.env.EMAIL_FROM_NAME?.trim() || 'IELTS Writing',

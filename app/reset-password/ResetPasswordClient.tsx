@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
+import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 
 export function ResetPasswordClient() {
   const router = useRouter()
@@ -143,10 +144,15 @@ export function ResetPasswordClient() {
         {message ? <p className="auth-success" role="status"><CheckCircle2 size={16} />{message}</p> : null}
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-        <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={checking || loading || !ready}>
-          {loading ? <Loader2 className="admin-spin" size={18} /> : <CheckCircle2 size={18} />}
-          {loading ? '正在保存' : '保存新密码'}
-        </button>
+        <AuthSubmitButton
+          type="submit"
+          loading={loading}
+          loadingLabel="正在保存"
+          disabled={checking || !ready}
+          icon={<CheckCircle2 size={18} aria-hidden="true" />}
+        >
+          保存新密码
+        </AuthSubmitButton>
       </form>
 
       <p className="auth-switch">

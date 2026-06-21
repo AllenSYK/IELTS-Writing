@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Loader2, MessageSquareText, Phone, RotateCcw, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, MessageSquareText, Phone, RotateCcw, ShieldCheck } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 import { maskPhone, normalizeMainlandPhone } from '@/lib/phone-auth'
@@ -146,15 +147,16 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
         <AgreementConsent checked={agreementsAccepted} disabled={Boolean(loading)} onChange={setAgreementsAccepted} />
         {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-        <button
-          className="ui-primary-button auth-submit auth-main-button"
+        <AuthSubmitButton
           type="button"
           disabled={Boolean(loading) || code.length !== 6 || !agreementsAccepted}
+          loading={loading === 'verify'}
+          loadingLabel="正在验证"
+          icon={<ShieldCheck size={18} aria-hidden="true" />}
           onClick={() => void verifyCode()}
         >
-          {loading === 'verify' ? <Loader2 className="admin-spin" size={18} /> : <ShieldCheck size={18} />}
-          {loading === 'verify' ? '正在验证' : mode === 'register' ? '验证并创建账号' : '验证并登录'}
-        </button>
+          {mode === 'register' ? '验证并创建账号' : '验证并登录'}
+        </AuthSubmitButton>
 
         <div className="auth-secondary-actions">
           <button type="button" disabled={Boolean(loading)} onClick={() => {
@@ -197,15 +199,16 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
       <AgreementConsent checked={agreementsAccepted} disabled={Boolean(loading)} onChange={setAgreementsAccepted} />
       {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-      <button
-        className="ui-primary-button auth-submit auth-main-button"
+      <AuthSubmitButton
         type="button"
         disabled={Boolean(loading) || !agreementsAccepted || phone.trim().length < 11}
+        loading={loading === 'send'}
+        loadingLabel="正在发送"
+        icon={<MessageSquareText size={18} aria-hidden="true" />}
         onClick={() => void sendCode()}
       >
-        {loading === 'send' ? <Loader2 className="admin-spin" size={18} /> : <MessageSquareText size={18} />}
-        {loading === 'send' ? '正在发送' : '发送短信验证码'}
-      </button>
+        发送短信验证码
+      </AuthSubmitButton>
     </div>
   )
 }

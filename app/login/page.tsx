@@ -3,9 +3,10 @@
 import Link from 'next/link'
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Loader2, LockKeyhole, LogIn, Mail } from 'lucide-react'
+import { Eye, EyeOff, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 import { PhoneOtpForm } from '@/components/auth/PhoneOtpForm'
 
@@ -150,10 +151,15 @@ export default function LoginPage() {
 
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
 
-          <button className="ui-primary-button auth-submit auth-main-button" type="submit" disabled={loading || !agreementsAccepted}>
-            {loading ? <Loader2 className="admin-spin" size={18} /> : <LogIn size={18} />}
-            {loading ? '正在登录' : '登录'}
-          </button>
+          <AuthSubmitButton
+            type="submit"
+            loading={loading}
+            loadingLabel="正在登录"
+            disabled={!agreementsAccepted}
+            icon={<LogIn size={18} aria-hidden="true" />}
+          >
+            登录
+          </AuthSubmitButton>
         </form> : <PhoneOtpForm mode="login" />}
 
         <p className="auth-switch">

@@ -13,11 +13,13 @@ import {
 } from 'react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 import { clearUserEphemeralBrowserState } from '@/lib/user-storage'
+import { accountDisplayName } from '@/lib/phone-auth'
 
 type UserSessionStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 type UserSessionContextValue = {
   userId: string | null
+  accountLabel: string | null
   status: UserSessionStatus
   refreshUser: () => Promise<string | null>
   prepareForLogout: () => void
@@ -36,44 +38,47 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
   }, [])
   const currentUserIdRef = useRef<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const [accountLabel, setAccountLabel] = useState<string | null>(null)
   const [status, setStatus] = useState<UserSessionStatus>('loading')
 
-  const applyUserId = useCallback((nextUserId: string | null) => {
+  const applyUser = useCallback((user: { id: string; email?: string | null; phone?: string | null } | null) => {
+    const nextUserId = user?.id ?? null
     currentUserIdRef.current = nextUserId
     setUserId(nextUserId)
+    setAccountLabel(user ? accountDisplayName(user) : null)
     setStatus(nextUserId ? 'authenticated' : 'unauthenticated')
   }, [])
 
   const refreshUser = useCallback(async () => {
     if (!supabase) {
-      applyUserId(null)
+      applyUser(null)
       return null
     }
     const { data, error } = await supabase.auth.getUser()
-    const nextUserId = error ? null : data.user?.id ?? null
-    applyUserId(nextUserId)
-    return nextUserId
-  }, [applyUserId, supabase])
+    const user = error ? null : data.user
+    applyUser(user ?? null)
+    return user?.id ?? null
+  }, [applyUser, supabase])
 
   const prepareForLogout = useCallback(() => {
     const activeUserId = currentUserIdRef.current
     if (activeUserId) clearUserEphemeralBrowserState(activeUserId)
-    applyUserId(null)
-  }, [applyUserId])
+    applyUser(null)
+  }, [applyUser])
 
   useEffect(() => {
     if (!supabase) {
-      window.queueMicrotask(() => applyUserId(null))
+      window.queueMicrotask(() => applyUser(null))
       return
     }
     let cancelled = false
     void supabase.auth.getUser().then(({ data, error }) => {
-      if (!cancelled) applyUserId(error ? null : data.user?.id ?? null)
+      if (!cancelled) applyUser(error ? null : data.user ?? null)
     })
     return () => {
       cancelled = true
     }
-  }, [applyUserId, pathname, supabase])
+  }, [applyUser, pathname, supabase])
 
   useEffect(() => {
     if (!supabase) return
@@ -90,8 +95,8 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
   }, [prepareForLogout, refreshUser, supabase])
 
   const value = useMemo(
-    () => ({ userId, status, refreshUser, prepareForLogout }),
-    [prepareForLogout, refreshUser, status, userId]
+    () => ({ userId, accountLabel, status, refreshUser, prepareForLogout }),
+    [accountLabel, prepareForLogout, refreshUser, status, userId]
   )
 
   return <UserSessionContext.Provider value={value}>{children}</UserSessionContext.Provider>

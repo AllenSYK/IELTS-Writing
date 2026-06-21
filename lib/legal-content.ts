@@ -1,7 +1,12 @@
 export type LegalSection = readonly [title: string, body: string]
 
+// Internal product note: have qualified legal counsel review these terms before a major public release.
+export const LegalContactEmail = 'qgyxzq@gmail.com'
+export const TermsEffectiveDate = '2026年6月20日'
+
 export const TermsSections: readonly LegalSection[] = [
   ['服务说明', 'IELTS Writing 是面向雅思写作学习的 Web 应用，提供题目练习、作文批改、历史记录和学习分析等功能。'],
+  ['人工智能服务说明', '本服务的部分题目识别、内容分析、写作评价及学习建议功能由人工智能技术提供支持，相关技术服务由阿里云提供的通义千问相关服务实现。人工智能输出可能存在错误、遗漏、延迟或理解偏差，仅供学习与练习参考，不代表 IELTS 官方考试成绩，也不构成法律、医疗、金融或其他专业意见。用户应结合自身情况独立判断并核实重要信息。服务会采取合理的数据与安全措施，但不会虚假声称已获得政府、考试机构或监管部门认证。'],
   ['软件授权范围', '用户获得的是在授权设备上使用本软件的非独占、不可转让许可，不代表取得软件源代码、商标或其他知识产权。'],
   ['激活码使用规则', '激活码仅限购买或获授权的用户本人使用，并受设备数量、有效期和版本支持范围限制。'],
   ['禁止共享、转售或破解激活码', '不得共享、出租、转售、公开发布、逆向破解或绕过激活码与设备绑定机制。'],
@@ -15,8 +20,8 @@ export const TermsSections: readonly LegalSection[] = [
   ['责任限制', '在法律允许范围内，软件及开发者不对因使用或无法使用本软件导致的间接损失、考试结果差异或第三方服务问题承担责任。'],
   ['服务终止', '若用户违反条款、共享激活码、攻击系统或绕过限制，开发者可暂停或终止相关授权与服务。'],
   ['条款更新', '条款可能随产品功能、服务方式或法律要求变化而更新。继续使用软件视为接受更新后的条款。'],
-  ['联系方式', '如有问题，请联系 support@ieltswriting.online。'],
-  ['生效日期', '本条款自 2026年6月 起生效。']
+  ['联系方式', `如有问题，请联系 ${LegalContactEmail}。`],
+  ['生效日期', `生效日期：${TermsEffectiveDate}`]
 ]
 
 export const PrivacySections: readonly LegalSection[] = [
@@ -33,9 +38,9 @@ export const PrivacySections: readonly LegalSection[] = [
   ['不出售用户数据', '开发者不会出售用户作文、学习目标或授权信息。'],
   ['第三方服务说明', '作文批改、授权校验、邮件发送和外部网站链接可能依赖第三方服务。第三方服务会按其自身政策处理必要请求数据。'],
   ['删除本地数据', '用户可以在设置中清理布局和筛选缓存。清除浏览器数据不会自动删除账号服务端的写作记录。'],
-  ['请求删除云端数据', '如需删除账号、写作、激活、授权或支持相关的云端记录，请联系 support@ieltswriting.online，并提供必要的账号识别信息。'],
+  ['请求删除云端数据', `如需删除账号、写作、激活、授权或支持相关的云端记录，请联系 ${LegalContactEmail}，并提供必要的账号识别信息。`],
   ['未成年人使用说明', '未成年人应在监护人指导下使用本软件，不应提交包含敏感个人信息的作文或反馈内容。'],
   ['政策更新', '隐私政策可能随功能、数据处理方式或第三方服务变化而更新。继续使用软件视为了解更新后的政策。'],
-  ['联系方式', '如有隐私相关问题，请联系 support@ieltswriting.online。'],
+  ['联系方式', `如有隐私相关问题，请联系 ${LegalContactEmail}。`],
   ['生效日期', '本政策自 2026年6月 起生效。']
 ]
