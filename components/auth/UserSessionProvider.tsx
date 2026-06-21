@@ -1,6 +1,5 @@
 'use client'
 
-import { usePathname } from 'next/navigation'
 import {
   createContext,
   useCallback,
@@ -28,7 +27,6 @@ type UserSessionContextValue = {
 const UserSessionContext = createContext<UserSessionContextValue | null>(null)
 
 export function UserSessionProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname()
   const supabase = useMemo(() => {
     try {
       return createSupabaseBrowserClient()
@@ -37,6 +35,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
   const currentUserIdRef = useRef<string | null>(null)
+  const hasFetchedRef = useRef(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [accountLabel, setAccountLabel] = useState<string | null>(null)
   const [status, setStatus] = useState<UserSessionStatus>('loading')
@@ -64,6 +63,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     const activeUserId = currentUserIdRef.current
     if (activeUserId) clearUserEphemeralBrowserState(activeUserId)
     applyUser(null)
+    hasFetchedRef.current = false
   }, [applyUser])
 
   useEffect(() => {
@@ -71,6 +71,8 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
       window.queueMicrotask(() => applyUser(null))
       return
     }
+    if (hasFetchedRef.current) return
+    hasFetchedRef.current = true
     let cancelled = false
     void supabase.auth.getUser().then(({ data, error }) => {
       if (!cancelled) applyUser(error ? null : data.user ?? null)
@@ -78,7 +80,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [applyUser, pathname, supabase])
+  }, [applyUser, supabase])
 
   useEffect(() => {
     if (!supabase) return

@@ -564,6 +564,32 @@ async function requestAccountApi<T>(url: string, init?: RequestInit) {
   return data
 }
 
+export type WritingRecordListItem = {
+  id: string
+  taskType: string
+  title: string
+  submittedAt: string
+  processingStatus: string
+  requestId: string | null
+  overallBand: string | null
+  summary: string | null
+  taScore: string | null
+  trScore: string | null
+  ccScore: string | null
+  lrScore: string | null
+  graScore: string | null
+}
+
+export async function loadWritingRecordsLightweight(): Promise<WritingRecordListItem[]> {
+  if (!canUseAccountApi()) return []
+  try {
+    const data = await requestAccountApi<{ records?: WritingRecordListItem[] }>('/api/user/writing-records/list')
+    return data.records ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function loadWritingRecordsFromServer(userId: string) {
   const localRecords = loadWritingRecords(userId)
   if (!canUseAccountApi()) return localRecords

@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { RefreshCw } from 'lucide-react'
 import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
@@ -11,13 +12,12 @@ import {
   deleteWritingRecord,
   formatBand,
   formatDate,
-  formatDuration,
   restoreWritingRecord,
   scoreValue,
-  type WritingRecord,
+  type WritingRecordListItem,
   type WritingTaskType
 } from '@/lib/writing-records'
-import { UserRouteCacheKeys, useUserWritingRecords } from '@/lib/user-route-cache'
+import { useWritingRecordList } from '@/lib/user-route-cache'
 import { userScopedStorageKey } from '@/lib/user-storage'
 
 type TaskFilter = 'all' | WritingTaskType
@@ -27,7 +27,7 @@ type ScoreFilter = 'all' | 'below6' | '6to7' | 'above7'
 
 const HistoryFilterStorageKey = 'ielts-writing-history-filters-v1'
 
-function inDateRange(record: WritingRecord, range: RangeFilter) {
+function inDateRange(record: WritingRecordListItem, range: RangeFilter) {
   if (range === 'all') return true
   const submitted = new Date(record.submittedAt).getTime()
   const now = Date.now()
@@ -38,39 +38,32 @@ function inDateRange(record: WritingRecord, range: RangeFilter) {
   return now - submitted <= days * 24 * 60 * 60 * 1000
 }
 
-function matchesScore(record: WritingRecord, scoreFilter: ScoreFilter) {
+function matchesScore(record: WritingRecordListItem, scoreFilter: ScoreFilter) {
   if (scoreFilter === 'all') return true
-  const score = scoreValue(record.evaluation.bandEstimate)
+  const score = scoreValue(record.overallBand ?? undefined)
   if (score === null) return false
   if (scoreFilter === 'below6') return score < 6
   if (scoreFilter === '6to7') return score >= 6 && score < 7
   return score >= 7
 }
 
-function criterionBrief(record: WritingRecord) {
-  const evaluation = record.evaluation
-  const taskScore = record.taskType === 'task1'
-    ? evaluation.taskAchievement?.score || evaluation.criteria?.taskAchievement?.score
-    : record.taskType === 'task2'
-      ? evaluation.taskResponse?.score || evaluation.criteria?.taskResponse?.score
-      : evaluation.taskAchievement?.score || evaluation.taskResponse?.score
-  return [
-    { label: record.taskType === 'task1' ? 'TA' : 'TR', value: formatBand(taskScore) },
-    { label: 'CC', value: formatBand(evaluation.coherenceCohesion?.score || evaluation.criteria?.coherenceCohesion?.score) },
-    { label: 'LR', value: formatBand(evaluation.lexicalResource?.score || evaluation.criteria?.lexicalResource?.score) },
-    { label: 'GRA', value: formatBand(evaluation.grammaticalRangeAccuracy?.score || evaluation.criteria?.grammaticalRangeAccuracy?.score) }
+function HistoryCard({ record, removing, onDelete }: { record: WritingRecordListItem; removing: boolean; onDelete: (record: WritingRecordListItem) => void }) {
+  const taskLabel = TaskTypeLabels[record.taskType as WritingTaskType] ?? record.taskType
+  const criteria = [
+    { label: record.taskType === 'task1' ? 'TA' : 'TR', value: formatBand(record.taScore ?? record.trScore ?? undefined) },
+    { label: 'CC', value: formatBand(record.ccScore ?? undefined) },
+    { label: 'LR', value: formatBand(record.lrScore ?? undefined) },
+    { label: 'GRA', value: formatBand(record.graScore ?? undefined) }
   ]
-}
-
-function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; removing: boolean; onDelete: (record: WritingRecord) => void }) {
-  const criteria = criterionBrief(record)
 
   return (
     <article className={`history-card ui-hover-glow ${removing ? 'is-removing' : ''}`}>
       <div className="history-card-main">
         <div className="history-card-meta">
-          <span className="task-badge">{TaskTypeLabels[record.taskType]}</span>
-          {record.questionSource === 'user_upload' ? <span className="task-badge is-custom">自定义题目</span> : null}
+          <span className="task-badge">{taskLabel}</span>
+          {record.processingStatus && record.processingStatus !== 'complete' ? (
+            <span className="task-badge is-custom">{record.processingStatus === 'failed' ? '处理失败' : '处理中'}</span>
+          ) : null}
           <span className="ui-label history-date">
             <MaterialIcon name="calendar_today" size={16} />
             {formatDate(record.submittedAt)}
@@ -78,22 +71,12 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
         </div>
         <h2 className="ui-title-md">{record.title}</h2>
         <p className="history-summary">
-          {record.evaluation.summary || record.evaluation.overallFeedback || '本次批改已完成，可查看四项评分和原文批注。'}
+          {record.summary || '本次批改已完成，可查看详情。'}
         </p>
-        <div className="history-card-stats">
-          <span className="ui-body-md">
-            <MaterialIcon name="notes" size={20} />
-            {record.wordCount} 词
-          </span>
-          <span className="ui-body-md">
-            <MaterialIcon name="timer" size={20} />
-            {formatDuration(record.durationSeconds)}
-          </span>
-        </div>
       </div>
 
       <div className="history-score">
-        <strong>{formatBand(record.evaluation.overallBand || record.evaluation.bandEstimate)}</strong>
+        <strong>{formatBand(record.overallBand ?? undefined)}</strong>
         <div className="history-criteria" aria-label="四项分数">
           {criteria.map((item) => (
             <span key={item.label}>{item.label} {item.value}</span>
@@ -115,16 +98,25 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecord; re
 export default function HistoryPage() {
   const { pushToast } = useToast()
   const { userId } = useUserSession()
-  const { records, isLoading } = useUserWritingRecords(UserRouteCacheKeys.history, userId)
+  const { records, isLoading, refreshList } = useWritingRecordList()
+  const hasLoadedRef = useRef(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('all')
   const [sortFilter, setSortFilter] = useState<SortFilter>('newest')
   const [scoreFilter, setScoreFilter] = useState<ScoreFilter>('all')
   const [query, setQuery] = useState('')
-  const [pendingDelete, setPendingDelete] = useState<WritingRecord | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<WritingRecordListItem | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const debouncedQuery = useDebouncedValue(query, 220)
+
+  useEffect(() => {
+    if (!userId) return
+    if (hasLoadedRef.current) return
+    hasLoadedRef.current = true
+    void refreshList()
+  }, [userId, refreshList])
 
   useEffect(() => {
     if (!userId) return
@@ -154,6 +146,16 @@ export default function HistoryPage() {
     window.localStorage.setItem(userScopedStorageKey(HistoryFilterStorageKey, userId), JSON.stringify({ taskFilter, rangeFilter, sortFilter, scoreFilter, query }))
   }, [preferencesLoaded, query, rangeFilter, scoreFilter, sortFilter, taskFilter, userId])
 
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    try {
+      await refreshList()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [isRefreshing, refreshList])
+
   const visibleRecords = useMemo(
     () => {
       const normalized = debouncedQuery.trim().toLowerCase()
@@ -161,13 +163,13 @@ export default function HistoryPage() {
         const taskMatches = taskFilter === 'all' || record.taskType === taskFilter
         const textMatches =
           !normalized ||
-          `${record.title} ${record.prompt} ${record.essay} ${TaskTypeLabels[record.taskType]} ${record.evaluation.summary || ''} ${(record.evaluation.weaknesses || []).join(' ')}`.toLowerCase().includes(normalized)
+          `${record.title} ${TaskTypeLabels[record.taskType as WritingTaskType] ?? ''} ${record.summary || ''}`.toLowerCase().includes(normalized)
         return taskMatches && inDateRange(record, rangeFilter) && matchesScore(record, scoreFilter) && textMatches
       })
       return filtered.sort((a, b) => {
         if (sortFilter === 'oldest') return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime()
-        if (sortFilter === 'score-high') return (scoreValue(b.evaluation.bandEstimate) ?? 0) - (scoreValue(a.evaluation.bandEstimate) ?? 0)
-        if (sortFilter === 'score-low') return (scoreValue(a.evaluation.bandEstimate) ?? 0) - (scoreValue(b.evaluation.bandEstimate) ?? 0)
+        if (sortFilter === 'score-high') return (scoreValue(b.overallBand ?? undefined) ?? 0) - (scoreValue(a.overallBand ?? undefined) ?? 0)
+        if (sortFilter === 'score-low') return (scoreValue(a.overallBand ?? undefined) ?? 0) - (scoreValue(b.overallBand ?? undefined) ?? 0)
         return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
       })
     },
@@ -205,6 +207,7 @@ export default function HistoryPage() {
           onAction: () => {
             void restoreWritingRecord(userId, deleted).then(() => {
               pushToast({ kind: 'success', title: '已恢复记录' })
+              void refreshList()
             })
           },
           durationMs: 8000
@@ -232,7 +235,7 @@ export default function HistoryPage() {
               data-search-input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索题目、正文或批改记录"
+              placeholder="搜索题目或批改记录"
               aria-label="搜索历史记录"
             />
           </label>
@@ -242,6 +245,16 @@ export default function HistoryPage() {
             <option value="score-high">分数从高到低</option>
             <option value="score-low">分数从低到高</option>
           </select>
+          <button
+            className="ui-secondary-button history-refresh-btn"
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            aria-label="刷新记录"
+          >
+            <RefreshCw size={16} className={isRefreshing ? 'is-spinning' : ''} />
+            <span>{isRefreshing ? '刷新中…' : '刷新记录'}</span>
+          </button>
           <span className="ui-label">{visibleRecords.length} / {records.length}</span>
         </div>
 

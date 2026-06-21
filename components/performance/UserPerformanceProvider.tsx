@@ -1,39 +1,9 @@
 'use client'
 
 import { useEffect, type ReactNode } from 'react'
-import { SWRConfig, useSWRConfig } from 'swr'
+import { SWRConfig } from 'swr'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import {
-  UserRouteCacheKeys,
-  clearUserRouteMemoryCaches,
-  replaceCachedUserWritingRecords,
-  subscribeToWritingRecordChanges,
-  userWritingRecordsCacheKey,
-  warmAllUserRouteCaches
-} from '@/lib/user-route-cache'
-import { loadWritingRecordsFromServer } from '@/lib/writing-records'
-
-function UserCacheSynchronizer({ userId }: { userId: string | null }) {
-  const { mutate } = useSWRConfig()
-
-  useEffect(() => {
-    if (!userId) return
-    void warmAllUserRouteCaches(userId, mutate)
-
-    return subscribeToWritingRecordChanges((changedUserId) => {
-      if (changedUserId !== userId) return
-      void loadWritingRecordsFromServer(userId).then((records) => {
-        replaceCachedUserWritingRecords(userId, records)
-        return Promise.all([
-          mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.history, userId), records, { revalidate: false }),
-          mutate(userWritingRecordsCacheKey(UserRouteCacheKeys.analytics, userId), records, { revalidate: false })
-        ])
-      })
-    })
-  }, [mutate, userId])
-
-  return null
-}
+import { clearUserRouteMemoryCaches } from '@/lib/user-route-cache'
 
 export function UserPerformanceProvider({ children }: { children: ReactNode }) {
   const { userId } = useUserSession()
@@ -50,11 +20,10 @@ export function UserPerformanceProvider({ children }: { children: ReactNode }) {
         dedupingInterval: 30_000,
         keepPreviousData: false,
         revalidateOnFocus: false,
-        revalidateOnReconnect: true,
+        revalidateOnReconnect: false,
         shouldRetryOnError: false
       }}
     >
-      <UserCacheSynchronizer userId={userId} />
       {children}
     </SWRConfig>
   )

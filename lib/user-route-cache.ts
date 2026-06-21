@@ -1,10 +1,13 @@
 'use client'
 
+import { useCallback, useRef } from 'react'
 import useSWR from 'swr'
 import {
   WritingRecordsUpdatedEvent,
   loadWritingRecordsFromServer,
-  type WritingRecord
+  loadWritingRecordsLightweight,
+  type WritingRecord,
+  type WritingRecordListItem
 } from '@/lib/writing-records'
 
 export const UserRouteCacheKeys = {
@@ -106,4 +109,46 @@ export function subscribeToWritingRecordChanges(listener: (userId: string) => vo
   }
   window.addEventListener(WritingRecordsUpdatedEvent, handler)
   return () => window.removeEventListener(WritingRecordsUpdatedEvent, handler)
+}
+
+const lightweightListKey = ['writing-records-lightweight-list'] as const
+
+export function useWritingRecordList() {
+  const isFetchingRef = useRef(false)
+
+  const result = useSWR<WritingRecordListItem[]>(
+    lightweightListKey,
+    async () => {
+      if (isFetchingRef.current) return [] as WritingRecordListItem[]
+      isFetchingRef.current = true
+      try {
+        return await loadWritingRecordsLightweight()
+      } finally {
+        isFetchingRef.current = false
+      }
+    },
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+      dedupingInterval: 60_000
+    }
+  )
+
+  const refreshList = useCallback(async () => {
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
+    try {
+      const records = await loadWritingRecordsLightweight()
+      await result.mutate(records, { revalidate: false })
+    } finally {
+      isFetchingRef.current = false
+    }
+  }, [result.mutate])
+
+  return {
+    records: result.data ?? [],
+    isLoading: !result.data && result.isLoading,
+    refreshList
+  }
 }
