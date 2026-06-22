@@ -54,7 +54,7 @@ export async function POST() {
   let tasks: Array<Record<string, unknown>> = []
 
   try {
-    const aiConfig = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen-plus' })
+    const aiConfig = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen3.5-plus' })
     const aiTasks = await generatePlanWithAI(aiConfig, { diagnosis, preferences, goals, records: records.slice(0, 20) })
     tasks = aiTasks
   } catch {
