@@ -7,7 +7,9 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string }> = [
   { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心' },
+  { match: (pathname) => pathname.startsWith('/study-plan'), title: '学习规划' },
   { match: (pathname) => pathname === '/practice', title: 'IELTS Writing' },
+  { match: (pathname) => pathname.startsWith('/ielts'), title: 'IELTS Writing' },
   { match: (pathname) => pathname.startsWith('/history'), title: '历史记录' },
   { match: (pathname) => pathname.startsWith('/analytics'), title: '学习分析' },
   { match: (pathname) => pathname.startsWith('/result'), title: '批改结果' },

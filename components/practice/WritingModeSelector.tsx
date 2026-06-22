@@ -25,7 +25,7 @@ import { UploadedTaskPanel } from '@/components/practice/UploadedTaskPanel'
 import { DraftManager } from '@/components/practice/DraftManager'
 
 type ModeCard = {
-  mode: WritingTaskType
+  mode: WritingTaskType | 'past_papers'
   icon: string
   minutes: string
   title: string
@@ -35,6 +35,7 @@ type ModeCard = {
   primary?: boolean
   featured?: boolean
   recommended?: boolean
+  pastPapers?: boolean
 }
 
 function buildHref(mode: WritingTaskType, selection: PromptSelection) {
@@ -129,7 +130,7 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
     }
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [startingMode, setStartingMode] = useState<WritingTaskType | null>(null)
+  const [startingMode, setStartingMode] = useState<WritingTaskType | 'past_papers' | null>(null)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
 
@@ -149,7 +150,11 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
     router.prefetch(buildHref(mode, selection))
   }
 
-  async function startMode(mode: WritingTaskType) {
+  async function startMode(mode: WritingTaskType | 'past_papers') {
+    if (mode === 'past_papers') {
+      router.push('/ielts/past-papers')
+      return
+    }
     if (!userId || startingRef.current) return
     startingRef.current = true
     setStartingMode(mode)
@@ -186,18 +191,20 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
             disabled={startingMode !== null}
             aria-busy={startingMode === mode.mode || undefined}
             onClick={() => void startMode(mode.mode)}
-            onPointerEnter={() => prefetchMode(mode.mode)}
-            onFocus={() => prefetchMode(mode.mode)}
+            onPointerEnter={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
+            onFocus={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
           >
             <GlassPanel className={`mode-card ui-hover-glow ui-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}>
               <header>
                 <span className="mode-icon">
                   <MaterialIcon name={mode.icon} filled={mode.featured} size={28} />
                 </span>
-                <span className="mode-badge">
-                  <MaterialIcon name="schedule" size={16} />
-                  <span className="ui-label">{mode.minutes}</span>
-                </span>
+                {mode.minutes ? (
+                  <span className="mode-badge">
+                    <MaterialIcon name="schedule" size={16} />
+                    <span className="ui-label">{mode.minutes}</span>
+                  </span>
+                ) : null}
               </header>
               <h2>{mode.title}</h2>
               <p className="mode-subtitle">
@@ -210,11 +217,13 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
                 )}
               </p>
               <div className="mode-card-footer">
-                <span className="mode-meta">
-                  <MaterialIcon name="description" size={18} />
-                  {mode.words}
-                </span>
-                <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
+                {mode.words ? (
+                  <span className="mode-meta">
+                    <MaterialIcon name="description" size={18} />
+                    {mode.words}
+                  </span>
+                ) : <span />}
+                <span className={mode.pastPapers ? 'ui-secondary-button' : mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
                   {startingMode === mode.mode ? '正在创建…' : mode.action}
                 </span>
               </div>
@@ -253,8 +262,8 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
                   type="button"
                   disabled={startingMode !== null}
                   onClick={() => void startMode(mode.mode)}
-                  onPointerEnter={() => prefetchMode(mode.mode)}
-                  onFocus={() => prefetchMode(mode.mode)}
+                  onPointerEnter={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
+                  onFocus={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
                 >
                   {startingMode === mode.mode ? '正在创建…' : mode.title}
                 </button>

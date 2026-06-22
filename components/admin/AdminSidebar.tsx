@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   BookOpen,
+  FileText,
   KeyRound,
   LayoutDashboard,
   Link2,
@@ -18,6 +19,7 @@ const navigation = [
   { href: '/admin/licenses', label: '激活码管理', icon: KeyRound },
   { href: '/admin/bindings', label: '邮箱绑定', icon: Link2 },
   { href: '/admin/users', label: '用户管理', icon: UsersRound },
+  { href: '/admin/past-papers', label: '真题题库', icon: FileText },
   { href: '/admin/settings', label: '设置', icon: Settings }
 ]
 

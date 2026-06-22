@@ -18,7 +18,8 @@ type SidebarItem = {
 
 const mainItems: SidebarItem[] = [
   { id: 'home', href: '/dashboard', label: '账号中心', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
-  { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') },
+  { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', match: (pathname) => pathname.startsWith('/study-plan') },
+  { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') },
   { id: 'history', href: '/history', label: '历史记录', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
   { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
   { id: 'settings', href: '/settings', label: '设置', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
