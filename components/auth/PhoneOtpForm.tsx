@@ -39,23 +39,26 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
   const [normalizedPhone, setNormalizedPhone] = useState('')
   const [code, setCode] = useState('')
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
-  const [cooldown, setCooldown] = useState(0)
+  const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const [loading, setLoading] = useState<'send' | 'verify' | null>(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if (cooldown <= 0) return
-    const timer = window.setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000)
+    if (resendAvailableAt === null) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [cooldown])
+  }, [resendAvailableAt])
+
+  const cooldownLeft = resendAvailableAt !== null ? Math.max(0, Math.ceil((resendAvailableAt - now) / 1000)) : 0
 
   async function sendCode() {
     if (!agreementsAccepted) {
       setError('请先阅读并同意《服务条款》和《隐私政策》')
       return
     }
-    if (cooldown > 0) return
+    if (cooldownLeft > 0) return
 
     await sendSingleFlight(async () => {
       setLoading('send')
@@ -78,7 +81,7 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
         setNormalizedPhone(normalized)
         setStep('code')
         setCode('')
-        setCooldown(data.cooldownSeconds || 60)
+        setResendAvailableAt(Date.now() + (data.cooldownSeconds || 60) * 1000)
         setMessage(`验证码已发送至 ${data.maskedPhone || maskPhone(normalized)}`)
       } catch (caught) {
         setError(caught instanceof DOMException && caught.name === 'AbortError'
@@ -163,13 +166,14 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
             setStep('phone')
             setCode('')
             setError('')
+            setResendAvailableAt(null)
           }}>
             <ArrowLeft size={16} />
             修改手机号
           </button>
-          <button type="button" disabled={Boolean(loading) || cooldown > 0} onClick={() => void sendCode()}>
+          <button type="button" disabled={Boolean(loading) || cooldownLeft > 0} onClick={() => void sendCode()}>
             <RotateCcw size={16} />
-            {cooldown > 0 ? `${cooldown} 秒后重发` : '重新发送'}
+            {cooldownLeft > 0 ? `${cooldownLeft} 秒后重发` : '重新发送验证码'}
           </button>
         </div>
       </div>

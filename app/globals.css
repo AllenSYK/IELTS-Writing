@@ -8026,6 +8026,16 @@ body.is-resizing-editor * {
   transition-duration: 1ms !important;
 }
 
+.reduce-motion .auth-loading-spinner,
+.reduce-motion .admin-spin,
+.reduce-motion .async-button.is-loading .material-symbols-outlined,
+.reduce-motion .submit-essay-button.is-loading .material-symbols-outlined,
+.reduce-motion .toast-loading .toast-icon .material-symbols-outlined,
+.reduce-motion .history-refresh-btn .is-spinning {
+  animation-duration: 1.5s !important;
+  animation-iteration-count: infinite !important;
+}
+
 .reduce-motion .editor-canvas:focus-within::after {
   animation: none;
 }
@@ -8038,6 +8048,16 @@ body.is-resizing-editor * {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 1ms !important;
+  }
+
+  .auth-loading-spinner,
+  .admin-spin,
+  .async-button.is-loading .material-symbols-outlined,
+  .submit-essay-button.is-loading .material-symbols-outlined,
+  .toast-loading .toast-icon .material-symbols-outlined,
+  .history-refresh-btn .is-spinning {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
   }
 
   .editor-canvas:focus-within::after {

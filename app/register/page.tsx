@@ -94,9 +94,10 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (step !== 'code') return undefined
+    if (cooldownUntil !== null && Date.now() >= cooldownUntil && expiresAt !== null && Date.now() >= expiresAt) return undefined
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
-  }, [step])
+  }, [step, cooldownUntil, expiresAt])
 
   useEffect(() => {
     if (step !== 'success') return undefined
