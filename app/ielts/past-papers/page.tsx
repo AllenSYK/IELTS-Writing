@@ -6,13 +6,16 @@ import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import type { PastPaperListItem, PastPaperFrequencyLevel } from '@/lib/past-paper-types'
+import type { PastPaperListItem, PastPaperFrequencyLevel, ExamSession, ExamMode, QuestionCompleteness } from '@/lib/past-paper-types'
 import {
   PastPaperFrequencyLabels,
   PastPaperSourceTypeLabels,
   Task1VisualTypeLabels,
   Task2QuestionTypeLabels,
-  PastPaperTopicLabels
+  PastPaperTopicLabels,
+  ExamSessionLabels,
+  ExamModeLabels,
+  CompletenessLabels
 } from '@/lib/past-paper-types'
 
 type Filters = {
@@ -24,6 +27,11 @@ type Filters = {
   topic: string
   year: string
   search: string
+  examSession: string
+  examMode: string
+  completeness: string
+  examDateFrom: string
+  examDateTo: string
 }
 
 const defaultFilters: Filters = {
@@ -34,7 +42,12 @@ const defaultFilters: Filters = {
   task2QuestionType: 'all',
   topic: 'all',
   year: 'all',
-  search: ''
+  search: '',
+  examSession: 'all',
+  examMode: 'all',
+  completeness: 'all',
+  examDateFrom: '',
+  examDateTo: ''
 }
 
 type PapersResponse = { success?: boolean; items?: PastPaperListItem[]; total?: number }
@@ -44,6 +57,7 @@ export default function PastPapersPage() {
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState<Filters>(defaultFilters)
   const [searchInput, setSearchInput] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   const pageSize = 12
 
@@ -60,6 +74,11 @@ export default function PastPapersPage() {
     if (filters.topic !== 'all') params.set('topic', filters.topic)
     if (filters.year !== 'all') params.set('year', filters.year)
     if (filters.search) params.set('search', filters.search)
+    if (filters.examSession !== 'all') params.set('examSession', filters.examSession)
+    if (filters.examMode !== 'all') params.set('examMode', filters.examMode)
+    if (filters.completeness !== 'all') params.set('completeness', filters.completeness)
+    if (filters.examDateFrom) params.set('examDateFrom', filters.examDateFrom)
+    if (filters.examDateTo) params.set('examDateTo', filters.examDateTo)
     const res = await fetch(`/api/past-papers?${params}`)
     return res.json()
   }, { revalidateOnFocus: false })
@@ -93,7 +112,7 @@ export default function PastPapersPage() {
         </header>
 
         <GlassPanel style={{ padding: 20 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
             <FilterSelect label="任务类型" value={filters.taskType} onChange={(v) => updateFilter('taskType', v)}
               options={[{ value: 'all', label: '全部' }, { value: 'task1', label: 'Task 1' }, { value: 'task2', label: 'Task 2' }, { value: 'full_test', label: '完整套题' }]} />
 
@@ -103,15 +122,56 @@ export default function PastPapersPage() {
             <FilterSelect label="来源" value={filters.sourceType} onChange={(v) => updateFilter('sourceType', v)}
               options={[{ value: 'all', label: '全部' }, ...Object.entries(PastPaperSourceTypeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
 
-            <FilterSelect label="Task 1 类型" value={filters.task1VisualType} onChange={(v) => updateFilter('task1VisualType', v)}
-              options={[{ value: 'all', label: '全部' }, ...Object.entries(Task1VisualTypeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+            <FilterSelect label="场次" value={filters.examSession} onChange={(v) => updateFilter('examSession', v)}
+              options={[{ value: 'all', label: '全部场次' }, ...Object.entries(ExamSessionLabels).map(([k, v]) => ({ value: k, label: v }))]} />
 
-            <FilterSelect label="Task 2 题型" value={filters.task2QuestionType} onChange={(v) => updateFilter('task2QuestionType', v)}
-              options={[{ value: 'all', label: '全部' }, ...Object.entries(Task2QuestionTypeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+            <FilterSelect label="考试形式" value={filters.examMode} onChange={(v) => updateFilter('examMode', v)}
+              options={[{ value: 'all', label: '全部' }, ...Object.entries(ExamModeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
 
-            <FilterSelect label="主题" value={filters.topic} onChange={(v) => updateFilter('topic', v)}
-              options={[{ value: 'all', label: '全部' }, ...Object.entries(PastPaperTopicLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+            <FilterSelect label="完整度" value={filters.completeness} onChange={(v) => updateFilter('completeness', v)}
+              options={[{ value: 'all', label: '全部' }, ...Object.entries(CompletenessLabels).map(([k, v]) => ({ value: k, label: v }))]} />
           </div>
+
+          <button
+            className="ui-secondary-button"
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            style={{ marginBottom: 12, fontSize: 13 }}
+          >
+            {showAdvanced ? '收起高级筛选' : '展开高级筛选'}
+          </button>
+
+          {showAdvanced && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+              <FilterSelect label="Task 1 类型" value={filters.task1VisualType} onChange={(v) => updateFilter('task1VisualType', v)}
+                options={[{ value: 'all', label: '全部' }, ...Object.entries(Task1VisualTypeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+
+              <FilterSelect label="Task 2 题型" value={filters.task2QuestionType} onChange={(v) => updateFilter('task2QuestionType', v)}
+                options={[{ value: 'all', label: '全部' }, ...Object.entries(Task2QuestionTypeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+
+              <FilterSelect label="主题" value={filters.topic} onChange={(v) => updateFilter('topic', v)}
+                options={[{ value: 'all', label: '全部' }, ...Object.entries(PastPaperTopicLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>考试日期从</span>
+                <input
+                  type="date"
+                  value={filters.examDateFrom}
+                  onChange={(e) => updateFilter('examDateFrom', e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13, border: '1px solid var(--outline-variant)' }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>到</span>
+                <input
+                  type="date"
+                  value={filters.examDateTo}
+                  onChange={(e) => updateFilter('examDateTo', e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13, border: '1px solid var(--outline-variant)' }}
+                />
+              </label>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 8 }}>
             <input
@@ -158,21 +218,37 @@ export default function PastPapersPage() {
 
 function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: Array<{ value: string; label: string }> }) {
   return (
-    <select
-      className="filter-select"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label={label}
-      style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13 }}
-    >
-      {options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-    </select>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>{label}</span>
+      <select
+        className="filter-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13 }}
+      >
+        {options.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+      </select>
+    </label>
   )
+}
+
+function formatExamDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const parts = dateStr.split('-')
+  if (parts.length === 3) {
+    return `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日`
+  }
+  return dateStr
 }
 
 function PaperCard({ item }: { item: PastPaperListItem }) {
   const freqLabel = PastPaperFrequencyLabels[item.frequencyLevel as PastPaperFrequencyLevel] ?? item.frequencyLevel
   const taskLabel = item.taskType === 'task1_academic' || item.taskType === 'task1_general' ? 'Task 1' : item.taskType === 'task2' ? 'Task 2' : '完整套题'
+  const completenessLabel = item.completeness ? CompletenessLabels[item.completeness as QuestionCompleteness] : null
+
+  const isIncomplete = item.completeness === 'partial' || item.completeness === 'summary_only' || item.completeness === 'missing'
+  const canPractice = !isIncomplete || item.taskType === 'task2'
 
   return (
     <GlassPanel className="ui-hover-glow" style={{ padding: 20 }}>
@@ -180,10 +256,32 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <span className="task-badge">{taskLabel}</span>
           <span className="task-badge is-custom">{freqLabel}</span>
-          {item.sourceType && <span className="ui-label">{PastPaperSourceTypeLabels[item.sourceType] ?? item.sourceType}</span>}
+          {item.sourceType && <span className="ui-label">{PastPaperSourceTypeLabels[item.sourceType as keyof typeof PastPaperSourceTypeLabels] ?? item.sourceType}</span>}
         </div>
-        {item.difficulty && <span className="ui-label">{item.difficulty}</span>}
+        {completenessLabel && (
+          <span className="task-badge" style={{ fontSize: 11, background: isIncomplete ? 'var(--error-container)' : undefined, color: isIncomplete ? 'var(--on-error-container)' : undefined }}>
+            {completenessLabel}
+          </span>
+        )}
       </div>
+
+      {item.examDate && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          <span className="ui-label">
+            <MaterialIcon name="event" size={14} />
+            {formatExamDate(item.examDate)}
+          </span>
+          {item.examSession && item.examSession !== 'unknown' && (
+            <span className="ui-label">{ExamSessionLabels[item.examSession as ExamSession]}</span>
+          )}
+          {item.examMode && item.examMode !== 'unknown' && (
+            <span className="ui-label">{ExamModeLabels[item.examMode as ExamMode]}</span>
+          )}
+          {item.examRegion && (
+            <span className="ui-label">{item.examRegion}</span>
+          )}
+        </div>
+      )}
 
       <h3 className="ui-title-md" style={{ marginBottom: 6, lineHeight: 1.4 }}>{item.title || '未命名题目'}</h3>
       <p className="ui-body-md" style={{ marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
@@ -192,14 +290,21 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {item.topics?.slice(0, 2).map((t) => (
+          {item.primaryTopic && (
+            <span className="ui-label">{PastPaperTopicLabels[item.primaryTopic] ?? item.primaryTopic}</span>
+          )}
+          {!item.primaryTopic && item.topics?.slice(0, 2).map((t) => (
             <span key={t} className="ui-label">{PastPaperTopicLabels[t] ?? t}</span>
           ))}
           {item.sourceYear && <span className="ui-label">{item.sourceYear}</span>}
         </div>
-        <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
-          开始练习
-        </Link>
+        {canPractice ? (
+          <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
+            开始练习
+          </Link>
+        ) : (
+          <span className="ui-label" style={{ color: 'var(--on-surface-variant)' }}>题目不完整</span>
+        )}
       </div>
     </GlassPanel>
   )

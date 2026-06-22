@@ -8,7 +8,39 @@ export type PastPaperFrequencyLevel = 'high' | 'medium_high' | 'normal' | 'low'
 
 export type PastPaperDifficulty = 'easy' | 'medium' | 'hard'
 
-export type Task1VisualType = 'line' | 'bar' | 'pie' | 'table' | 'map' | 'process' | 'mixed' | 'letter'
+export type Task1VisualType = 'line' | 'bar' | 'pie' | 'table' | 'map' | 'process' | 'mixed' | 'letter' | 'unknown'
+
+export type ExamSession = 'morning' | 'afternoon' | 'evening' | 'unknown'
+
+export type ExamMode = 'computer' | 'paper' | 'unknown'
+
+export type QuestionCompleteness = 'complete' | 'mostly_complete' | 'partial' | 'summary_only' | 'missing'
+
+export type ExamSetReliability = 'confirmed' | 'multiple_reports' | 'single_report' | 'uncertain'
+
+export type ExamSetStatus = 'draft' | 'review_pending' | 'published' | 'archived'
+
+export type ExamWritingSet = {
+  id: string
+  examDate: string | null
+  examSession: ExamSession
+  examTimeLocal: string | null
+  examTimezone: string | null
+  examMode: ExamMode
+  examCountry: string | null
+  examRegion: string | null
+  examCity: string | null
+  venueNote: string | null
+  sourceType: PastPaperSourceType
+  sourceReference: string | null
+  reliability: ExamSetReliability
+  status: ExamSetStatus
+  createdBy: string
+  reviewedBy: string | null
+  createdAt: string
+  updatedAt: string
+  publishedAt: string | null
+}
 
 export type PastPaperQuestion = {
   id: string
@@ -40,12 +72,28 @@ export type PastPaperQuestion = {
   createdBy: string
   createdAt: string
   updatedAt: string
+  examWritingSetId: string | null
+  examDate: string | null
+  examSession: ExamSession
+  examTimeLocal: string | null
+  examTimezone: string | null
+  examMode: ExamMode
+  examCountry: string | null
+  examRegion: string | null
+  examCity: string | null
+  venueNote: string | null
+  completeness: QuestionCompleteness
+  missingFields: string[]
+  uncertainties: string[]
+  primaryTopic: string | null
+  secondaryTopics: string[]
 }
 
 export type PastPaperListItem = Pick<
   PastPaperQuestion,
   'id' | 'status' | 'taskType' | 'title' | 'summary' | 'sourceType' | 'sourceName' | 'sourceYear' |
-  'frequencyLevel' | 'difficulty' | 'task1VisualTypes' | 'task2QuestionType' | 'topics' | 'createdAt'
+  'frequencyLevel' | 'difficulty' | 'task1VisualTypes' | 'task2QuestionType' | 'topics' | 'createdAt' |
+  'examDate' | 'examSession' | 'examMode' | 'examRegion' | 'completeness' | 'primaryTopic' | 'secondaryTopics'
 >
 
 export type PastPaperAIAnalysis = {
@@ -67,6 +115,61 @@ export type PastPaperAIAnalysis = {
     confidence: number
   }
   uncertainties: string[]
+}
+
+export type RecalledTask1Result = {
+  questionText?: string
+  summary?: string
+  visualTypes: Task1VisualType[]
+  completeness: QuestionCompleteness
+  topics: string[]
+  missingFields: string[]
+  uncertainties: string[]
+}
+
+export type RecalledTask2Result = {
+  questionText?: string
+  questionType: string
+  primaryTopic?: string
+  secondaryTopics: string[]
+  completeness: QuestionCompleteness
+  missingFields: string[]
+  uncertainties: string[]
+}
+
+export type RecalledExamRecord = {
+  examDate?: string
+  examSession: ExamSession
+  examTimeLocal?: string
+  examMode: ExamMode
+  examCountry?: string
+  examRegion?: string
+  examCity?: string
+  task1?: RecalledTask1Result
+  task2?: RecalledTask2Result
+  reliability: ExamSetReliability
+  sourceNotes?: string
+}
+
+export type RecalledExamImportResult = {
+  examRecords: RecalledExamRecord[]
+}
+
+export type ExamImportBatch = {
+  id: string
+  rawText: string
+  defaultYear: number | null
+  defaultRegion: string | null
+  defaultMode: ExamMode
+  aiModel: string | null
+  aiResult: RecalledExamImportResult | null
+  status: 'pending' | 'analyzing' | 'completed' | 'failed'
+  setsCreated: number
+  questionsCreated: number
+  errorMessage: string | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
 }
 
 export const PastPaperStatusLabels: Record<PastPaperStatus, string> = {
@@ -115,7 +218,8 @@ export const Task1VisualTypeLabels: Record<Task1VisualType, string> = {
   map: '地图',
   process: '流程图',
   mixed: '组合图',
-  letter: '书信'
+  letter: '书信',
+  unknown: '未知'
 }
 
 export const Task2QuestionTypeLabels: Record<string, string> = {
@@ -146,7 +250,40 @@ export const PastPaperTopicLabels: Record<string, string> = {
   transport: '交通',
   globalization: '全球化',
   culture: '文化',
-  family: '家庭'
+  family: '家庭',
+  economy: '经济',
+  tourism: '旅游',
+  children: '儿童',
+  elderly: '老年人',
+  sports: '体育'
+}
+
+export const ExamSessionLabels: Record<ExamSession, string> = {
+  morning: '上午场',
+  afternoon: '下午场',
+  evening: '晚场',
+  unknown: '未注明'
+}
+
+export const ExamModeLabels: Record<ExamMode, string> = {
+  computer: '机考',
+  paper: '纸笔',
+  unknown: '未注明'
+}
+
+export const CompletenessLabels: Record<QuestionCompleteness, string> = {
+  complete: '完整原题',
+  mostly_complete: '基本完整',
+  partial: '部分回忆',
+  summary_only: '仅题型回忆',
+  missing: '无题目内容'
+}
+
+export const ReliabilityLabels: Record<ExamSetReliability, string> = {
+  confirmed: '已确认',
+  multiple_reports: '多个来源报告',
+  single_report: '单一来源',
+  uncertain: '不确定'
 }
 
 export type PastPaperListResponse = {

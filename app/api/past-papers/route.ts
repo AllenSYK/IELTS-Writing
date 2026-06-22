@@ -13,7 +13,12 @@ const QuerySchema = z.object({
   task2QuestionType: z.string().optional(),
   topic: z.string().optional(),
   year: z.coerce.number().int().optional(),
-  search: z.string().max(200).optional()
+  search: z.string().max(200).optional(),
+  examSession: z.string().optional(),
+  examMode: z.string().optional(),
+  completeness: z.string().optional(),
+  examDateFrom: z.string().optional(),
+  examDateTo: z.string().optional()
 })
 
 export async function GET(request: Request) {
@@ -28,13 +33,18 @@ export async function GET(request: Request) {
     return json({ success: false, message: 'Invalid query' }, { status: 400 })
   }
 
-  const { page, pageSize, taskType, frequencyLevel, sourceType, task1VisualType, task2QuestionType, topic, year, search } = parsed.data
+  const { page, pageSize, taskType, frequencyLevel, sourceType, task1VisualType, task2QuestionType, topic, year, search, examSession, examMode, completeness, examDateFrom, examDateTo } = parsed.data
   const service = createSupabaseServiceRoleClient()
   const offset = (page - 1) * pageSize
 
   let query = service
     .from('past_paper_questions')
-    .select('id, task_type, title, summary, source_type, source_name, source_year, frequency_level, difficulty, task1_visual_types, task2_question_type, topics, created_at', { count: 'exact' })
+    .select(
+      'id, task_type, title, summary, source_type, source_name, source_year, frequency_level, difficulty, ' +
+      'task1_visual_types, task2_question_type, topics, created_at, primary_topic, secondary_topics, ' +
+      'exam_date, exam_session, exam_mode, exam_region, completeness',
+      { count: 'exact' }
+    )
     .eq('status', 'published')
     .order('frequency_level', { ascending: true })
     .order('created_at', { ascending: false })
@@ -49,14 +59,19 @@ export async function GET(request: Request) {
   if (sourceType && sourceType !== 'all') query = query.eq('source_type', sourceType)
   if (task1VisualType && task1VisualType !== 'all') query = query.contains('task1_visual_types', [task1VisualType])
   if (task2QuestionType && task2QuestionType !== 'all') query = query.eq('task2_question_type', task2QuestionType)
-  if (topic && topic !== 'all') query = query.contains('topics', [topic])
+  if (topic && topic !== 'all') query = query.or(`topics.cs.{${topic}},primary_topic.eq.${topic},secondary_topics.cs.{${topic}}`)
   if (year) query = query.eq('source_year', year)
   if (search) query = query.or(`title.ilike.%${search}%,question_text.ilike.%${search}%,summary.ilike.%${search}%,keywords.cs.{${search}}`)
+  if (examSession && examSession !== 'all') query = query.eq('exam_session', examSession)
+  if (examMode && examMode !== 'all') query = query.eq('exam_mode', examMode)
+  if (completeness && completeness !== 'all') query = query.eq('completeness', completeness)
+  if (examDateFrom) query = query.gte('exam_date', examDateFrom)
+  if (examDateTo) query = query.lte('exam_date', examDateTo)
 
   const { data, error, count } = await query
   if (error) return json({ success: false, message: error.message }, { status: 500 })
 
-  const items = (data ?? []).map((row: Record<string, unknown>) => ({
+  const items = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
     id: row.id,
     taskType: row.task_type,
     title: row.title,
@@ -69,7 +84,14 @@ export async function GET(request: Request) {
     task1VisualTypes: row.task1_visual_types,
     task2QuestionType: row.task2_question_type,
     topics: row.topics ?? [],
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    primaryTopic: row.primary_topic,
+    secondaryTopics: row.secondary_topics ?? [],
+    examDate: row.exam_date,
+    examSession: row.exam_session,
+    examMode: row.exam_mode,
+    examRegion: row.exam_region,
+    completeness: row.completeness
   }))
 
   return json({ success: true, items, total: count ?? 0, page, pageSize })
