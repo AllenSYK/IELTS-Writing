@@ -177,11 +177,12 @@ export default function AnalyticsPage() {
   const isFetchingRef = useRef(false)
   const isMountedRef = useRef(true)
   const hasRequestedRef = useRef(false)
+  const hasDataRef = useRef(cachedRecords.length > 0)
 
   const loadAnalytics = useCallback(async () => {
     if (isFetchingRef.current) return
     isFetchingRef.current = true
-    if (records.length > 0) {
+    if (hasDataRef.current) {
       setRefreshing(true)
     } else {
       setInitialLoading(true)
@@ -192,6 +193,7 @@ export default function AnalyticsPage() {
         setRecords(result)
         setFetchError(null)
         writeCachedRecords(result)
+        hasDataRef.current = result.length > 0
       }
     } catch (err) {
       if (isMountedRef.current) {
@@ -204,7 +206,7 @@ export default function AnalyticsPage() {
         setRefreshing(false)
       }
     }
-  }, [records.length])
+  }, [])
 
   useEffect(() => {
     isMountedRef.current = true

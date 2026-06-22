@@ -185,25 +185,11 @@ export async function PATCH(request: Request) {
   const supabase = await createSupabaseServerClient()
 
   if (complete.success) {
-    const { error: rpcError } = await supabase.rpc('complete_writing_draft', {
-      p_id: complete.data.id,
-      p_record_id: complete.data.recordId
-    })
-    if (rpcError) {
-      const now = new Date().toISOString()
-      const { error: updateError } = await supabase
-        .from('writing_drafts')
-        .update({ updated_at: now })
-        .eq('id', complete.data.id)
-        .eq('user_id', user.id)
-      if (updateError) {
-        await supabase
-          .from('writing_drafts')
-          .delete()
-          .eq('id', complete.data.id)
-          .eq('user_id', user.id)
-      }
-    }
+    await supabase
+      .from('writing_drafts')
+      .delete()
+      .eq('id', complete.data.id)
+      .eq('user_id', user.id)
     return json({ success: true })
   }
 

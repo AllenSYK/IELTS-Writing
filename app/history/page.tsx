@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
@@ -99,7 +99,6 @@ export default function HistoryPage() {
   const { pushToast } = useToast()
   const { userId } = useUserSession()
   const { records, isLoading, refreshList } = useWritingRecordList()
-  const hasLoadedRef = useRef(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
@@ -110,13 +109,6 @@ export default function HistoryPage() {
   const [pendingDelete, setPendingDelete] = useState<WritingRecordListItem | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const debouncedQuery = useDebouncedValue(query, 220)
-
-  useEffect(() => {
-    if (!userId) return
-    if (hasLoadedRef.current) return
-    hasLoadedRef.current = true
-    void refreshList()
-  }, [userId, refreshList])
 
   useEffect(() => {
     if (!userId) return

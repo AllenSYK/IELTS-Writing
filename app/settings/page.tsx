@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ProfileAvatar } from '@/components/layout/ProfileAvatar'
 import { AsyncButton, ConfirmDialog, useMotionPreference, useToast } from '@/components/interaction-system'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
@@ -44,7 +44,7 @@ export default function SettingsPage() {
   const [draftProfile, setDraftProfile] = useState<UserProfile>(() => profile)
   const [profileSaveStatus, setProfileSaveStatus] = useState<ProfileSaveStatus>('clean')
   const [attemptedProfileSave, setAttemptedProfileSave] = useState(false)
-  const [license, setLicense] = useState<LicenseInfo>({ status: 'loading' })
+  const [license, setLicense] = useState<LicenseInfo>({ status: 'active' })
   const [refreshingLicense, setRefreshingLicense] = useState(false)
   const [confirmResetLayout, setConfirmResetLayout] = useState(false)
 
@@ -72,30 +72,6 @@ export default function SettingsPage() {
       window.queueMicrotask(() => setProfileSaveStatus('clean'))
     }
   }, [profileDirty, profileSaveStatus])
-
-  const licenseFetchedRef = useRef(false)
-
-  useEffect(() => {
-    if (licenseFetchedRef.current || !userId) return
-    licenseFetchedRef.current = true
-    let cancelled = false
-    fetch('/api/license/status', { cache: 'no-store' })
-      .then((res) => res.json().catch(() => ({})))
-      .then((data) => {
-        if (cancelled) return
-        setLicense({
-          status: data.licenseActive ? 'active' : 'inactive',
-          plan: data.license?.plan,
-          expiresAt: data.activation?.expires_at,
-          lastUsedAt: data.activation?.last_used_at
-        })
-      })
-      .catch(() => {
-        if (cancelled) return
-        setLicense({ status: 'error' })
-      })
-    return () => { cancelled = true }
-  }, [userId])
 
   const refreshLicense = useCallback(async (showResult = true) => {
     setRefreshingLicense(true)
