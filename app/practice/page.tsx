@@ -42,17 +42,6 @@ const modes = [
     action: 'Start Test',
     featured: true,
     focuses: ['grammar', 'lexical', 'cohesion', 'task'] as PracticeFocus[]
-  },
-  {
-    mode: 'past_papers',
-    icon: 'auto_stories',
-    minutes: '',
-    title: '真题',
-    subtitle: '雅思真题题库',
-    words: '',
-    action: '进入题库',
-    pastPapers: true,
-    focuses: [] as PracticeFocus[]
   }
 ] as const
 

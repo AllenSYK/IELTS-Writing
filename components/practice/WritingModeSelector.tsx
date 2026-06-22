@@ -25,7 +25,7 @@ import { UploadedTaskPanel } from '@/components/practice/UploadedTaskPanel'
 import { DraftManager } from '@/components/practice/DraftManager'
 
 type ModeCard = {
-  mode: WritingTaskType | 'past_papers'
+  mode: WritingTaskType
   icon: string
   minutes: string
   title: string
@@ -35,7 +35,6 @@ type ModeCard = {
   primary?: boolean
   featured?: boolean
   recommended?: boolean
-  pastPapers?: boolean
 }
 
 function buildHref(mode: WritingTaskType, selection: PromptSelection) {
@@ -130,7 +129,7 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
     }
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [startingMode, setStartingMode] = useState<WritingTaskType | 'past_papers' | null>(null)
+  const [startingMode, setStartingMode] = useState<WritingTaskType | null>(null)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
 
@@ -150,11 +149,7 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
     router.prefetch(buildHref(mode, selection))
   }
 
-  async function startMode(mode: WritingTaskType | 'past_papers') {
-    if (mode === 'past_papers') {
-      router.push('/ielts/past-papers')
-      return
-    }
+  async function startMode(mode: WritingTaskType) {
     if (!userId || startingRef.current) return
     startingRef.current = true
     setStartingMode(mode)
@@ -191,8 +186,8 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
             disabled={startingMode !== null}
             aria-busy={startingMode === mode.mode || undefined}
             onClick={() => void startMode(mode.mode)}
-            onPointerEnter={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
-            onFocus={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
+            onPointerEnter={() => prefetchMode(mode.mode)}
+            onFocus={() => prefetchMode(mode.mode)}
           >
             <GlassPanel className={`mode-card ui-hover-glow ui-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}>
               <header>
@@ -217,13 +212,11 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
                 )}
               </p>
               <div className="mode-card-footer">
-                {mode.words ? (
-                  <span className="mode-meta">
-                    <MaterialIcon name="description" size={18} />
-                    {mode.words}
-                  </span>
-                ) : <span />}
-                <span className={mode.pastPapers ? 'ui-secondary-button' : mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
+                <span className="mode-meta">
+                  <MaterialIcon name="description" size={18} />
+                  {mode.words}
+                </span>
+                <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
                   {startingMode === mode.mode ? '正在创建…' : mode.action}
                 </span>
               </div>
@@ -231,6 +224,17 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
           </button>
         ))}
       </div>
+
+      <button className="draft-entry-button" type="button" onClick={() => router.push('/ielts/past-papers')}>
+        <span className="draft-entry-icon">
+          <MaterialIcon name="auto_stories" size={22} />
+        </span>
+        <span>
+          <strong>真题题库</strong>
+          <small>浏览高频、次高频及不同题型的雅思写作真题</small>
+        </span>
+        <MaterialIcon name="arrow_forward" size={18} />
+      </button>
 
       <DraftManager initialOpen={initialDraftsOpen} />
 
@@ -262,8 +266,8 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
                   type="button"
                   disabled={startingMode !== null}
                   onClick={() => void startMode(mode.mode)}
-                  onPointerEnter={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
-                  onFocus={() => mode.mode !== 'past_papers' && prefetchMode(mode.mode as WritingTaskType)}
+                  onPointerEnter={() => prefetchMode(mode.mode)}
+                  onFocus={() => prefetchMode(mode.mode)}
                 >
                   {startingMode === mode.mode ? '正在创建…' : mode.title}
                 </button>
