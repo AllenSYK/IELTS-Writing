@@ -157,7 +157,11 @@ export default function WritePage() {
   const splitRatioRef = useRef(defaultWritingEditorSplitRatio({ hasTaskVisuals: mode !== 'task2' }))
   const loadedSplitKeyRef = useRef('')
   const initialSnapshotSavedRef = useRef('')
-  const lastAutoSaveAtRef = useRef(0)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isSavingRef = useRef(false)
+  const pendingSaveRef = useRef(false)
+  const lastSavedFingerprintRef = useRef('')
+  const mountedRef = useRef(true)
   const timeLeftRef = useRef(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
@@ -255,7 +259,6 @@ export default function WritePage() {
         }
 
         const result = await saveManagedDraft(userId, draftId, mode, draft, options)
-        lastAutoSaveAtRef.current = Date.now()
         setSaveStatus(result.offline ? 'offline' : 'saved')
         if (showToast) {
           pushToast({
@@ -278,8 +281,46 @@ export default function WritePage() {
     },
     [activeMockTask, draftId, essay, mockEssays, mockQuestions, mockWordCounts.task1, mockWordCounts.task2, mode, online, promptSelection, pushToast, singleQuestion, userId]
   )
+  const getDraftFingerprint = useCallback(() => {
+    if (mode === 'mock') {
+      return JSON.stringify({ mode, task1: mockEssays.task1, task2: mockEssays.task2 })
+    }
+    return JSON.stringify({ mode, essay })
+  }, [mode, essay, mockEssays.task1, mockEssays.task2])
+
+  const flushDraftSave = useCallback(async (options?: { keepalive?: boolean }) => {
+    if (!userId || !draftId || !hydrated) return
+    const fingerprint = getDraftFingerprint()
+    if (fingerprint === lastSavedFingerprintRef.current && !options?.keepalive) return
+    if (isSavingRef.current) {
+      pendingSaveRef.current = true
+      return
+    }
+    isSavingRef.current = true
+    pendingSaveRef.current = false
+    try {
+      await saveAllDrafts(false, options)
+      lastSavedFingerprintRef.current = fingerprint
+    } catch {
+      // saveAllDrafts handles its own error state
+    } finally {
+      isSavingRef.current = false
+      if (pendingSaveRef.current && mountedRef.current) {
+        pendingSaveRef.current = false
+        void flushDraftSave()
+      }
+    }
+  }, [userId, draftId, hydrated, getDraftFingerprint, saveAllDrafts])
+
+  const scheduleDraftSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      void flushDraftSave()
+    }, 1200)
+  }, [flushDraftSave])
+
   const saveCurrentDraft = useEffectEvent((keepalive = false) => {
-    void saveAllDrafts(false, keepalive ? { keepalive: true } : undefined)
+    void flushDraftSave(keepalive ? { keepalive: true } : undefined)
   })
   const generateInitialQuestion = useEffectEvent(generateQuestionFor)
   const notifyInitialRestore = useEffectEvent(pushToast)
@@ -547,29 +588,25 @@ export default function WritePage() {
   }, [durationMinutes, timerKey])
 
   useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!hydrated) return
     const hasContent = mode === 'mock' ? Boolean(debouncedMockEssays.task1.trim() || debouncedMockEssays.task2.trim()) : Boolean(debouncedEssay.trim())
     if (!hasContent) {
       const idleTimer = window.setTimeout(() => setSaveStatus('idle'), 0)
       return () => window.clearTimeout(idleTimer)
     }
-    const statusTimer = window.setTimeout(() => setSaveStatus(online ? 'saving' : 'offline'), 0)
-    const elapsed = Date.now() - lastAutoSaveAtRef.current
-    const delay = Math.max(0, 3500 - elapsed)
-    const timer = window.setTimeout(() => void saveAllDrafts(false), delay)
+    scheduleDraftSave()
     return () => {
-      window.clearTimeout(statusTimer)
-      window.clearTimeout(timer)
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
-  }, [debouncedEssay, debouncedMockEssays, hydrated, mode, online, saveAllDrafts])
-
-  useEffect(() => {
-    if (!hydrated || !draftId) return
-    const timer = window.setInterval(() => {
-      saveCurrentDraft()
-    }, 30_000)
-    return () => window.clearInterval(timer)
-  }, [draftId, hydrated])
+  }, [debouncedEssay, debouncedMockEssays, hydrated, mode, scheduleDraftSave])
 
   useEffect(() => {
     if (!hydrated || !draftId || !activeQuestion || initialSnapshotSavedRef.current === draftId) return
@@ -601,7 +638,13 @@ export default function WritePage() {
     }
   }, [saveStatus])
 
-  const saveNow = useCallback(() => saveAllDrafts(true), [saveAllDrafts])
+  const saveNow = useCallback(async () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    await flushDraftSave()
+    if (mountedRef.current) {
+      pushToast({ kind: 'success', title: '草稿已保存' })
+    }
+  }, [flushDraftSave, pushToast])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
