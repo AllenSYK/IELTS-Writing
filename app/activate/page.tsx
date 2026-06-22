@@ -3,9 +3,8 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react'
-import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { createSingleFlight } from '@/lib/web-license/single-flight'
-import { accountDisplayName } from '@/lib/phone-auth'
 
 type ActivateResponse = {
   success: boolean
@@ -17,35 +16,22 @@ type ActivateResponse = {
 
 export default function ActivatePage() {
   const router = useRouter()
-  const [accountLabel, setAccountLabel] = useState('')
+  const { accountLabel, status } = useUserSession()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
-  const [checking, setChecking] = useState(true)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const runActivation = useRef(createSingleFlight()).current
-  const hasFetchedRef = useRef(false)
 
   useEffect(() => {
-    if (hasFetchedRef.current) return
-    hasFetchedRef.current = true
-    const supabase = createSupabaseBrowserClient()
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) {
-        router.replace('/login')
-        return
-      }
-      setAccountLabel(accountDisplayName(data.user))
-      setChecking(false)
-    }).catch(() => {
-      setError('无法读取登录状态，请重新登录。')
-      setChecking(false)
-    })
-  }, [router])
+    if (status === 'unauthenticated') {
+      router.replace('/login')
+    }
+  }, [status, router])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (checking) return
+    if (status !== 'authenticated') return
 
     await runActivation(async () => {
       setLoading(true)
@@ -77,13 +63,15 @@ export default function ActivatePage() {
     })
   }
 
+  const checking = status === 'loading'
+
   return (
     <main className="auth-page" data-main-content tabIndex={-1}>
       <section className="auth-panel">
         <div className="auth-heading">
           <span className="auth-icon"><KeyRound size={22} /></span>
           <div>
-            <p className="ui-label">{checking ? '正在读取登录状态' : accountLabel}</p>
+            <p className="ui-label">{checking ? '正在读取登录状态' : (accountLabel || '已登录')}</p>
             <h1>输入账号激活码</h1>
           </div>
         </div>
@@ -97,7 +85,7 @@ export default function ActivatePage() {
           {error ? <p className="auth-error" role="alert">{error}</p> : null}
           <button className="ui-primary-button auth-submit" type="submit" disabled={loading || checking}>
             {loading ? <Loader2 className="admin-spin" size={18} /> : <KeyRound size={18} />}
-            激活
+            {loading ? '激活中…' : '激活'}
           </button>
         </form>
       </section>

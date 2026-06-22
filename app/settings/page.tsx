@@ -44,7 +44,7 @@ export default function SettingsPage() {
   const [draftProfile, setDraftProfile] = useState<UserProfile>(() => profile)
   const [profileSaveStatus, setProfileSaveStatus] = useState<ProfileSaveStatus>('clean')
   const [attemptedProfileSave, setAttemptedProfileSave] = useState(false)
-  const [license, setLicense] = useState<LicenseInfo>({ status: 'loading' })
+  const [license, setLicense] = useState<LicenseInfo>(() => ({ status: 'active' }))
   const [refreshingLicense, setRefreshingLicense] = useState(false)
   const [confirmResetLayout, setConfirmResetLayout] = useState(false)
 
@@ -92,10 +92,6 @@ export default function SettingsPage() {
       setRefreshingLicense(false)
     }
   }, [pushToast])
-
-  useEffect(() => {
-    window.queueMicrotask(() => void refreshLicense(false))
-  }, [refreshLicense])
 
   function resetLayout() {
     if (!userId) return

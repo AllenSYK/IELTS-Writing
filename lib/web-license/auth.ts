@@ -2,6 +2,8 @@ import type { User } from '@supabase/supabase-js'
 import { cache } from 'react'
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 
+type MinimalUser = Pick<User, 'id'> & { email?: string | null; phone?: string | null }
+
 export type WebProfile = {
   id: string
   email: string | null
@@ -14,7 +16,7 @@ export type WebProfile = {
 export type WebLicenseCheck =
   | {
       ok: true
-      user: User
+      user: MinimalUser
       profile: WebProfile
       activation: {
         id: string
@@ -37,14 +39,18 @@ export type WebLicenseCheck =
       status: number
       code: string
       message: string
-      user?: User
+      user?: MinimalUser
     }
 
-export const getCurrentSupabaseUser = cache(async function getCurrentSupabaseUser() {
+export const getCurrentSupabaseUser = cache(async function getCurrentSupabaseUser(): Promise<MinimalUser | null> {
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data.user) return null
-  return data.user
+  const { data, error } = await supabase.auth.getClaims()
+  if (error || !data?.claims?.sub) return null
+  return {
+    id: data.claims.sub,
+    email: typeof data.claims.email === 'string' ? data.claims.email : null,
+    phone: typeof data.claims.phone === 'string' ? data.claims.phone : null
+  }
 })
 
 export const getWebProfile = cache(async function getWebProfile(userId: string) {
@@ -88,7 +94,7 @@ export async function requireActiveWebLicense(): Promise<WebLicenseCheck> {
   return checkActiveWebLicenseForUser(user)
 }
 
-export const checkActiveWebLicenseForUser = cache(async function checkActiveWebLicenseForUser(user: User): Promise<WebLicenseCheck> {
+export const checkActiveWebLicenseForUser = cache(async function checkActiveWebLicenseForUser(user: MinimalUser): Promise<WebLicenseCheck> {
   const service = createSupabaseServiceRoleClient()
   const nowIso = new Date().toISOString()
 

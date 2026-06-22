@@ -24,7 +24,7 @@ type AccessSnapshot = {
 
 type AccessState = Omit<AccessSnapshot, 'expiresAt'>
 
-const AccessCacheTtlMs = 5_000
+const AccessCacheTtlMs = 30_000
 const accessSnapshotCache = new Map<string, AccessSnapshot>()
 const pendingAccessChecks = new Map<string, Promise<AccessState>>()
 
