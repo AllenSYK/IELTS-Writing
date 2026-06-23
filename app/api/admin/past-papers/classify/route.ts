@@ -2,10 +2,10 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getAiConfig, AiProviderError, AiConfigurationError } from '@/lib/ai-provider'
+import { getAiConfig, AiProviderError } from '@/lib/ai-provider'
 
 const ClassifySchema = z.object({
-  questionIds: z.array(z.string().uuid()).max(50).optional(),
+  questionIds: z.array(z.string().uuid()).max(20).optional(),
   scope: z.enum(['unclassified', 'all']).default('unclassified'),
   forceRecalculate: z.boolean().default(false)
 })
@@ -42,6 +42,11 @@ type ClassificationResult = {
   changed: boolean
 }
 
+const MAX_QUESTIONS = 20
+const BATCH_SIZE = 5
+const BATCH_TIMEOUT_MS = 60_000
+const TOTAL_TIME_GUARD_MS = 250_000
+
 export async function POST(request: Request) {
   try {
     await requireWebAdmin()
@@ -68,7 +73,7 @@ export async function POST(request: Request) {
     query = query.or('classification_status.eq.unclassified,classification_status.eq.failed')
   }
 
-  const { data: questions, error: fetchError } = await query.limit(50)
+  const { data: questions, error: fetchError } = await query.limit(MAX_QUESTIONS)
   if (fetchError) return json({ success: false, message: fetchError.message }, { status: 500 })
   if (!questions || questions.length === 0) {
     return json({ success: true, results: [], message: '没有需要分类的题目' })
@@ -93,11 +98,23 @@ export async function POST(request: Request) {
     return json({ success: false, message: 'AI not configured' }, { status: 503 })
   }
 
-  const batchSize = 10
+  const startTime = Date.now()
   const results: ClassificationResult[] = []
 
-  for (let i = 0; i < questionsToClassify.length; i += batchSize) {
-    const batch = questionsToClassify.slice(i, i + batchSize)
+  for (let i = 0; i < questionsToClassify.length; i += BATCH_SIZE) {
+    if (Date.now() - startTime > TOTAL_TIME_GUARD_MS) {
+      for (let j = i; j < questionsToClassify.length; j++) {
+        results.push({
+          questionId: questionsToClassify[j].id as string,
+          current: extractCurrent(questionsToClassify[j]),
+          suggestion: fallbackSuggestion(questionsToClassify[j]),
+          changed: false
+        })
+      }
+      break
+    }
+
+    const batch = questionsToClassify.slice(i, i + BATCH_SIZE)
     const batchResults = await classifyBatch(config, batch)
     results.push(...batchResults)
   }
@@ -113,8 +130,8 @@ async function classifyBatch(
     id: q.id as string,
     taskType: q.task_type as string,
     title: (q.title as string) || '',
-    questionText: (q.question_text as string)?.slice(0, 1000) || '',
-    summary: (q.summary as string)?.slice(0, 300) || '',
+    questionText: (q.question_text as string)?.slice(0, 500) || '',
+    summary: (q.summary as string)?.slice(0, 200) || '',
     currentTopics: (q.topics as string[]) ?? [],
     currentFrequency: q.frequency_level as string,
     currentSourceType: q.source_type as string,
@@ -122,42 +139,33 @@ async function classifyBatch(
     currentCompleteness: q.completeness as string | null
   }))
 
-  const systemPrompt = `You are classifying IELTS Writing questions for an administrator.
-Do not rewrite the question.
-Do not invent missing information.
-Do not claim a source is official without explicit evidence.
-Do not infer exam dates from upload time.
-Do not fabricate chart data.
-Return JSON only.
+  const systemPrompt = `Classify IELTS Writing questions. Return JSON only. Do not rewrite questions or invent missing info.
 
-For each question, return a classification object with these fields:
-- taskType: "task1_academic" | "task1_general" | "task2" | "full_test" | "unknown"
+For each question return:
+- taskType: task1_academic|task1_general|task2|full_test|unknown
 - taskTypeConfidence: 0.0-1.0
-- task1VisualTypes: array of visual types if task1 (line, bar, pie, table, map, process, mixed, letter, other)
-- task2QuestionType: if task2 (agree_disagree, discussion_opinion, advantages_disadvantages, outweigh, problem_solution, cause_solution, two_part, direct_question, positive_negative, other, unknown)
+- task1VisualTypes: array (line|bar|pie|table|map|process|mixed|letter|other) if task1
+- task2QuestionType: agree_disagree|discussion_opinion|advantages_disadvantages|outweigh|problem_solution|cause_solution|two_part|direct_question|positive_negative|other|unknown
 - primaryTopic: one main topic
-- secondaryTopics: max 3 additional topics
-- keywords: max 8 keywords
-- frequency: "high" | "medium_high" | "regular" | "low" | "unknown" (suggestion only, based on topic/type commonality)
+- secondaryTopics: max 3
+- keywords: max 8
+- frequency: high|medium_high|regular|low|unknown (suggestion only)
 - frequencyConfidence: 0.0-1.0
-- frequencyReason: brief explanation
-- sourceType: "official_public" | "published_book" | "exam_recall" | "platform_curated" | "user_submitted" | "other" | "unknown"
-- sourceReliability: "confirmed" | "multiple_reports" | "single_report" | "uncertain"
-- completeness: "complete" | "mostly_complete" | "partial" | "summary_only" | "missing"
-- suggestedTags: max 6 tags
-- missingFields: max 10 items
-- uncertainties: max 8 items
-- warnings: max 6 items
+- frequencyReason: brief
+- sourceType: official_public|published_book|exam_recall|platform_curated|user_submitted|other|unknown
+- sourceReliability: confirmed|multiple_reports|single_report|uncertain
+- completeness: complete|mostly_complete|partial|summary_only|missing
+- suggestedTags: max 6
+- missingFields: max 10
+- uncertainties: max 8
+- warnings: max 6
 
-Frequency is only a suggestion based on available evidence. If evidence is insufficient, return "unknown".
-Do not overwrite fields marked as admin-confirmed. Return suggestions separately.
-
-Return a JSON object with a "classifications" array containing one object per input question, keyed by question id.`
+Return {"classifications": [...]} with one object per question.`
 
   const userPayload = JSON.stringify({
     questions: questionSummaries,
-    availableTopics: ['education', 'technology', 'environment', 'society', 'government', 'media', 'work', 'health', 'crime', 'city', 'transport', 'globalization', 'culture', 'family', 'economy', 'tourism', 'children', 'elderly', 'sports'],
-    task2QuestionTypes: ['agree_disagree', 'discussion_opinion', 'advantages_disadvantages', 'outweigh', 'problem_solution', 'cause_solution', 'two_part', 'direct_question', 'positive_negative', 'other', 'unknown']
+    topics: ['education', 'technology', 'environment', 'society', 'government', 'media', 'work', 'health', 'crime', 'city', 'transport', 'globalization', 'culture', 'family', 'economy', 'tourism', 'children', 'elderly', 'sports'],
+    task2Types: ['agree_disagree', 'discussion_opinion', 'advantages_disadvantages', 'outweigh', 'problem_solution', 'cause_solution', 'two_part', 'direct_question', 'positive_negative', 'other', 'unknown']
   })
 
   try {
@@ -174,10 +182,10 @@ Return a JSON object with a "classifications" array containing one object per in
           { role: 'user', content: userPayload }
         ],
         temperature: 0.2,
-        max_tokens: 4000,
+        max_tokens: 3000,
         response_format: { type: 'json_object' }
       }),
-      signal: AbortSignal.timeout(120000)
+      signal: AbortSignal.timeout(BATCH_TIMEOUT_MS)
     })
 
     if (!response.ok) throw new AiProviderError('Classification failed', response.status)
