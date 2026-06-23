@@ -2,9 +2,13 @@ export type PastPaperStatus = 'draft' | 'analyzing' | 'review_pending' | 'publis
 
 export type PastPaperTaskType = 'task1_academic' | 'task1_general' | 'task2' | 'full_test' | 'unknown'
 
-export type PastPaperSourceType = 'official' | 'published_collection' | 'recalled' | 'curated'
+export type PastPaperSourceType = 'official' | 'published_collection' | 'recalled' | 'curated' | 'official_public' | 'published_book' | 'exam_recall' | 'platform_curated' | 'user_submitted' | 'other'
 
 export type PastPaperFrequencyLevel = 'high' | 'medium_high' | 'normal' | 'low'
+
+export type FrequencySource = 'admin' | 'ai_suggested' | 'imported' | 'unknown'
+
+export type SourceReliability = 'confirmed' | 'multiple_reports' | 'single_report' | 'uncertain'
 
 export type PastPaperDifficulty = 'easy' | 'medium' | 'hard'
 
@@ -54,7 +58,7 @@ export type PastPaperQuestion = {
   sourceYear: number | null
   sourceReference: string | null
   frequencyLevel: PastPaperFrequencyLevel
-  frequencySource: 'admin' | 'ai_suggested'
+  frequencySource: 'admin' | 'ai_suggested' | 'imported' | 'unknown'
   difficulty: PastPaperDifficulty | null
   task1VisualTypes: Task1VisualType[] | null
   task1VisualData: Record<string, unknown> | null
@@ -87,6 +91,20 @@ export type PastPaperQuestion = {
   uncertainties: string[]
   primaryTopic: string | null
   secondaryTopics: string[]
+  sourceNote: string | null
+  sourceUrl: string | null
+  sourceDate: string | null
+  sourceReliability: SourceReliability
+  showSourceToUsers: boolean
+  internalNote: string | null
+  userNote: string | null
+  tags: string[]
+  isFeatured: boolean
+  isPinned: boolean
+  isRecommended: boolean
+  sortWeight: number
+  isVisible: boolean
+  updatedBy: string | null
 }
 
 export type PastPaperListItem = Pick<
@@ -194,7 +212,13 @@ export const PastPaperSourceTypeLabels: Record<PastPaperSourceType, string> = {
   official: '官方真题',
   published_collection: '出版合集',
   recalled: '考试回忆',
-  curated: '平台整理'
+  curated: '平台整理',
+  official_public: '官方公开材料',
+  published_book: '出版题集',
+  exam_recall: '考场回忆',
+  platform_curated: '平台整理',
+  user_submitted: '用户投稿',
+  other: '其他'
 }
 
 export const PastPaperFrequencyLabels: Record<PastPaperFrequencyLevel, string> = {

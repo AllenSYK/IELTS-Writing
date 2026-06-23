@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import useSWR from 'swr'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminTableSkeleton, AdminEmpty, AdminError, AdminBadge, formatAdminDate } from '@/components/admin/AdminUI'
@@ -140,6 +141,7 @@ export function AdminPastPapersClient() {
                   <td>{formatAdminDate(item.createdAt)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
+                      <Link className="admin-secondary-button" href={`/admin/past-papers/${item.id}/edit`}>编辑</Link>
                       {item.status !== 'published' && <button className="admin-secondary-button" onClick={() => handlePublish(item.id)}>发布</button>}
                       {item.status === 'published' && <button className="admin-secondary-button" onClick={() => handleUnpublish(item.id)}>下架</button>}
                       <button className="admin-secondary-button" onClick={() => setShowAnalyze(item.id)}>AI 分析</button>
