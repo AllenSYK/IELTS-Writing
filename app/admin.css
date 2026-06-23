@@ -1,9 +1,10 @@
 /* Admin portal layout */
 .admin-workspace {
-  min-height: 100dvh;
+  height: 100dvh;
   width: 100%;
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
+  overflow: hidden;
   color: var(--on-surface);
   background:
     radial-gradient(circle at 8% 0%, rgba(173, 198, 255, 0.2), transparent 34%),
@@ -16,6 +17,7 @@
   z-index: 50;
   width: 272px;
   height: 100dvh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -195,9 +197,11 @@
 
 .admin-main-panel {
   min-width: 0;
+  min-height: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .admin-topbar {
@@ -302,9 +306,13 @@
 
 .admin-main-content {
   width: min(1600px, 100%);
-  min-height: calc(100dvh - 82px);
+  min-height: 0;
+  flex: 1;
   margin: 0 auto;
   padding: 34px clamp(20px, 3vw, 48px) 64px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .admin-section {
@@ -792,7 +800,6 @@
 
 .admin-table-panel {
   padding: 18px;
-  overflow: hidden;
 }
 
 .admin-filter-bar {
@@ -1770,6 +1777,7 @@
 
   .admin-main-content {
     padding-inline: 24px;
+    overflow-y: auto;
   }
 }
 
