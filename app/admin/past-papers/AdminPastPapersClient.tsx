@@ -48,6 +48,7 @@ export function AdminPastPapersClient() {
   const [showCreate, setShowCreate] = useState(false)
   const [showAnalyze, setShowAnalyze] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [showClassify, setShowClassify] = useState(false)
 
   const url = `/api/admin/past-papers?page=${page}&pageSize=20${statusFilter ? `&status=${statusFilter}` : ''}`
   const { data, error, isLoading, mutate } = useSWR<AdminPastPapersData>(url, adminJsonFetcher, { keepPreviousData: true })
@@ -100,6 +101,7 @@ export function AdminPastPapersClient() {
         actions={
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="admin-secondary-button" type="button" onClick={() => setShowImport(true)}>导入机经</button>
+            <button className="admin-secondary-button" type="button" onClick={() => setShowClassify(true)}>AI 一键自动分类</button>
             <button className="admin-primary-button" type="button" onClick={() => setShowCreate(true)}>新增真题</button>
           </div>
         }
@@ -165,6 +167,7 @@ export function AdminPastPapersClient() {
       {showCreate && <CreateDialog onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); void mutate() }} />}
       {showAnalyze && <AnalyzeDialog questionId={showAnalyze} onClose={() => setShowAnalyze(null)} onAnalyze={handleAnalyze} />}
       {showImport && <ImportRecalledDialog onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); void mutate() }} />}
+      {showClassify && <ClassifyDialog onClose={() => setShowClassify(false)} onDone={() => { setShowClassify(false); void mutate() }} />}
     </main>
   )
 }
@@ -513,9 +516,262 @@ function PreviewRecordCard({ record, onToggle, defaultYear }: { record: PreviewR
             <p style={{ fontSize: 13, color: 'var(--on-surface-variant)', fontStyle: 'italic' }}>未识别到 Task 1 或 Task 2</p>
           )}
 
-          {record.sourceNotes && (
+           {record.sourceNotes && (
             <p style={{ fontSize: 12, margin: '6px 0 0', color: 'var(--on-surface-variant)' }}>来源备注：{record.sourceNotes}</p>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type ClassifyResult = {
+  questionId: string
+  current: {
+    taskType: string
+    frequencyLevel: string
+    sourceType: string
+    topics: string[]
+    task2QuestionType: string | null
+    completeness: string | null
+  }
+  suggestion: {
+    taskType: string
+    taskTypeConfidence: number
+    task1VisualTypes?: string[]
+    task2QuestionType?: string
+    primaryTopic?: string
+    secondaryTopics?: string[]
+    keywords?: string[]
+    frequency: string
+    frequencyConfidence: number
+    frequencyReason?: string
+    sourceType: string
+    sourceReliability: string
+    completeness: string
+    suggestedTags?: string[]
+    missingFields?: string[]
+    uncertainties?: string[]
+    warnings?: string[]
+  }
+  changed: boolean
+}
+
+function ClassifyDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { pushToast } = useToast()
+  const [scope, setScope] = useState<'unclassified' | 'all'>('unclassified')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [results, setResults] = useState<ClassifyResult[] | null>(null)
+  const [selected, setSelected] = useState<Record<string, boolean>>({})
+  const [saving, setSaving] = useState(false)
+
+  async function handleClassify() {
+    setAnalyzing(true)
+    try {
+      const res = await fetch('/api/admin/past-papers/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope })
+      })
+      const data = await res.json() as { success?: boolean; results?: ClassifyResult[]; message?: string }
+      if (!res.ok || !data.success) throw new Error(data.message || '分类失败')
+      setResults(data.results ?? [])
+      const initial: Record<string, boolean> = {}
+      for (const r of data.results ?? []) {
+        initial[r.questionId] = r.changed && r.suggestion.taskTypeConfidence >= 0.6
+      }
+      setSelected(initial)
+    } catch (err) {
+      pushToast({ kind: 'error', title: '分类失败', message: err instanceof Error ? err.message : '' })
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  async function handleConfirm() {
+    if (!results) return
+    const items = results.filter((r) => selected[r.questionId]).map((r) => ({
+      questionId: r.questionId,
+      fields: {
+        taskType: r.suggestion.taskType !== r.current.taskType ? r.suggestion.taskType : undefined,
+        task1VisualTypes: r.suggestion.task1VisualTypes,
+        task2QuestionType: r.suggestion.task2QuestionType,
+        primaryTopic: r.suggestion.primaryTopic,
+        secondaryTopics: r.suggestion.secondaryTopics?.length ? r.suggestion.secondaryTopics : undefined,
+        keywords: r.suggestion.keywords?.length ? r.suggestion.keywords : undefined,
+        frequencyLevel: r.suggestion.frequency !== r.current.frequencyLevel ? r.suggestion.frequency : undefined,
+        sourceType: r.suggestion.sourceType !== r.current.sourceType ? r.suggestion.sourceType : undefined,
+        sourceReliability: r.suggestion.sourceReliability,
+        completeness: r.suggestion.completeness !== r.current.completeness ? r.suggestion.completeness : undefined,
+        tags: r.suggestion.suggestedTags?.length ? r.suggestion.suggestedTags : undefined,
+        missingFields: r.suggestion.missingFields?.length ? r.suggestion.missingFields : undefined,
+        uncertainties: r.suggestion.uncertainties?.length ? r.suggestion.uncertainties : undefined
+      }
+    }))
+    if (items.length === 0) {
+      pushToast({ kind: 'warning', title: '请至少选择一项' })
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/past-papers/classify/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items })
+      })
+      const data = await res.json() as { success?: boolean; successCount?: number; failureCount?: number; message?: string }
+      if (!res.ok || !data.success) throw new Error(data.message || '保存失败')
+      pushToast({ kind: 'success', title: `分类完成：成功 ${data.successCount}，失败 ${data.failureCount}` })
+      onDone()
+    } catch (err) {
+      pushToast({ kind: 'error', title: '保存失败', message: err instanceof Error ? err.message : '' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function toggleItem(id: string) {
+    setSelected((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  function toggleAll() {
+    if (!results) return
+    const allSelected = results.every((r) => selected[r.questionId])
+    const next: Record<string, boolean> = {}
+    for (const r of results) next[r.questionId] = !allSelected
+    setSelected(next)
+  }
+
+  const selectedCount = results ? results.filter((r) => selected[r.questionId]).length : 0
+
+  return (
+    <div className="dialog-layer" onMouseDown={onClose}>
+      <section className="confirm-dialog" style={{ maxWidth: 900, width: '95%', maxHeight: '90vh', overflow: 'auto' }} onMouseDown={(e) => e.stopPropagation()}>
+        <h2 className="ui-title-md">AI 一键自动分类</h2>
+
+        {!results ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <p style={{ fontSize: 13, color: 'var(--on-surface-variant)' }}>
+              AI 将自动分析题目的 Task 类型、题型、主题、频率、来源和完整度。管理员手动确认的值不会被覆盖。
+            </p>
+            <label className="field">
+              <span>处理范围</span>
+              <select value={scope} onChange={(e) => setScope(e.target.value as 'unclassified' | 'all')}>
+                <option value="unclassified">仅未分类题目</option>
+                <option value="all">全部题目（不覆盖管理员手动值）</option>
+              </select>
+            </label>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="admin-secondary-button" type="button" onClick={onClose}>取消</button>
+              <button className="admin-primary-button" type="button" disabled={analyzing} onClick={handleClassify}>
+                {analyzing ? 'AI 分析中…' : '开始分类'}
+              </button>
+            </div>
+          </div>
+        ) : results.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', padding: 24 }}>
+            <p style={{ fontSize: 14 }}>没有需要分类的题目。</p>
+            <button className="admin-primary-button" type="button" onClick={onDone}>完成</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button className="admin-secondary-button" type="button" onClick={() => { setResults(null); setSelected({}) }}>重新选择</button>
+              <button className="admin-secondary-button" type="button" onClick={toggleAll}>
+                {results.every((r) => selected[r.questionId]) ? '取消全选' : '全选'}
+              </button>
+              <button className="admin-secondary-button" type="button" onClick={() => {
+                const next: Record<string, boolean> = {}
+                for (const r of results) next[r.questionId] = r.changed && r.suggestion.taskTypeConfidence >= 0.6
+                setSelected(next)
+              }}>仅高置信度</button>
+              <span style={{ fontSize: 13, color: 'var(--on-surface-variant)' }}>
+                已选 {selectedCount} / {results.length}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflow: 'auto' }}>
+              {results.map((result) => (
+                <ClassifyResultCard
+                  key={result.questionId}
+                  result={result}
+                  selected={!!selected[result.questionId]}
+                  onToggle={() => toggleItem(result.questionId)}
+                />
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="admin-secondary-button" type="button" onClick={onClose}>取消</button>
+              <button className="admin-primary-button" type="button" disabled={saving || selectedCount === 0} onClick={handleConfirm}>
+                {saving ? '保存中…' : `应用分类 (${selectedCount})`}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function ClassifyResultCard({ result, selected, onToggle }: { result: ClassifyResult; selected: boolean; onToggle: () => void }) {
+  const { current, suggestion } = result
+  const confidenceLabel = suggestion.taskTypeConfidence >= 0.85 ? '高' : suggestion.taskTypeConfidence >= 0.6 ? '中' : '低'
+  const confidenceColor = suggestion.taskTypeConfidence >= 0.85 ? '#08743c' : suggestion.taskTypeConfidence >= 0.6 ? '#8a5200' : '#ba1a1a'
+
+  return (
+    <div style={{
+      padding: 12, borderRadius: 8, border: '1px solid var(--outline-variant)',
+      background: selected ? 'var(--surface-container-lowest)' : 'var(--surface-container)',
+      opacity: selected ? 1 : 0.6
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <input type="checkbox" checked={selected} onChange={onToggle} style={{ marginTop: 4 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+            <span className="task-badge">{PastPaperTaskTypeLabels[suggestion.taskType as PastPaperTaskType] ?? suggestion.taskType}</span>
+            <span className="task-badge">{PastPaperFrequencyLabels[suggestion.frequency as PastPaperFrequencyLevel] ?? suggestion.frequency}</span>
+            <span style={{ fontSize: 11, color: confidenceColor, fontWeight: 600 }}>置信度: {confidenceLabel}</span>
+            {!result.changed && <span className="task-badge" style={{ fontSize: 11 }}>无变化</span>}
+          </div>
+
+          {suggestion.primaryTopic && (
+            <p style={{ fontSize: 12, margin: '2px 0', color: 'var(--primary)' }}>
+              主题：{PastPaperTopicLabels[suggestion.primaryTopic] ?? suggestion.primaryTopic}
+              {suggestion.secondaryTopics?.length ? ` + ${suggestion.secondaryTopics.map(t => PastPaperTopicLabels[t] ?? t).join('、')}` : ''}
+            </p>
+          )}
+
+          {suggestion.task2QuestionType && (
+            <p style={{ fontSize: 12, margin: '2px 0' }}>
+              题型：{Task2QuestionTypeLabels[suggestion.task2QuestionType] ?? suggestion.task2QuestionType}
+            </p>
+          )}
+
+          {suggestion.task1VisualTypes?.length ? (
+            <p style={{ fontSize: 12, margin: '2px 0' }}>
+              图表：{suggestion.task1VisualTypes.map(v => Task1VisualTypeLabels[v as keyof typeof Task1VisualTypeLabels] ?? v).join('、')}
+            </p>
+          ) : null}
+
+          {current.taskType !== suggestion.taskType && (
+            <p style={{ fontSize: 12, margin: '4px 0 0', color: 'var(--on-surface-variant)' }}>
+              当前：{PastPaperTaskTypeLabels[current.taskType as PastPaperTaskType] ?? current.taskType} → 建议：{PastPaperTaskTypeLabels[suggestion.taskType as PastPaperTaskType] ?? suggestion.taskType}
+            </p>
+          )}
+
+          {current.frequencyLevel !== suggestion.frequency && (
+            <p style={{ fontSize: 12, margin: '2px 0', color: 'var(--on-surface-variant)' }}>
+              频率：{PastPaperFrequencyLabels[current.frequencyLevel as PastPaperFrequencyLevel] ?? current.frequencyLevel} → {PastPaperFrequencyLabels[suggestion.frequency as PastPaperFrequencyLevel] ?? suggestion.frequency}
+              {suggestion.frequencyReason ? ` (${suggestion.frequencyReason})` : ''}
+            </p>
+          )}
+
+          {suggestion.warnings?.length ? (
+            <p style={{ fontSize: 11, margin: '4px 0 0', color: 'var(--error)' }}>
+              ⚠ {suggestion.warnings.join('；')}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
