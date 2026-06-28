@@ -28,9 +28,9 @@ const tabs: Array<{ id: DraftTab; label: string }> = [
 
 const emptyQuota: DraftDeleteQuota = {
   timezone: 'Asia/Shanghai',
-  dailyLimit: 3,
+  dailyLimit: 8,
   used: 0,
-  remaining: 3,
+  remaining: 8,
   date: ''
 }
 

@@ -91,9 +91,9 @@ function normalizeQuota(value: unknown): DraftDeleteQuota {
   const input = value && typeof value === 'object' ? value as Partial<DraftDeleteQuota> : {}
   return {
     timezone: 'Asia/Shanghai',
-    dailyLimit: 3,
+    dailyLimit: 8,
     used: Math.max(0, Number(input.used) || 0),
-    remaining: Math.max(0, Math.min(3, Number(input.remaining) || 0)),
+    remaining: Math.max(0, Math.min(8, Number(input.remaining) || 0)),
     date: typeof input.date === 'string' ? input.date : ''
   }
 }

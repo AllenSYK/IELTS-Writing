@@ -100,7 +100,7 @@ export type DraftRecord = {
 
 export type DraftDeleteQuota = {
   timezone: 'Asia/Shanghai'
-  dailyLimit: 3
+  dailyLimit: 8
   used: number
   remaining: number
   date: string
@@ -321,7 +321,11 @@ export async function listDraftsLightweight(): Promise<DraftListItem[]> {
 }
 
 export async function fetchDraftDeleteQuota(): Promise<DraftDeleteQuota> {
-  const emptyQuota: DraftDeleteQuota = { timezone: 'Asia/Shanghai', dailyLimit: 3, used: 0, remaining: 3, date: '' }
+  const emptyQuota: DraftDeleteQuota = {     timezone: 'Asia/Shanghai',
+    dailyLimit: 8,
+    used: 0,
+    remaining: 8,
+    date: '' }
   try {
     const response = await fetch('/api/user/writing-drafts/quota', { cache: 'no-store' })
     const data = await response.json().catch(() => ({})) as { success?: boolean; quota?: DraftDeleteQuota }
