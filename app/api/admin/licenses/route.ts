@@ -21,13 +21,23 @@ function toNumber(value: string | null, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function sanitizeSearchInput(value: string): string {
+  return value
+    .replace(/[,()]/g, ' ')
+    .replace(/%/g, '\\%')
+    .replace(/_/g, '\\_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+}
+
 export async function GET(request: Request) {
   try {
     const { service } = await requireAdminService()
     const url = new URL(request.url)
     const page = Math.max(1, toNumber(url.searchParams.get('page'), 1))
     const pageSize = Math.min(200, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
-    const search = (url.searchParams.get('search')?.trim() || '').replace(/[,()]/g, ' ')
+    const search = sanitizeSearchInput(url.searchParams.get('search') || '')
     const status = url.searchParams.get('status')?.trim() || 'all'
     const plan = url.searchParams.get('plan')?.trim() || 'all'
     const licenseId = url.searchParams.get('licenseId')?.trim() || ''

@@ -10,6 +10,7 @@ const pageMeta = [
   { match: (path: string) => path.startsWith('/admin/licenses'), eyebrow: 'Licenses', title: '激活码管理' },
   { match: (path: string) => path.startsWith('/admin/bindings'), eyebrow: 'Bindings', title: '邮箱绑定' },
   { match: (path: string) => path.startsWith('/admin/users'), eyebrow: 'Users', title: '用户管理' },
+  { match: (path: string) => path.startsWith('/admin/past-papers'), eyebrow: 'Past Papers', title: '真题题库' },
   { match: (path: string) => path.startsWith('/admin/settings'), eyebrow: 'Settings', title: '管理设置' }
 ]
 

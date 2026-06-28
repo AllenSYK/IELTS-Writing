@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
-import { requireWebAdmin } from '@/lib/web-license/auth'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 
 const QuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -17,45 +16,46 @@ const QuerySchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    await requireWebAdmin()
-  } catch {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 })
+    const { service } = await requireAdminService()
+    const url = new URL(request.url)
+    const parsed = QuerySchema.safeParse(Object.fromEntries(url.searchParams))
+    if (!parsed.success) {
+      return json({ success: false, message: 'Invalid query' }, { status: 400 })
+    }
+
+    const { page, pageSize, status, taskType, frequencyLevel, sourceType, difficulty, topic, search } = parsed.data
+    const offset = (page - 1) * pageSize
+
+    let query = service
+      .from('past_paper_questions')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + pageSize - 1)
+
+    if (status) query = query.eq('status', status)
+    if (taskType) query = query.eq('task_type', taskType)
+    if (frequencyLevel) query = query.eq('frequency_level', frequencyLevel)
+    if (sourceType) query = query.eq('source_type', sourceType)
+    if (difficulty) query = query.eq('difficulty', difficulty)
+    if (topic) query = query.contains('topics', [topic])
+    if (search) {
+      const safe = search.replace(/%/g, '\\%').replace(/_/g, '\\_').slice(0, 200)
+      query = query.or(`title.ilike.%${safe}%,question_text.ilike.%${safe}%,summary.ilike.%${safe}%`)
+    }
+
+    const { data, error, count } = await query
+    if (error) return json({ success: false, message: error.message }, { status: 500 })
+
+    return json({
+      success: true,
+      items: (data ?? []).map(mapRow),
+      total: count ?? 0,
+      page,
+      pageSize
+    })
+  } catch (error) {
+    return adminApiError(error, '无法加载真题列表')
   }
-
-  const url = new URL(request.url)
-  const parsed = QuerySchema.safeParse(Object.fromEntries(url.searchParams))
-  if (!parsed.success) {
-    return json({ success: false, message: 'Invalid query' }, { status: 400 })
-  }
-
-  const { page, pageSize, status, taskType, frequencyLevel, sourceType, difficulty, topic, search } = parsed.data
-  const service = createSupabaseServiceRoleClient()
-  const offset = (page - 1) * pageSize
-
-  let query = service
-    .from('past_paper_questions')
-    .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + pageSize - 1)
-
-  if (status) query = query.eq('status', status)
-  if (taskType) query = query.eq('task_type', taskType)
-  if (frequencyLevel) query = query.eq('frequency_level', frequencyLevel)
-  if (sourceType) query = query.eq('source_type', sourceType)
-  if (difficulty) query = query.eq('difficulty', difficulty)
-  if (topic) query = query.contains('topics', [topic])
-  if (search) query = query.or(`title.ilike.%${search}%,question_text.ilike.%${search}%,summary.ilike.%${search}%`)
-
-  const { data, error, count } = await query
-  if (error) return json({ success: false, message: error.message }, { status: 500 })
-
-  return json({
-    success: true,
-    items: (data ?? []).map(mapRow),
-    total: count ?? 0,
-    page,
-    pageSize
-  })
 }
 
 const CreateSchema = z.object({
@@ -72,23 +72,17 @@ const CreateSchema = z.object({
 })
 
 export async function POST(request: Request) {
-  let adminUser
   try {
-    const admin = await requireWebAdmin()
-    adminUser = admin.user
-  } catch {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 })
-  }
+    const { user, service } = await requireAdminService()
 
-  let body
-  try {
-    body = CreateSchema.parse(await request.json())
-  } catch {
-    return json({ success: false, message: 'Invalid input' }, { status: 400 })
-  }
+    let body
+    try {
+      body = CreateSchema.parse(await request.json())
+    } catch {
+      return json({ success: false, message: 'Invalid input' }, { status: 400 })
+    }
 
-  const service = createSupabaseServiceRoleClient()
-  const { data, error } = await service
+    const { data, error } = await service
     .from('past_paper_questions')
     .insert({
       title: body.title,
@@ -102,13 +96,16 @@ export async function POST(request: Request) {
       keywords: body.keywords,
       summary: body.summary,
       status: 'draft',
-      created_by: adminUser.id
+      created_by: user.id
     })
     .select()
     .single()
 
   if (error) return json({ success: false, message: error.message }, { status: 500 })
   return json({ success: true, question: mapRow(data) })
+  } catch (error) {
+    return adminApiError(error, '无法创建真题')
+  }
 }
 
 function mapRow(row: Record<string, unknown>) {

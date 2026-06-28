@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
-import { requireWebAdmin } from '@/lib/web-license/auth'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 
 const UpdateSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -52,24 +51,19 @@ const UpdateSchema = z.object({
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  let adminUser
   try {
-    const admin = await requireWebAdmin()
-    adminUser = admin.user
-  } catch {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 })
-  }
+    const { user, service } = await requireAdminService()
 
-  const { id } = await params
-  let body
-  try {
-    body = UpdateSchema.parse(await request.json())
-  } catch {
-    return json({ success: false, message: 'Invalid input' }, { status: 400 })
-  }
+    const { id } = await params
+    let body
+    try {
+      body = UpdateSchema.parse(await request.json())
+    } catch {
+      return json({ success: false, message: 'Invalid input' }, { status: 400 })
+    }
 
-  const { expectedUpdatedAt, ...fields } = body
-  const updates: Record<string, unknown> = {}
+    const { expectedUpdatedAt, ...fields } = body
+    const updates: Record<string, unknown> = {}
 
   if (fields.title !== undefined) updates.title = fields.title
   if (fields.questionText !== undefined) updates.question_text = fields.questionText
@@ -120,9 +114,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return json({ success: false, message: 'No updates provided' }, { status: 400 })
   }
 
-  updates.updated_by = adminUser.id
-
-  const service = createSupabaseServiceRoleClient()
+  updates.updated_by = user.id
 
   if (expectedUpdatedAt) {
     const { data: existing, error: fetchError } = await service
@@ -153,39 +145,40 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (error) return json({ success: false, message: error.message }, { status: 500 })
   return json({ success: true, question: mapRow(data) })
+  } catch (error) {
+    return adminApiError(error, '无法更新真题')
+  }
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireWebAdmin()
-  } catch {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 })
+    const { service } = await requireAdminService()
+
+    const { id } = await params
+    const { data, error } = await service
+      .from('past_paper_questions')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error) return json({ success: false, message: 'Not found' }, { status: 404 })
+    return json({ success: true, question: mapRow(data) })
+  } catch (error) {
+    return adminApiError(error, '无法获取真题详情')
   }
-
-  const { id } = await params
-  const service = createSupabaseServiceRoleClient()
-  const { data, error } = await service
-    .from('past_paper_questions')
-    .select('*')
-    .eq('id', id)
-    .single()
-
-  if (error) return json({ success: false, message: 'Not found' }, { status: 404 })
-  return json({ success: true, question: mapRow(data) })
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireWebAdmin()
-  } catch {
-    return json({ success: false, message: 'Unauthorized' }, { status: 401 })
-  }
+    const { service } = await requireAdminService()
 
-  const { id } = await params
-  const service = createSupabaseServiceRoleClient()
-  const { error } = await service.from('past_paper_questions').delete().eq('id', id)
-  if (error) return json({ success: false, message: error.message }, { status: 500 })
-  return json({ success: true })
+    const { id } = await params
+    const { error } = await service.from('past_paper_questions').delete().eq('id', id)
+    if (error) return json({ success: false, message: error.message }, { status: 500 })
+    return json({ success: true })
+  } catch (error) {
+    return adminApiError(error, '无法删除真题')
+  }
 }
 
 function mapRow(row: Record<string, unknown>) {
