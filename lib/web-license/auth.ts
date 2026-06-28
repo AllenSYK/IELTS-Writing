@@ -139,11 +139,8 @@ export const checkActiveWebLicenseForUser = cache(async function checkActiveWebL
     : activation?.license_codes
 
   if (!activation || !license || license.status === 'disabled' || license.status === 'expired') {
-    await service
-      .from('profiles')
-      .update({ license_status: license?.status === 'disabled' ? 'suspended' : 'inactive', license_expires_at: null })
-      .eq('id', user.id)
-
+    // 鉴权路径不更新 profiles，只返回状态
+    // profiles.license_status 应由激活、撤销、延期等明确操作更新
     return {
       ok: false,
       status: 403,

@@ -3,6 +3,7 @@ import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { getAiConfig, AiProviderError, fetchAiNonStreamingCompletion, parseAiJsonObject, type AiConfig } from '@/lib/ai-provider'
+import { checkRateLimit, getClientIp, rateLimitResponse, AI_CLASSIFY_RATE_LIMIT } from '@/lib/rate-limit'
 
 const ClassifySchema = z.object({
   questionIds: z.array(z.string().uuid()).max(20).optional(),
@@ -48,10 +49,21 @@ const BATCH_TIMEOUT_MS = 60_000
 const TOTAL_TIME_GUARD_MS = 250_000
 
 export async function POST(request: Request) {
+  let user
   try {
-    await requireWebAdmin()
+    const result = await requireWebAdmin()
+    user = result.user
   } catch {
     return json({ success: false, message: 'Unauthorized' }, { status: 401 })
+  }
+
+  // 限流检查：管理员维度
+  const ip = getClientIp(request)
+  const rateLimitKey = `ai-classify:${user.id}:${ip}`
+  const rateLimitResult = checkRateLimit(rateLimitKey, AI_CLASSIFY_RATE_LIMIT)
+  
+  if (!rateLimitResult.allowed) {
+    return rateLimitResponse(rateLimitResult)
   }
 
   let body
