@@ -5658,6 +5658,8 @@ img {
 }
 
 .app-header {
+  position: sticky;
+  top: 0;
   z-index: 40;
   height: var(--app-header-height);
   flex: 0 0 var(--app-header-height);

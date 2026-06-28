@@ -15,7 +15,7 @@ export default function AdminError({ error, reset }: AdminErrorProps) {
   const [isResetting, setIsResetting] = useState(false)
 
   // 根据错误类型确定显示内容
-  const errorStatus = error.status || (error as any)?.digest?.status
+  const errorStatus = error.status || (error as unknown as { digest?: { status?: number } })?.digest?.status
   const is401 = errorStatus === 401
   const is403 = errorStatus === 403
   const is404 = errorStatus === 404

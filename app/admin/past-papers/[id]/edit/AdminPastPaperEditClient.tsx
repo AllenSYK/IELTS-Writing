@@ -93,7 +93,10 @@ export function AdminPastPaperEditClient({ questionId }: { questionId: string })
     }
   }, [questionId])
 
-  useEffect(() => { void fetchQuestion() }, [fetchQuestion])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchQuestion() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [fetchQuestion])
 
   useEffect(() => {
     if (!question) return
