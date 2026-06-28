@@ -81,8 +81,10 @@ test('draft API authenticates users and delegates limits and deletion to atomic 
   assert.match(route, /export async function DELETE/)
   assert.match(route, /\.rpc\('create_writing_draft'/)
   assert.match(route, /\.rpc\('update_writing_draft'/)
-  assert.match(route, /\.rpc\('complete_writing_draft'/)
   assert.match(route, /\.rpc\('delete_writing_draft'/)
+  // complete_writing_draft RPC 已移除，改为直接删除草稿
+  assert.doesNotMatch(route, /\.rpc\('complete_writing_draft'/)
+  assert.match(route, /\.from\('writing_drafts'\)[\s\S]*?\.delete\(\)/)
 
   assert.match(migration, /pg_advisory_xact_lock/i)
   assert.match(migration, /case when p_task_type = 'mock' then 3 else 5 end/i)

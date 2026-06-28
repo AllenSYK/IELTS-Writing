@@ -1,23 +1,27 @@
 /**
  * 路由权限分组
- * 
- * publicRoutes: 任何人可访问
+ *
+ * authEntryRoutes: 未登录可访问；已登录时跳转
+ * publicRoutes: 任何人可访问，不要求登录
  * loginRequiredRoutes: 需要登录，但不需要有效许可证
  * activeLicenseRequiredRoutes: 需要登录且需要有效许可证
- * adminRoutes: 需要管理员权限
+ * adminRoutes: 需要管理员权限（在 middleware 中通过 pathname 前缀判断）
  */
 
-// 公开路由：任何人可访问
+// 未登录入口：未登录可访问；已登录用户访问时跳转到 dashboard 或 activate
+const authEntryRoutes = ['/login', '/register', '/forgot-password', '/reset-password']
+
+// 公开路由：任何人可访问，不要求登录
 const publicRoutes = ['/terms', '/privacy']
 
 // 需要登录但不需要许可证的路由
-const loginRequiredRoutes = ['/login', '/register', '/activate', '/settings', '/support']
+const loginRequiredRoutes = ['/activate', '/settings', '/support']
 
 // 需要有效许可证的路由
 const activeLicenseRequiredRoutes = ['/dashboard', '/practice', '/history', '/write', '/result', '/analytics', '/study-plan', '/ielts']
 
 // 所有用户路由（需要登录）
-const userRoutes = [...loginRequiredRoutes, ...activeLicenseRequiredRoutes]
+const userRoutes = [...authEntryRoutes, ...loginRequiredRoutes, ...activeLicenseRequiredRoutes]
 
 function startsWithRoute(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
@@ -33,6 +37,7 @@ export function getAuthRouteInfo(pathname: string) {
     isAdminLoginRoute,
     isAdminRoute,
     isPublicRoute: startsWithRoute(pathname, publicRoutes),
+    isAuthEntryRoute: startsWithRoute(pathname, authEntryRoutes),
     isUserRoute: startsWithRoute(pathname, userRoutes),
     isLoginRequiredRoute: startsWithRoute(pathname, loginRequiredRoutes),
     isActiveLicenseRoute: startsWithRoute(pathname, activeLicenseRequiredRoutes)
@@ -80,8 +85,8 @@ export function resolveAuthRedirect({
     return route.isUserRoute ? '/admin/licenses' : null
   }
 
-  // 已登录用户访问登录/注册页
-  if (route.isLoginRequiredRoute && pathname !== '/settings' && pathname !== '/support') {
+  // 已登录用户访问登录/注册等入口页：跳转到合理页面
+  if (route.isAuthEntryRoute) {
     return licenseActive ? '/dashboard' : '/activate'
   }
 

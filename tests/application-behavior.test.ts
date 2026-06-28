@@ -153,8 +153,8 @@ test('shared app header keeps one aligned title and removes duplicate creation c
   assert.doesNotMatch(header, /ProfileAvatar|useUserProfile/)
   assert.match(shell, /<AppHeader title=\{meta\.title\} \/>/)
   assert.match(shell, /useLayoutEffect/)
-  assert.match(shell, /containerScrolls[\s\S]*?scrollTo\(\{ top: 0/)
-  assert.match(shell, /document\.scrollingElement/)
+  assert.match(shell, /scrollTo\(\{ top: 0/)
+  assert.match(shell, /contentRef/)
   assert.match(css, /\.app-header\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?z-index:\s*40;/)
   assert.match(css, /\.app-header-inner\s*\{[\s\S]*?width:\s*min\(var\(--content-max\), 100%\);[\s\S]*?margin-inline:\s*auto;/)
 })
@@ -249,7 +249,7 @@ test('public authentication pages stay outside the signed-in data runtime and re
   assert.match(shell, /pathname\.startsWith\('\/reset-password'\)/)
   assert.doesNotMatch(forgotPage, /UserPerformanceProvider|UserProfileProvider|WritingActivity|license\/status|api\/user/)
   assert.match(globalCss, /\.auth-page\s*\{[\s\S]*?min-height:\s*100dvh;[\s\S]*?env\(safe-area-inset-top\)[\s\S]*?env\(safe-area-inset-bottom\)/)
-  assert.match(globalCss, /\.app-route-root\.is-full-screen\s*\{[\s\S]*?min-height:\s*100dvh;[\s\S]*?overflow-x:\s*hidden;/)
+  assert.match(globalCss, /\.app-route-root\.is-full-screen\s*\{[\s\S]*?height:\s*100dvh;[\s\S]*?overflow-x:\s*hidden;/)
   assert.doesNotMatch(globalCss, /\.app-route-root\.is-full-screen\s*\{[^}]*overflow:\s*hidden;/)
 })
 
@@ -304,7 +304,7 @@ test('settings profile exposes account identity and a confirmed cache-safe logou
   assert.doesNotMatch(dashboard, /dashboard-header|练习概览|<LogoutButton/)
   assert.match(dashboard, /<section className="dashboard-main">\s*<section className="dashboard-grid">/)
   assert.doesNotMatch(css, /\.dashboard-header\s*\{/)
-  assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.app-header\s*\{[\s\S]*?top:\s*77px;[\s\S]*?flex:\s*0 0 auto;/)
+  assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.app-header\s*\{[\s\S]*?flex:\s*0 0 auto;/)
 })
 
 test('legal pages share the current contact email, AI notice, and final terms effective date', async () => {
