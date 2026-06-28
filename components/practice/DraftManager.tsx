@@ -103,6 +103,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
   const [loadError, setLoadError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<DraftListItem | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [quotaLoaded, setQuotaLoaded] = useState(false)
   const hasLoadedRef = useRef(false)
   const quotaLoadedRef = useRef(false)
 
@@ -128,11 +129,16 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
     quotaLoadedRef.current = true
     const q = await fetchDraftDeleteQuota()
     setQuota(q)
+    setQuotaLoaded(true)
   }, [])
 
   useEffect(() => {
     if (!userId || !open) return
-    void loadDrafts()
+    // 使用 setTimeout 避免在 effect 中直接调用 setState
+    const timer = setTimeout(() => {
+      void loadDrafts()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [userId, open, loadDrafts])
 
   const counts = {
@@ -240,7 +246,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
               <DraftCard
                 key={draft.id}
                 record={draft}
-                deleteDisabled={quota.remaining <= 0 && quotaLoadedRef.current}
+                deleteDisabled={quota.remaining <= 0 && quotaLoaded}
                 onContinue={continueDraft}
                 onDelete={handleDeleteClick}
               />
@@ -266,7 +272,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
               className="danger-action-button"
               icon="delete"
               loading={deleting}
-              disabled={quota.remaining <= 0 && quotaLoadedRef.current}
+              disabled={quota.remaining <= 0 && quotaLoaded}
               onClick={() => void confirmDelete()}
             >
               确认删除
