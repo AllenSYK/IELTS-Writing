@@ -647,14 +647,38 @@ export function convertVisualDataToSpecs(
   if (primaryType === 'bar_chart' || primaryType === 'bar') {
     const years = visualData.years as number[] | undefined
     const ageGroups = visualData.age_groups as string[] | undefined
-    const categories = visualData.categories_approximate || visualData.categories || {}
-    const xAxisLabels = years?.map(String) || ageGroups || []
-    if (xAxisLabels.length && typeof categories === 'object') {
-      const series = Object.entries(categories).map(([name, values]) => ({
+    const categoriesApprox = visualData.categories_approximate as Record<string, number[]> | undefined
+    const ageGroupsApprox = visualData.age_groups_approximate as Record<string, number[]> | undefined
+
+    if (categoriesApprox && ageGroups) {
+      const seriesNames = Object.keys(categoriesApprox)
+      const xAxisLabels = ageGroups
+      const series = seriesNames.map((name) => ({
         id: name.toLowerCase().replace(/\s+/g, '-'),
         name,
         type: 'bar' as const,
-        values: (values as number[]).map((v) => v ?? null)
+        values: categoriesApprox[name].map((v) => v ?? null)
+      }))
+      return {
+        questionType: 'bar_chart',
+        chartSpec: {
+          kind: 'bar',
+          title,
+          xAxis: { categories: xAxisLabels, unit: '' },
+          yAxis: { unit: (visualData.unit as string) || '' },
+          series
+        }
+      }
+    }
+
+    if (ageGroupsApprox && years) {
+      const seriesNames = Object.keys(ageGroupsApprox)
+      const xAxisLabels = years.map(String)
+      const series = seriesNames.map((name) => ({
+        id: name.toLowerCase().replace(/\s+/g, '-'),
+        name,
+        type: 'bar' as const,
+        values: ageGroupsApprox[name].map((v) => v ?? null)
       }))
       return {
         questionType: 'bar_chart',
@@ -669,7 +693,34 @@ export function convertVisualDataToSpecs(
     }
   }
 
-  if (primaryType === 'pie_chart' || primaryType === 'pie') {
+  if (primaryType === 'pie_chart' || primaryType === 'pie' || primaryType === 'mixed' || primaryType === 'multiple_charts') {
+    if (visualData.coffee_production || visualData.profit_distribution) {
+      const pieFields = [
+        { key: 'coffee_production', title: 'The Source of Coffee Production' },
+        { key: 'coffee_consumption', title: 'The Consumption of Coffee' },
+        { key: 'profit_distribution', title: 'The Profit Distribution' }
+      ]
+      const charts: Task1StandaloneChartSpec[] = []
+      for (const field of pieFields) {
+        const data = visualData[field.key] as Record<string, number> | undefined
+        if (data) {
+          charts.push({
+            chartType: 'pie',
+            title: field.title,
+            units: '',
+            legend: true,
+            pieData: Object.entries(data).map(([label, value]) => ({ label, value }))
+          })
+        }
+      }
+      if (charts.length >= 2) {
+        return {
+          questionType: 'mixed_charts',
+          chartSpec: { kind: 'mixed', title, charts }
+        }
+      }
+    }
+
     const yearsData = visualData.years as Record<string, number[]> | undefined
     if (yearsData && Object.keys(yearsData).length > 1) {
       const yearKeys = Object.keys(yearsData)
@@ -688,29 +739,6 @@ export function convertVisualDataToSpecs(
         return {
           questionType: 'mixed_charts',
           chartSpec: { kind: 'mixed', title, charts }
-        }
-      }
-    }
-    const singleData = visualData.data as { label: string; value: number }[] | undefined
-    if (singleData) {
-      return {
-        questionType: 'pie_chart',
-        chartSpec: {
-          kind: 'pie',
-          title,
-          pieData: singleData.map((d) => ({ label: d.label, value: d.value }))
-        }
-      }
-    }
-    const flatCategories = visualData.categories as string[] | undefined
-    const flatValues = visualData.values as number[] | undefined
-    if (flatCategories && flatValues) {
-      return {
-        questionType: 'pie_chart',
-        chartSpec: {
-          kind: 'pie',
-          title,
-          pieData: flatCategories.map((cat, i) => ({ label: cat, value: flatValues[i] ?? null }))
         }
       }
     }
@@ -746,12 +774,14 @@ export function convertVisualDataToSpecs(
       let featureId = 0
       for (const period of periods) {
         const items = visualData[period] as string[]
+        const isBefore = period === periods[0]
         for (const item of items) {
+          const pos = estimateMapPosition(item, featureId)
           features.push({
             id: `f-${featureId++}`,
-            label: item.length > 60 ? item.slice(0, 57) + '...' : item,
-            position: { x: 20 + (featureId % 5) * 15, y: 20 + Math.floor(featureId / 5) * 20 },
-            change: period === periods[0] ? 'unchanged' : 'modified',
+            label: item.length > 50 ? item.slice(0, 47) + '...' : item,
+            position: pos,
+            change: isBefore ? 'unchanged' : 'modified',
             description: item
           })
         }
@@ -769,4 +799,27 @@ export function convertVisualDataToSpecs(
   }
 
   return { questionType: primaryType }
+}
+
+function estimateMapPosition(description: string, index: number): { x: number; y: number } {
+  const d = description.toLowerCase()
+  let x = 50
+  let y = 50
+
+  if (d.includes('northwest') || d.includes('nw')) { x = 25; y = 25 }
+  else if (d.includes('northeast') || d.includes('ne')) { x = 75; y = 25 }
+  else if (d.includes('southwest') || d.includes('sw')) { x = 25; y = 75 }
+  else if (d.includes('southeast') || d.includes('se')) { x = 75; y = 75 }
+  else if (d.includes('north') || d.includes('above')) { x = 50; y = 25 }
+  else if (d.includes('south') || d.includes('below')) { x = 50; y = 75 }
+  else if (d.includes('west') || d.includes('left')) { x = 25; y = 50 }
+  else if (d.includes('east') || d.includes('right')) { x = 75; y = 50 }
+  else if (d.includes('centre') || d.includes('center') || d.includes('middle')) { x = 50; y = 50 }
+
+  x += (index % 3) * 8 - 8
+  y += Math.floor(index / 3) * 6 - 6
+  x = Math.max(10, Math.min(90, x))
+  y = Math.max(10, Math.min(90, y))
+
+  return { x, y }
 }
