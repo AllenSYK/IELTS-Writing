@@ -139,7 +139,7 @@ export type WritingRecordComponent = {
   essay: string
   durationSeconds: number
   wordCount: number
-  evaluation: EssayEvaluation
+  evaluation?: EssayEvaluation
   questionId?: string
   questionType?: string
   trainingType?: string

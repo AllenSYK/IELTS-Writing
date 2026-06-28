@@ -721,8 +721,8 @@ export async function getWritingRecordFromServer(userId: string, id: string | nu
   }
 }
 
-export function saveMistakeRecord(userId: string, record: WritingRecord) {
-  if (typeof window === 'undefined') return
+export function saveMistakeRecord(userId: string, record: WritingRecord): { saved: boolean; alreadyExists: boolean } {
+  if (typeof window === 'undefined') return { saved: false, alreadyExists: false }
   const storageKey = userScopedStorageKey(MistakeBookStorageKey, userId)
   let existing: string[] = []
   try {
@@ -735,7 +735,9 @@ export function saveMistakeRecord(userId: string, record: WritingRecord) {
     })
     existing = []
   }
+  const alreadyExists = existing.includes(record.id)
   window.localStorage.setItem(storageKey, JSON.stringify([record.id, ...existing.filter((id) => id !== record.id)].slice(0, 100)))
+  return { saved: true, alreadyExists }
 }
 
 export function scoreValue(score: string | undefined) {

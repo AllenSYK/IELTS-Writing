@@ -82,7 +82,7 @@ export function collectEvaluationAttempts(records: WritingRecord[]): EvaluationA
     if (record.taskType === 'mock' && record.components) {
       return (['task1', 'task2'] as const).flatMap((taskType) => {
         const component = record.components?.[taskType]
-        return component ? [{ taskType, evaluation: component.evaluation }] : []
+        return component?.evaluation ? [{ taskType, evaluation: component.evaluation }] : []
       })
     }
     if (record.taskType === 'task1' || record.taskType === 'task2') {

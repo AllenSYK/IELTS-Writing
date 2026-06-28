@@ -93,8 +93,6 @@ const evaluationStages = [
 ]
 const AI_EVALUATION_TIMEOUT_MS = 10 * 60 * 1000
 
-const pendingEvaluations = new Map<string, Promise<EssayEvaluation>>()
-
 function normalizeMode(value: string | string[] | undefined): WritingTaskType {
   const mode = Array.isArray(value) ? value[0] : value
   if (mode === 'task1' || mode === 'task2' || mode === 'mock') return mode
@@ -164,6 +162,7 @@ export default function WritePage() {
   const mountedRef = useRef(true)
   const timeLeftRef = useRef(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const pendingEvaluationsRef = useRef(new Map<string, Promise<EssayEvaluation>>())
   const [singleQuestion, setSingleQuestion] = useState<WritingQuestion | null>(null)
   const [mockQuestions, setMockQuestions] = useState<MockQuestions | null>(null)
   const [activeMockTask, setActiveMockTask] = useState<MockTaskType>('task1')
@@ -182,6 +181,10 @@ export default function WritePage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [showTimeConfirm, setShowTimeConfirm] = useState(false)
+  const [isSavingBeforeExit, setIsSavingBeforeExit] = useState(false)
+  const [exitSaveError, setExitSaveError] = useState('')
+  const [showResubmitConfirm, setShowResubmitConfirm] = useState(false)
+  const [pendingResubmitKey, setPendingResubmitKey] = useState<string | null>(null)
   const [splitWidth, setSplitWidth] = useState(splitRatioRef.current)
   const [layoutWidth, setLayoutWidth] = useState(1440)
   const [isResizing, setIsResizing] = useState(false)
@@ -281,12 +284,21 @@ export default function WritePage() {
     },
     [activeMockTask, draftId, essay, mockEssays, mockQuestions, mockWordCounts.task1, mockWordCounts.task2, mode, online, promptSelection, pushToast, singleQuestion, userId]
   )
+  const mockTask1Id = mockQuestions?.task1?.id
+  const mockTask2Id = mockQuestions?.task2?.id
+  const singleQuestionId = singleQuestion?.id
   const getDraftFingerprint = useCallback(() => {
     if (mode === 'mock') {
-      return JSON.stringify({ mode, task1: mockEssays.task1, task2: mockEssays.task2 })
+      return JSON.stringify({
+        mode,
+        q1Id: mockTask1Id ?? '',
+        q2Id: mockTask2Id ?? '',
+        task1: mockEssays.task1,
+        task2: mockEssays.task2
+      })
     }
-    return JSON.stringify({ mode, essay })
-  }, [mode, essay, mockEssays.task1, mockEssays.task2])
+    return JSON.stringify({ mode, qId: singleQuestionId ?? '', essay })
+  }, [mode, essay, mockEssays.task1, mockEssays.task2, singleQuestionId, mockTask1Id, mockTask2Id])
 
   const flushDraftSave = useCallback(async (options?: { keepalive?: boolean }) => {
     if (!userId || !draftId || !hydrated) return
@@ -630,21 +642,42 @@ export default function WritePage() {
     const handlePageHide = () => {
       saveCurrentDraft(true)
     }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveCurrentDraft(true)
+      }
+    }
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('pagehide', handlePageHide)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('pagehide', handlePageHide)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [saveStatus])
 
-  const saveNow = useCallback(async () => {
+  const saveNow = useCallback(async (options?: { force?: boolean }) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    await flushDraftSave()
+    await flushDraftSave(options?.force ? { keepalive: true } : undefined)
     if (mountedRef.current) {
       pushToast({ kind: 'success', title: '草稿已保存' })
     }
   }, [flushDraftSave, pushToast])
+
+  async function handleConfirmedExit() {
+    if (isSavingBeforeExit) return
+    setIsSavingBeforeExit(true)
+    setExitSaveError('')
+    try {
+      await saveNow({ force: true })
+      router.push('/practice')
+    } catch (error) {
+      setExitSaveError(error instanceof Error ? error.message : '草稿保存失败，请重试')
+    } finally {
+      if (mountedRef.current) setIsSavingBeforeExit(false)
+    }
+  }
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -698,8 +731,9 @@ export default function WritePage() {
     dedupeKey?: string,
     signal?: AbortSignal
   ) {
-    if (dedupeKey && pendingEvaluations.has(dedupeKey)) {
-      return pendingEvaluations.get(dedupeKey)!
+    const map = pendingEvaluationsRef.current
+    if (dedupeKey && map.has(dedupeKey)) {
+      return map.get(dedupeKey)!
     }
 
     const evaluationPromise = (async () => {
@@ -709,11 +743,11 @@ export default function WritePage() {
           timeoutMs: AI_EVALUATION_TIMEOUT_MS
         })
       } finally {
-        if (dedupeKey) pendingEvaluations.delete(dedupeKey)
+        if (dedupeKey) map.delete(dedupeKey)
       }
     })()
 
-    if (dedupeKey) pendingEvaluations.set(dedupeKey, evaluationPromise)
+    if (dedupeKey) map.set(dedupeKey, evaluationPromise)
     return evaluationPromise
   }
 
@@ -751,14 +785,10 @@ export default function WritePage() {
     }
 
     const essayHashKey = `${userId}:${essay.trim().toLowerCase().slice(0, 100)}:${activeQuestion.taskType}`
-    if (pendingEvaluations.has(essayHashKey)) {
-      const confirmResubmit = window.confirm('检测到相同内容的批改正在进行中。\n\n点击"确定"等待当前批改完成，\n点击"取消"强制重新批改。')
-      if (!confirmResubmit) {
-        pendingEvaluations.delete(essayHashKey)
-      } else {
-        pushToast({ kind: 'info', title: '正在处理中', message: '请等待当前批改完成。' })
-        return
-      }
+    if (pendingEvaluationsRef.current.has(essayHashKey)) {
+      setPendingResubmitKey(essayHashKey)
+      setShowResubmitConfirm(true)
+      return
     }
 
     const abortController = new AbortController()
@@ -899,20 +929,40 @@ export default function WritePage() {
       setSubmitStatus('submitting')
       setStageIndex(1)
 
-      const task1Evaluation = await evaluateEssay({
-        essay: mockEssays.task1,
-        taskType: 'task1',
-        prompt: buildPrompt(mockQuestions.task1),
-        questionType: mockQuestions.task1.questionType
-      }, dedupeKey1, abortController.signal)
+      let task1Evaluation: EssayEvaluation | null = null
+      let task2Evaluation: EssayEvaluation | null = null
+      let task1Error: string | null = null
+      let task2Error: string | null = null
+
+      try {
+        task1Evaluation = await evaluateEssay({
+          essay: mockEssays.task1,
+          taskType: 'task1',
+          prompt: buildPrompt(mockQuestions.task1),
+          questionType: mockQuestions.task1.questionType
+        }, dedupeKey1, abortController.signal)
+      } catch (err) {
+        task1Error = err instanceof Error ? err.message : 'Task 1 批改失败'
+      }
 
       setStageIndex(2)
-      const task2Evaluation = await evaluateEssay({
-        essay: mockEssays.task2,
-        taskType: 'task2',
-        prompt: buildPrompt(mockQuestions.task2),
-        questionType: mockQuestions.task2.questionType
-      }, dedupeKey2, abortController.signal)
+
+      try {
+        task2Evaluation = await evaluateEssay({
+          essay: mockEssays.task2,
+          taskType: 'task2',
+          prompt: buildPrompt(mockQuestions.task2),
+          questionType: mockQuestions.task2.questionType
+        }, dedupeKey2, abortController.signal)
+      } catch (err) {
+        task2Error = err instanceof Error ? err.message : 'Task 2 批改失败'
+      }
+
+      if (!task1Evaluation && !task2Evaluation) {
+        throw new WritingEvaluationError('service', 'Task 1 和 Task 2 批改均失败，请稍后重试。')
+      }
+
+      const partialFailed = Boolean(task1Error || task2Error)
 
       setStageIndex(3)
       setSubmitStatus('organizing')
@@ -924,14 +974,33 @@ export default function WritePage() {
       const task1Share = totalMockWords > 0 ? mockWordCounts.task1 / totalMockWords : 0.33
       const task1Duration = Math.round(elapsedSeconds * task1Share)
       const task2Duration = Math.max(0, elapsedSeconds - task1Duration)
-      const evaluation = combineMockEvaluation(task1Evaluation, task2Evaluation, mockEssays.task1)
+
+      let evaluation: EssayEvaluation
+      if (task1Evaluation && task2Evaluation) {
+        evaluation = combineMockEvaluation(task1Evaluation, task2Evaluation, mockEssays.task1)
+      } else if (task1Evaluation) {
+        evaluation = {
+          ...task1Evaluation,
+          summary: `Task 1 批改完成（${task1Evaluation.overallBand || task1Evaluation.bandEstimate || '—'}）。Task 2 批改失败：${task2Error}。`,
+          overallFeedback: `Task 1 批改完成。Task 2 批改失败，请重试 Task 2。`,
+          annotationWarnings: [`Task 2 批改失败：${task2Error}`]
+        }
+      } else {
+        evaluation = {
+          ...task2Evaluation!,
+          summary: `Task 2 批改完成（${task2Evaluation!.overallBand || task2Evaluation!.bandEstimate || '—'}）。Task 1 批改失败：${task1Error}。`,
+          overallFeedback: `Task 2 批改完成。Task 1 批改失败，请重试 Task 1。`,
+          annotationWarnings: [`Task 1 批改失败：${task1Error}`]
+        }
+      }
+
       const originalEssay = `Task 1\n${mockEssays.task1}\n\nTask 2\n${mockEssays.task2}`
       const record: WritingRecord = {
         id: createRecordId(),
         requestId: evaluation.requestId,
         deviceId: getLocalDeviceId(),
         taskType: 'mock',
-        title: 'Full IELTS Writing Test',
+        title: partialFailed ? 'Full IELTS Writing Test (部分完成)' : 'Full IELTS Writing Test',
         prompt: `Task 1\n${buildPrompt(mockQuestions.task1)}\n\nTask 2\n${buildPrompt(mockQuestions.task2)}`,
         essay: originalEssay,
         originalEssay,
@@ -957,7 +1026,7 @@ export default function WritePage() {
             essay: mockEssays.task1,
             durationSeconds: task1Duration,
             wordCount: mockWordCounts.task1,
-            evaluation: task1Evaluation,
+            evaluation: task1Evaluation ?? undefined,
             questionId: mockQuestions.task1.id,
             questionType: mockQuestions.task1.questionType,
             trainingType: mockQuestions.task1.trainingType,
@@ -975,7 +1044,7 @@ export default function WritePage() {
             essay: mockEssays.task2,
             durationSeconds: task2Duration,
             wordCount: mockWordCounts.task2,
-            evaluation: task2Evaluation,
+            evaluation: task2Evaluation ?? undefined,
             questionId: mockQuestions.task2.id,
             questionType: mockQuestions.task2.questionType,
             chartSpec: mockQuestions.task2.chartSpec as Record<string, unknown> | undefined,
@@ -989,8 +1058,8 @@ export default function WritePage() {
       }
 
       await saveWritingRecord(userId, record)
-      markGeneratedPromptCompleted(mockQuestions.task1.id, userId)
-      markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
+      if (task1Evaluation) markGeneratedPromptCompleted(mockQuestions.task1.id, userId)
+      if (task2Evaluation) markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
       if (draftId) {
         try {
           await completeManagedDraft(userId, draftId, record.id)
@@ -1002,7 +1071,11 @@ export default function WritePage() {
       setStageIndex(5)
       setSubmitStatus('success')
       succeeded = true
-      pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
+      if (partialFailed) {
+        pushToast({ kind: 'warning', title: '模考部分完成', message: `Task ${task1Error ? '1' : '2'}批改失败，已保存成功部分。` })
+      } else {
+        pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
+      }
       router.push(`/result?id=${record.id}`)
     } catch (caught) {
       const presentation = evaluationErrorMessage(caught)
@@ -1496,13 +1569,19 @@ export default function WritePage() {
       <ConfirmDialog
         open={showExitConfirm}
         title="退出当前写作？"
-        message="草稿已保存到本地。离开后可以从同一 Task 页面恢复。"
-        confirmLabel="退出"
-        cancelLabel="留下"
-        onCancel={() => setShowExitConfirm(false)}
+        message={exitSaveError || (isSavingBeforeExit ? '正在保存草稿…' : '草稿将保存到本地。离开后可以从同一 Task 页面恢复。')}
+        confirmLabel={isSavingBeforeExit ? '保存中…' : exitSaveError ? '重试保存' : '退出'}
+        cancelLabel={exitSaveError ? '放弃保存并退出' : '留下'}
+        onCancel={() => {
+          if (exitSaveError) {
+            router.push('/practice')
+          } else {
+            setShowExitConfirm(false)
+          }
+        }}
         onConfirm={() => {
-          saveNow()
-          router.push('/practice')
+          if (isSavingBeforeExit) return
+          void handleConfirmedExit()
         }}
       />
 
@@ -1516,6 +1595,27 @@ export default function WritePage() {
         onConfirm={() => {
           setShowTimeConfirm(false)
           void submitCurrent()
+        }}
+      />
+
+      <ConfirmDialog
+        open={showResubmitConfirm}
+        title="检测到重复批改"
+        message={'相同内容的批改正在进行中。点击"等待"可等待当前批改完成，点击"重新批改"将强制重新提交。'}
+        confirmLabel="等待当前批改"
+        cancelLabel="重新批改"
+        onCancel={() => {
+          if (pendingResubmitKey) {
+            pendingEvaluationsRef.current.delete(pendingResubmitKey)
+          }
+          setShowResubmitConfirm(false)
+          setPendingResubmitKey(null)
+          void submitCurrent()
+        }}
+        onConfirm={() => {
+          setShowResubmitConfirm(false)
+          setPendingResubmitKey(null)
+          pushToast({ kind: 'info', title: '正在处理中', message: '请等待当前批改完成。' })
         }}
       />
     </main>
