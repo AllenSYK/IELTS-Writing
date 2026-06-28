@@ -1,29 +1,15 @@
 /**
- * 简单的内存限流器
- * 
- * 用于API端点的频率限制
+ * 分布式限流器
+ *
+ * 使用 PostgreSQL 原子 RPC 实现跨实例限流
+ * 支持 Vercel Serverless 多实例环境
  */
 
-type RateLimitEntry = {
-  count: number
-  resetAt: number
-}
-
-const rateLimitStore = new Map<string, RateLimitEntry>()
-
-// 定期清理过期的限流记录
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimitStore.entries()) {
-    if (entry.resetAt <= now) {
-      rateLimitStore.delete(key)
-    }
-  }
-}, 60_000) // 每分钟清理一次
+import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 
 export interface RateLimitConfig {
-  /** 时间窗口（毫秒） */
-  windowMs: number
+  /** 时间窗口（秒） */
+  windowSeconds: number
   /** 窗口内最大请求数 */
   maxRequests: number
 }
@@ -36,43 +22,27 @@ export interface RateLimitResult {
 }
 
 /**
- * 检查请求是否被限流
- * 
- * @param key 限流键（如 IP 地址、用户ID 等）
- * @param config 限流配置
- * @returns 限流结果
+ * 通过 PostgreSQL RPC 检查限流
  */
-export function checkRateLimit(key: string, config: RateLimitConfig): RateLimitResult {
-  const now = Date.now()
-  const entry = rateLimitStore.get(key)
+export async function checkRateLimit(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
+  const service = createSupabaseServiceRoleClient()
+  const { data, error } = await service.rpc('check_rate_limit', {
+    p_key: key,
+    p_window_seconds: config.windowSeconds,
+    p_max_requests: config.maxRequests
+  })
 
-  // 如果没有记录或已过期，创建新记录
-  if (!entry || entry.resetAt <= now) {
-    const resetAt = now + config.windowMs
-    rateLimitStore.set(key, { count: 1, resetAt })
-    return {
-      allowed: true,
-      remaining: config.maxRequests - 1,
-      resetAt
-    }
+  if (error) {
+    // 限流检查失败时放行，不阻断业务
+    return { allowed: true, remaining: config.maxRequests, resetAt: Date.now() + config.windowSeconds * 1000 }
   }
 
-  // 如果未超过限制
-  if (entry.count < config.maxRequests) {
-    entry.count++
-    return {
-      allowed: true,
-      remaining: config.maxRequests - entry.count,
-      resetAt: entry.resetAt
-    }
-  }
-
-  // 超过限制
+  const result = Array.isArray(data) ? data[0] : data
   return {
-    allowed: false,
-    remaining: 0,
-    resetAt: entry.resetAt,
-    retryAfter: Math.ceil((entry.resetAt - now) / 1000)
+    allowed: result?.allowed ?? true,
+    remaining: result?.remaining ?? config.maxRequests,
+    resetAt: result?.reset_at ? new Date(result.reset_at as string).getTime() : Date.now() + config.windowSeconds * 1000,
+    retryAfter: result?.retry_after as number | undefined
   }
 }
 
@@ -112,22 +82,20 @@ export function rateLimitResponse(result: RateLimitResult): Response {
 
 /**
  * 管理登录限流配置
- * 
- * IP + 邮箱维度：
- * - 5分钟内最多5次尝试
+ *
+ * IP + 邮箱维度：5分钟内最多5次失败尝试
  */
 export const ADMIN_LOGIN_RATE_LIMIT: RateLimitConfig = {
-  windowMs: 5 * 60 * 1000, // 5分钟
+  windowSeconds: 5 * 60,
   maxRequests: 5
 }
 
 /**
  * AI 分类限流配置
- * 
- * 管理员维度：
- * - 1小时内最多10次
+ *
+ * 管理员维度：1小时内最多10次
  */
 export const AI_CLASSIFY_RATE_LIMIT: RateLimitConfig = {
-  windowMs: 60 * 60 * 1000, // 1小时
+  windowSeconds: 60 * 60,
   maxRequests: 10
 }

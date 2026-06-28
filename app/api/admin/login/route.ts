@@ -4,12 +4,7 @@ import { toChineseAuthError } from '@/lib/auth/error-messages'
 import { json } from '@/lib/http'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getWebProfile } from '@/lib/web-license/auth'
-import { 
-  checkRateLimit, 
-  getClientIp, 
-  rateLimitResponse, 
-  ADMIN_LOGIN_RATE_LIMIT 
-} from '@/lib/rate-limit'
+import { checkRateLimit, getClientIp, rateLimitResponse, ADMIN_LOGIN_RATE_LIMIT } from '@/lib/rate-limit'
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -18,15 +13,17 @@ const LoginSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    // 限流检查：IP + 邮箱维度
     const ip = getClientIp(request)
     const body = LoginSchema.parse(await request.json())
     const email = normalizeEmail(body.email)
-    
-    // 使用 IP + 邮箱哈希作为限流键
-    const rateLimitKey = `admin-login:${ip}:${email}`
-    const rateLimitResult = checkRateLimit(rateLimitKey, ADMIN_LOGIN_RATE_LIMIT)
-    
+
+    // 使用 IP + 邮箱哈希作为限流键（不记录明文邮箱）
+    const emailHash = Array.from(
+      new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email)))
+    ).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+    const rateLimitKey = `admin-login:${ip}:${emailHash}`
+    const rateLimitResult = await checkRateLimit(rateLimitKey, ADMIN_LOGIN_RATE_LIMIT)
+
     if (!rateLimitResult.allowed) {
       return rateLimitResponse(rateLimitResult)
     }

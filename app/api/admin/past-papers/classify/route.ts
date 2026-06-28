@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   // 限流检查：管理员维度
   const ip = getClientIp(request)
   const rateLimitKey = `ai-classify:${user.id}:${ip}`
-  const rateLimitResult = checkRateLimit(rateLimitKey, AI_CLASSIFY_RATE_LIMIT)
+  const rateLimitResult = await checkRateLimit(rateLimitKey, AI_CLASSIFY_RATE_LIMIT)
   
   if (!rateLimitResult.allowed) {
     return rateLimitResponse(rateLimitResult)
