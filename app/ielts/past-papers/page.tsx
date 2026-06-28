@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
@@ -50,19 +50,43 @@ const defaultFilters: Filters = {
   examDateTo: ''
 }
 
+function countActiveFilters(filters: Filters): number {
+  let count = 0
+  for (const [key, val] of Object.entries(filters)) {
+    if (key === 'search') { if (val) count++ }
+    else if (val !== 'all' && val !== '') count++
+  }
+  return count
+}
+
 type PapersResponse = { success?: boolean; items?: PastPaperListItem[]; total?: number }
 
 export default function PastPapersPage() {
-  const { userId } = useUserSession()
+  const { userId, status: sessionStatus } = useUserSession()
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState<Filters>(defaultFilters)
   const [searchInput, setSearchInput] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [availableYears, setAvailableYears] = useState<number[]>([])
 
   const pageSize = 12
 
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    void fetch('/api/past-papers/years')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data.success && Array.isArray(data.years)) {
+          setAvailableYears(data.years)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [userId])
+
   const swrKey = userId ? `past-papers-${page}-${JSON.stringify(filters)}` : null
-  const { data, isLoading } = useSWR(swrKey, async (): Promise<PapersResponse> => {
+  const { data, error, isLoading, mutate } = useSWR(swrKey, async (): Promise<PapersResponse> => {
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('pageSize', String(pageSize))
@@ -80,14 +104,25 @@ export default function PastPapersPage() {
     if (filters.examDateFrom) params.set('examDateFrom', filters.examDateFrom)
     if (filters.examDateTo) params.set('examDateTo', filters.examDateTo)
     const res = await fetch(`/api/past-papers?${params}`)
+    if (!res.ok) {
+      throw new Error(`请求失败（${res.status}）`)
+    }
     return res.json()
-  }, { revalidateOnFocus: false })
+  }, { revalidateOnFocus: false, shouldRetryOnError: false })
 
   const items = data?.items ?? []
   const total = data?.total ?? 0
+  const hasData = data !== undefined && !error
+  const activeFilterCount = countActiveFilters(filters)
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }))
+    setPage(1)
+  }
+
+  function clearAllFilters() {
+    setFilters(defaultFilters)
+    setSearchInput('')
     setPage(1)
   }
 
@@ -97,7 +132,29 @@ export default function PastPapersPage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
+  if (sessionStatus === 'loading') return <PageSkeleton />
   if (!userId) return <PageSkeleton />
+
+  if (error) {
+    return (
+      <main className="ui-page" data-main-content tabIndex={-1}>
+        <section className="analytics-main" style={{ paddingTop: 40 }}>
+          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+            <MaterialIcon name="error" size={28} />
+            <h2 className="ui-title-md" style={{ marginTop: 16 }}>真题加载失败</h2>
+            <p className="ui-body-md">请稍后重试。</p>
+            <button className="ui-primary-button" type="button" style={{ marginTop: 16 }} onClick={() => void mutate()}>
+              重新加载
+            </button>
+          </GlassPanel>
+        </section>
+      </main>
+    )
+  }
+
+  const yearOptions = availableYears.length > 0
+    ? availableYears.map((y) => ({ value: String(y), label: String(y) }))
+    : Array.from({ length: 12 }, (_, i) => 2025 - i).map((y) => ({ value: String(y), label: String(y) }))
 
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
@@ -152,6 +209,9 @@ export default function PastPapersPage() {
               <FilterSelect label="主题" value={filters.topic} onChange={(v) => updateFilter('topic', v)}
                 options={[{ value: 'all', label: '全部' }, ...Object.entries(PastPaperTopicLabels).map(([k, v]) => ({ value: k, label: v }))]} />
 
+              <FilterSelect label="年份" value={filters.year} onChange={(v) => updateFilter('year', v)}
+                options={[{ value: 'all', label: '全部年份' }, ...yearOptions]} />
+
               <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <span style={{ fontSize: 12, color: 'var(--on-surface-variant)' }}>考试日期从</span>
                 <input
@@ -183,6 +243,11 @@ export default function PastPapersPage() {
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
             <button className="ui-secondary-button" type="button" onClick={handleSearch}>搜索</button>
+            {activeFilterCount > 0 && (
+              <button className="ui-secondary-button" type="button" onClick={clearAllFilters}>
+                清除筛选{activeFilterCount > 0 ? `（${activeFilterCount}）` : ''}
+              </button>
+            )}
           </div>
         </GlassPanel>
 
@@ -193,8 +258,13 @@ export default function PastPapersPage() {
         ) : items.length === 0 ? (
           <GlassPanel level={2} className="empty-state">
             <MaterialIcon name="inbox" size={28} />
-            <h2 className="ui-title-md">暂无匹配真题</h2>
-            <p className="ui-body-md">请调整筛选条件或搜索词。</p>
+            <h2 className="ui-title-md">{hasData && activeFilterCount > 0 ? '没有符合当前筛选条件的真题' : '暂无已发布真题'}</h2>
+            <p className="ui-body-md">{hasData && activeFilterCount > 0 ? '请调整筛选条件或搜索词。' : '暂时还没有已发布的真题。'}</p>
+            {activeFilterCount > 0 && (
+              <button className="ui-secondary-button" type="button" style={{ marginTop: 12 }} onClick={clearAllFilters}>
+                清除全部筛选
+              </button>
+            )}
           </GlassPanel>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>

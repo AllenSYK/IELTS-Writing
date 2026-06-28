@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getAiConfig, AiProviderError } from '@/lib/ai-provider'
+import { getAiConfig, AiProviderError, fetchAiNonStreamingCompletion, parseAiJsonObject, type AiConfig } from '@/lib/ai-provider'
 
 const ClassifySchema = z.object({
   questionIds: z.array(z.string().uuid()).max(20).optional(),
@@ -123,7 +123,7 @@ export async function POST(request: Request) {
 }
 
 async function classifyBatch(
-  config: { apiKey: string; baseUrl: string; model: string },
+  config: AiConfig,
   questions: Record<string, unknown>[]
 ): Promise<ClassificationResult[]> {
   const questionSummaries = questions.map((q) => ({
@@ -141,7 +141,12 @@ async function classifyBatch(
 
   const systemPrompt = `Classify IELTS Writing questions. Return JSON only. Do not rewrite questions or invent missing info.
 
+CRITICAL: For every input item, you MUST return exactly the same questionId as provided in the input.
+Never omit, modify, reorder, or invent questionId.
+Results are matched ONLY by questionId. You may change output order freely.
+
 For each question return:
+- questionId: REQUIRED. Exact copy from input.
 - taskType: task1_academic|task1_general|task2|full_test|unknown
 - taskTypeConfidence: 0.0-1.0
 - task1VisualTypes: array (line|bar|pie|table|map|process|mixed|letter|other) if task1
@@ -169,38 +174,40 @@ Return {"classifications": [...]} with one object per question.`
   })
 
   try {
-    const response = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPayload }
-        ],
-        temperature: 0.2,
-        max_tokens: 3000,
-        response_format: { type: 'json_object' }
-      }),
-      signal: AbortSignal.timeout(BATCH_TIMEOUT_MS)
+    const estimatedTokensPerQuestion = 400
+    const dynamicMaxTokens = Math.min(8000, questions.length * estimatedTokensPerQuestion + 500)
+    const content = await fetchAiNonStreamingCompletion(config, [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPayload }
+    ], {
+      maxTokens: dynamicMaxTokens,
+      requestId: `classify-${Date.now().toString(36)}`,
+      stage: 'past-paper-classify',
+      responseFormat: { type: 'json_object' }
     })
 
-    if (!response.ok) throw new AiProviderError('Classification failed', response.status)
-    const data = await response.json() as { choices: Array<{ message: { content: string } }> }
-    const content = data.choices?.[0]?.message?.content ?? '{}'
-    const parsed = JSON.parse(content) as { classifications?: Array<Record<string, unknown>> }
+    const parsed = parseAiJsonObject(content) as { classifications?: Array<Record<string, unknown>> }
 
     const classifications = parsed.classifications ?? []
     const results: ClassificationResult[] = []
+    const seenIds = new Set<string>()
+    const inputIds = new Set(questions.map((q) => q.id as string))
+
+    for (const c of classifications) {
+      const qId = typeof c.questionId === 'string' ? c.questionId : null
+      if (!qId || !inputIds.has(qId)) continue
+      if (seenIds.has(qId)) continue
+      seenIds.add(qId)
+    }
 
     for (const q of questions) {
-      const aiResult = classifications.find((c) => c.questionId === q.id) ?? classifications.shift()
+      const qId = q.id as string
+      const aiResult = seenIds.has(qId)
+        ? classifications.find((c) => c.questionId === qId)
+        : undefined
       if (!aiResult) {
         results.push({
-          questionId: q.id as string,
+          questionId: qId,
           current: extractCurrent(q),
           suggestion: fallbackSuggestion(q),
           changed: false
@@ -211,7 +218,7 @@ Return {"classifications": [...]} with one object per question.`
       const suggestion = normalizeSuggestion(aiResult)
       const current = extractCurrent(q)
       results.push({
-        questionId: q.id as string,
+        questionId: qId,
         current,
         suggestion,
         changed: hasChanges(current, suggestion)
@@ -219,7 +226,8 @@ Return {"classifications": [...]} with one object per question.`
     }
 
     return results
-  } catch {
+  } catch (error) {
+    console.error('[classify-batch]', { error: error instanceof Error ? error.name : 'unknown' })
     return questions.map((q) => ({
       questionId: q.id as string,
       current: extractCurrent(q),
@@ -252,6 +260,12 @@ function fallbackSuggestion(q: Record<string, unknown>) {
   }
 }
 
+const VALID_TASK2_QUESTION_TYPES = [
+  'agree_disagree', 'discussion_opinion', 'advantages_disadvantages', 'outweigh',
+  'problem_solution', 'cause_solution', 'two_part', 'direct_question',
+  'positive_negative', 'other', 'unknown'
+]
+
 function normalizeSuggestion(raw: Record<string, unknown>) {
   const validTaskTypes = ['task1_academic', 'task1_general', 'task2', 'full_test', 'unknown']
   const validFrequencies = ['high', 'medium_high', 'regular', 'low', 'unknown']
@@ -259,11 +273,14 @@ function normalizeSuggestion(raw: Record<string, unknown>) {
   const validReliability = ['confirmed', 'multiple_reports', 'single_report', 'uncertain']
   const validCompleteness = ['complete', 'mostly_complete', 'partial', 'summary_only', 'missing']
 
+  const rawTask2Type = typeof raw.task2QuestionType === 'string' ? raw.task2QuestionType : undefined
+  const validatedTask2Type = rawTask2Type && VALID_TASK2_QUESTION_TYPES.includes(rawTask2Type) ? rawTask2Type : rawTask2Type ? 'unknown' : undefined
+
   return {
     taskType: validTaskTypes.includes(raw.taskType as string) ? (raw.taskType as string) : 'unknown',
     taskTypeConfidence: clampConfidence(raw.taskTypeConfidence),
     task1VisualTypes: Array.isArray(raw.task1VisualTypes) ? raw.task1VisualTypes.slice(0, 8) as string[] : undefined,
-    task2QuestionType: typeof raw.task2QuestionType === 'string' ? raw.task2QuestionType : undefined,
+    task2QuestionType: validatedTask2Type,
     primaryTopic: typeof raw.primaryTopic === 'string' ? raw.primaryTopic : undefined,
     secondaryTopics: Array.isArray(raw.secondaryTopics) ? raw.secondaryTopics.slice(0, 3) as string[] : [],
     keywords: Array.isArray(raw.keywords) ? raw.keywords.slice(0, 8) as string[] : [],

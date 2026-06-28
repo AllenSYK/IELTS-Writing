@@ -19,7 +19,7 @@ type SidebarItem = {
 const mainItems: SidebarItem[] = [
   { id: 'home', href: '/dashboard', label: '账号中心', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
   { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', match: (pathname) => pathname.startsWith('/study-plan') },
-  { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') },
+  { id: 'ielts', href: '/practice', label: 'IELTS', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') || pathname.startsWith('/write') },
   { id: 'history', href: '/history', label: '历史记录', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
   { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
   { id: 'settings', href: '/settings', label: '设置', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
@@ -52,10 +52,12 @@ export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const online = useOnlineLabel()
-  const activeId = useMemo(
-    () => [...mainItems, ...supportItems].find((item) => item.match(pathname))?.id ?? 'home',
-    [pathname]
-  )
+  const activeId = useMemo(() => {
+    const allItems = [...mainItems, ...supportItems]
+    const matches = allItems.filter((item) => item.match(pathname))
+    if (matches.length === 0) return null
+    return matches.sort((a, b) => b.href.length - a.href.length)[0].id
+  }, [pathname])
 
   function prefetchItem(item: SidebarItem) {
     router.prefetch(item.href)
@@ -92,8 +94,8 @@ export function Sidebar() {
         <div className={`netwatch-status ${online ? 'is-online' : 'is-offline'}`} role="status">
           <span />
           <div>
-            <strong>NetWatch</strong>
-            <small>{online ? 'Online' : 'Offline'}</small>
+            <strong>网络状态</strong>
+            <small>{online ? '已连接' : '连接中断'}</small>
           </div>
         </div>
 
