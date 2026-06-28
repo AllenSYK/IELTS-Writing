@@ -1945,6 +1945,29 @@ img {
   background: var(--primary);
 }
 
+.result-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.revised-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.revised-sub-tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(193, 198, 215, 0.2);
+}
+
+.revised-sub-tabs .result-tab {
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
 .essay-prose {
   color: var(--on-surface);
   font-size: 18px;

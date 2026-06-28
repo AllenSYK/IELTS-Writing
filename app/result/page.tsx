@@ -38,6 +38,7 @@ import {
 import { userScopedStorageKey } from '@/lib/user-storage'
 
 type ResultTab = 'original' | 'corrected' | 'revised' | 'model'
+type RevisedSubTab = 'annotation' | 'ai'
 type AnnotationFilter = 'all' | 'grammar' | 'vocabulary' | 'logic' | 'task' | 'high'
 
 function isGrammarCategory(category: EssayAnnotationCategory) {
@@ -144,17 +145,22 @@ export default function ResultPage() {
   const [ignoredIds, setIgnoredIds] = useState<Set<string>>(() => new Set())
   const [showAcceptAllConfirm, setShowAcceptAllConfirm] = useState(false)
   const [generatingDerivative, setGeneratingDerivative] = useState<'revised' | 'model' | null>(null)
+  const [revisedSubTab, setRevisedSubTab] = useState<RevisedSubTab>('annotation')
+  const [mistakeSaved, setMistakeSaved] = useState(false)
 
   useEffect(() => {
     if (!userId) return
+    let cancelled = false
     window.queueMicrotask(() => {
       void (async () => {
       const id = new URLSearchParams(window.location.search).get('id')
       const nextRecord = await getWritingRecordFromServer(userId, id)
+      if (cancelled) return
       setRecord(nextRecord)
       if (nextRecord) {
         setAcceptedChanges(nextRecord.acceptedChanges ?? [])
         setIgnoredIds(new Set())
+        setMistakeSaved(false)
         const storedTab = window.localStorage.getItem(userScopedStorageKey(`ielts-writing-result-tab-${nextRecord.id}`, userId)) as ResultTab | null
         if (storedTab === 'original' || storedTab === 'corrected' || storedTab === 'revised' || storedTab === 'model') {
           setTab(storedTab)
@@ -163,6 +169,7 @@ export default function ResultPage() {
       setLoaded(true)
       })()
     })
+    return () => { cancelled = true }
   }, [userId])
 
   useEffect(() => {
@@ -175,11 +182,11 @@ export default function ResultPage() {
   const evaluation = record.evaluation
   const originalEssay = record.originalEssay || record.essay
   const allAnnotations = evaluation.annotations ?? []
-  const resolvedAnnotations = allAnnotations.filter((annotation) => isResolvedAnnotation(annotation, originalEssay))
   const unresolvedAnnotations = allAnnotations.filter((annotation) => !isResolvedAnnotation(annotation, originalEssay))
   const acceptedIds = new Set(acceptedChanges.map((change) => change.annotationId))
-  const activeAnnotations = allAnnotations.filter((annotation) => !ignoredIds.has(annotation.id))
+  const activeAnnotations = allAnnotations.filter((annotation) => !ignoredIds.has(annotation.id) && !acceptedIds.has(annotation.id))
   const annotationCounts = countAnnotations(activeAnnotations)
+  const pendingCount = activeAnnotations.filter((a) => a.replacement && isResolvedAnnotation(a, originalEssay)).length
   const visibleAnnotations = activeAnnotations.filter((annotation) => annotationMatchesFilter(annotation, annotationFilter))
   const effectiveSelectedAnnotationId = visibleAnnotations.some((annotation) => annotation.id === selectedAnnotationId)
     ? selectedAnnotationId
@@ -223,9 +230,15 @@ export default function ResultPage() {
   }
 
   function saveToMistakes() {
-    if (!record || !userId) return
-    saveMistakeRecord(userId, record)
-    pushToast({ kind: 'success', title: '已保存到错题本', message: '可在历史记录中继续复盘。' })
+    if (!record || !userId || mistakeSaved) return
+    const result = saveMistakeRecord(userId, record)
+    if (result.alreadyExists) {
+      setMistakeSaved(true)
+      pushToast({ kind: 'info', title: '已在错题本中', message: '该作文已保存过，无需重复保存。' })
+    } else {
+      setMistakeSaved(true)
+      pushToast({ kind: 'success', title: '已保存到错题本', message: '可在历史记录中继续复盘。' })
+    }
   }
 
   function persistAcceptedChanges(nextChanges: AcceptedAnnotationChange[]) {
@@ -324,7 +337,7 @@ export default function ResultPage() {
   }
 
   async function generateDerivative(kind: 'revised' | 'model') {
-    if (!record || generatingDerivative) return
+    if (!record || !userId || generatingDerivative) return
     setGeneratingDerivative(kind)
     try {
       const response = await fetch('/api/ai/essay-derivative', {
@@ -341,18 +354,23 @@ export default function ResultPage() {
       if (!response.ok || !data.success || !data.text) {
         throw new Error(data.message || '生成失败，请稍后重试。')
       }
-      const updatedEvaluation = {
-        ...record.evaluation,
-        ...(kind === 'revised'
-          ? {
-              improvedEssay: data.text,
-              revisedEssay: data.text,
-              nextSteps: data.nextSteps || [],
-              suggestions: data.nextSteps || []
-            }
-          : { modelEssay: data.text })
+      const freshRecord = await getWritingRecordFromServer(userId, record.id)
+      if (freshRecord) {
+        setRecord(freshRecord)
+      } else {
+        const updatedEvaluation = {
+          ...record.evaluation,
+          ...(kind === 'revised'
+            ? {
+                improvedEssay: data.text,
+                revisedEssay: data.text,
+                nextSteps: data.nextSteps || [],
+                suggestions: data.nextSteps || []
+              }
+            : { modelEssay: data.text })
+        }
+        setRecord({ ...record, evaluation: updatedEvaluation })
       }
-      setRecord({ ...record, evaluation: updatedEvaluation })
       pushToast({ kind: 'success', title: kind === 'revised' ? '改写版本已生成' : '高分范文已生成' })
     } catch (error) {
       pushToast({
@@ -389,17 +407,30 @@ export default function ResultPage() {
             <MaterialIcon name="replay" size={18} />
             重新练习
           </Link>
-          <button className="ui-secondary-button" type="button" onClick={saveToMistakes}>
-            <MaterialIcon name="bookmark_add" size={18} />
-            保存到错题本
+          <button className="ui-secondary-button" type="button" onClick={saveToMistakes} disabled={mistakeSaved}>
+            <MaterialIcon name={mistakeSaved ? 'bookmark' : 'bookmark_add'} size={18} />
+            {mistakeSaved ? '已保存到错题本' : '保存到错题本'}
           </button>
           <button
             className="ui-secondary-button"
             type="button"
-            onClick={() => copyText('当前内容', tab === 'model' ? modelEssay || '' : tab === 'revised' ? (acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || '') : tab === 'corrected' ? (acceptedChanges.length > 0 ? modifiedEssay : correctedEssay || originalEssay) : originalEssay)}
+            onClick={() => {
+              const isRevisedAnnotation = tab === 'revised' && revisedSubTab === 'annotation'
+              const isRevisedAI = tab === 'revised' && revisedSubTab === 'ai'
+              const label = tab === 'model' ? '高分范文' : isRevisedAI ? 'AI改写' : isRevisedAnnotation ? '标注修改版' : tab === 'corrected' ? (acceptedChanges.length > 0 ? '修改版' : '批注版') : '原文'
+              const text = tab === 'model' ? modelEssay || '' : isRevisedAI ? revisedEssay || '' : isRevisedAnnotation ? modifiedEssay : tab === 'corrected' ? (acceptedChanges.length > 0 ? modifiedEssay : correctedEssay || originalEssay) : originalEssay
+              if (!text) return
+              copyText(label, text)
+            }}
+            disabled={(() => {
+              if (tab === 'model') return !modelEssay
+              if (tab === 'revised' && revisedSubTab === 'ai') return !revisedEssay
+              if (tab === 'revised' && revisedSubTab === 'annotation') return acceptedChanges.length === 0
+              return false
+            })()}
           >
             <MaterialIcon name="content_copy" size={18} />
-            复制内容
+            {tab === 'model' ? '复制高分范文' : tab === 'revised' ? (revisedSubTab === 'ai' ? '复制AI改写' : '复制修改版') : tab === 'corrected' ? (acceptedChanges.length > 0 ? '复制修改版' : '复制批注版') : '复制原文'}
           </button>
         </div>
 
@@ -464,8 +495,9 @@ export default function ResultPage() {
                     <AnnotationFilterBar value={annotationFilter} counts={annotationCounts} onChange={setAnnotationFilter} />
                     <div className="annotation-stats" aria-live="polite">
                       <strong>共发现 {allAnnotations.length} 处问题</strong>
-                      <span>已定位 {resolvedAnnotations.length} 处</span>
-                      <span>未精确定位 {unresolvedAnnotations.length} 处</span>
+                      <span>待处理 {pendingCount} 处</span>
+                      {acceptedChanges.length > 0 && <span>已接受 {acceptedChanges.length} 处</span>}
+                      {ignoredIds.size > 0 && <span>已忽略 {ignoredIds.size} 处</span>}
                     </div>
                     {evaluation.annotationWarnings && evaluation.annotationWarnings.length > 0 ? (
                       <div className="annotation-warning-list" role="status">
@@ -527,16 +559,52 @@ export default function ResultPage() {
                     ) : null}
                   </div>
                 ) : tab === 'revised' ? (
-                  acceptedChanges.length > 0 ? modifiedEssay : revisedEssay || (
-                    <div className="derivative-empty-state">
-                      <h2>改写版本尚未生成</h2>
-                      <p>按需生成可以让首次批改更快完成。</p>
-                      <button className="ui-primary-button" type="button" disabled={Boolean(generatingDerivative)} onClick={() => generateDerivative('revised')}>
-                        <MaterialIcon name="auto_fix_high" size={18} />
-                        {generatingDerivative === 'revised' ? '正在生成' : '生成改写版本'}
+                  <div className="revised-tab-content">
+                    <div className="revised-sub-tabs" role="tablist" aria-label="改写版本切换">
+                      <button
+                        className={`result-tab ${revisedSubTab === 'annotation' ? 'is-active' : ''}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={revisedSubTab === 'annotation'}
+                        onClick={() => setRevisedSubTab('annotation')}
+                        disabled={acceptedChanges.length === 0}
+                      >
+                        标注修改版 {acceptedChanges.length > 0 ? `(${acceptedChanges.length})` : ''}
+                      </button>
+                      <button
+                        className={`result-tab ${revisedSubTab === 'ai' ? 'is-active' : ''}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={revisedSubTab === 'ai'}
+                        onClick={() => setRevisedSubTab('ai')}
+                      >
+                        AI 改写版
                       </button>
                     </div>
-                  )
+                    {revisedSubTab === 'annotation' ? (
+                      acceptedChanges.length > 0 ? (
+                        <pre className="original-essay-text">{modifiedEssay}</pre>
+                      ) : (
+                        <div className="derivative-empty-state">
+                          <h2>暂无标注修改</h2>
+                          <p>在「批改标注」Tab 中接受修改建议后，修改版会在这里显示。</p>
+                        </div>
+                      )
+                    ) : (
+                      revisedEssay ? (
+                        <pre className="original-essay-text">{revisedEssay}</pre>
+                      ) : (
+                        <div className="derivative-empty-state">
+                          <h2>AI 改写尚未生成</h2>
+                          <p>按需生成可以让首次批改更快完成。</p>
+                          <button className="ui-primary-button" type="button" disabled={Boolean(generatingDerivative)} onClick={() => generateDerivative('revised')}>
+                            <MaterialIcon name="auto_fix_high" size={18} />
+                            {generatingDerivative === 'revised' ? '正在生成' : '生成 AI 改写'}
+                          </button>
+                        </div>
+                      )
+                    )}
+                  </div>
                 ) : (
                   modelEssay || (
                     <div className="derivative-empty-state">
