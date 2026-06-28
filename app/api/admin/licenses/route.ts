@@ -7,6 +7,7 @@ import {
   UNBOUND_BINDING_REASON
 } from '@/lib/web-license/admin-license-data'
 import { toQueryParamNumber } from '@/lib/admin/number-utils'
+import { logAdminAudit, extractAuditInfo } from '@/lib/admin/audit-log'
 
 const CreateSchema = z.object({
   count: z.number().int().min(1).max(500).default(1),
@@ -115,6 +116,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const requestId = request.headers.get('X-Request-Id') || undefined
+  const auditInfo = extractAuditInfo(request)
+  
   try {
     const { user, service } = await requireAdminService()
     const body = CreateSchema.parse(await request.json())
@@ -144,17 +148,53 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
+    // 记录审计日志
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'create_license',
+      resourceType: 'license',
+      requestId,
+      result: 'success',
+      metadata: {
+        count: body.count,
+        plan: body.plan,
+        durationDays: body.durationDays,
+        maxActivations: body.maxActivations
+      },
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent
+    })
+
     return json({
       success: true,
       codes: generated.map((item, index) => ({
         ...data?.[index],
         code: item.code
-      }))
+      })),
+      requestId
     })
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return json({ success: false, code: 'INVALID_INPUT', message: '生成参数无效' }, { status: 400 })
+      return json({ success: false, code: 'INVALID_INPUT', message: '生成参数无效', requestId }, { status: 400 })
     }
+    
+    // 记录失败审计日志
+    try {
+      const { user, service } = await requireAdminService()
+      await logAdminAudit(service, {
+        adminUserId: user.id,
+        action: 'create_license',
+        resourceType: 'license',
+        requestId,
+        result: 'failure',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        ipHash: auditInfo.ip,
+        userAgentSummary: auditInfo.userAgent
+      })
+    } catch {
+      // 审计日志写入失败不影响错误响应
+    }
+    
     return adminApiError(error, '无法生成激活码')
   }
 }

@@ -2169,3 +2169,98 @@
   color: var(--error, #dc2626);
   font-size: 12px;
 }
+
+/* 错误边界样式 */
+.admin-error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  padding: 48px;
+}
+
+.admin-error-content {
+  text-align: center;
+  max-width: 480px;
+}
+
+.admin-error-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.admin-error-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--on-surface, #1a1a1a);
+}
+
+.admin-error-message {
+  font-size: 14px;
+  color: var(--on-surface-variant, #6b7280);
+  margin: 0 0 24px;
+  line-height: 1.6;
+}
+
+.admin-error-request-id {
+  font-size: 12px;
+  color: var(--on-surface-variant, #9ca3af);
+  margin: 0 0 24px;
+}
+
+.admin-error-request-id code {
+  background: var(--surface-variant, #f3f4f6);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.admin-error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.admin-error-debug {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--outline-variant, #e5e7eb);
+}
+
+.admin-error-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: var(--on-surface-variant, #6b7280);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.admin-error-toggle:hover {
+  color: var(--on-surface, #1a1a1a);
+}
+
+.admin-error-stack {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface-variant, #f3f4f6);
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: monospace;
+  text-align: left;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
+import { logAdminAudit, extractAuditInfo } from '@/lib/admin/audit-log'
 
 const UpdateSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -51,6 +52,9 @@ const UpdateSchema = z.object({
 })
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = request.headers.get('X-Request-Id') || undefined
+  const auditInfo = extractAuditInfo(request)
+  
   try {
     const { user, service } = await requireAdminService()
 
@@ -59,7 +63,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     try {
       body = UpdateSchema.parse(await request.json())
     } catch {
-      return json({ success: false, message: 'Invalid input' }, { status: 400 })
+      return json({ success: false, message: 'Invalid input', requestId }, { status: 400 })
     }
 
     const { expectedUpdatedAt, ...fields } = body
@@ -111,7 +115,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (fields.venueNote !== undefined) updates.venue_note = fields.venueNote
 
   if (Object.keys(updates).length === 0) {
-    return json({ success: false, message: 'No updates provided' }, { status: 400 })
+    return json({ success: false, message: 'No updates provided', requestId }, { status: 400 })
   }
 
   updates.updated_by = user.id
@@ -123,15 +127,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .eq('id', id)
       .single()
 
-    if (fetchError) return json({ success: false, message: 'Question not found' }, { status: 404 })
+    if (fetchError) return json({ success: false, message: 'Question not found', requestId }, { status: 404 })
 
     const serverTime = new Date(existing.updated_at as string).getTime()
     const clientTime = new Date(expectedUpdatedAt).getTime()
     if (Math.abs(serverTime - clientTime) > 2000) {
+      // 记录冲突审计日志
+      await logAdminAudit(service, {
+        adminUserId: user.id,
+        action: 'update_past_paper',
+        resourceType: 'past_paper',
+        resourceId: id,
+        requestId,
+        result: 'failure',
+        errorMessage: '该题目已被其他管理员更新',
+        ipHash: auditInfo.ip,
+        userAgentSummary: auditInfo.userAgent
+      })
+      
       return json({
         success: false,
         code: 'CONFLICT',
-        message: '该题目已被其他管理员更新，请刷新后重新编辑。'
+        message: '该题目已被其他管理员更新，请刷新后重新编辑。',
+        requestId
       }, { status: 409 })
     }
   }
@@ -143,8 +161,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .select()
     .single()
 
-  if (error) return json({ success: false, message: error.message }, { status: 500 })
-  return json({ success: true, question: mapRow(data) })
+  if (error) return json({ success: false, message: error.message, requestId }, { status: 500 })
+  
+  // 记录成功审计日志
+  const changedFieldNames = Object.keys(updates).filter(k => k !== 'updated_by')
+  await logAdminAudit(service, {
+    adminUserId: user.id,
+    action: 'update_past_paper',
+    resourceType: 'past_paper',
+    resourceId: id,
+    requestId,
+    result: 'success',
+    changedFields: { fields: changedFieldNames },
+    ipHash: auditInfo.ip,
+    userAgentSummary: auditInfo.userAgent
+  })
+  
+  return json({ success: true, question: mapRow(data), requestId })
   } catch (error) {
     return adminApiError(error, '无法更新真题')
   }
@@ -169,13 +202,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = request.headers.get('X-Request-Id') || undefined
+  const auditInfo = extractAuditInfo(request)
+  
   try {
-    const { service } = await requireAdminService()
+    const { user, service } = await requireAdminService()
 
     const { id } = await params
+    
+    // 先获取真题信息用于审计
+    const { data: question } = await service
+      .from('past_paper_questions')
+      .select('title, status')
+      .eq('id', id)
+      .single()
+    
     const { error } = await service.from('past_paper_questions').delete().eq('id', id)
-    if (error) return json({ success: false, message: error.message }, { status: 500 })
-    return json({ success: true })
+    if (error) return json({ success: false, message: error.message, requestId }, { status: 500 })
+    
+    // 记录审计日志
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'delete_past_paper',
+      resourceType: 'past_paper',
+      resourceId: id,
+      requestId,
+      result: 'success',
+      metadata: {
+        title: question?.title,
+        status: question?.status
+      },
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent
+    })
+    
+    return json({ success: true, requestId })
   } catch (error) {
     return adminApiError(error, '无法删除真题')
   }

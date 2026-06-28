@@ -6,22 +6,29 @@ import {
   UNBOUND_BINDING_REASON
 } from '@/lib/web-license/admin-license-data'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const requestId = request.headers.get('X-Request-Id') || undefined
+  
   try {
     const { service } = await requireAdminService()
+    
+    // 优化：只查询必要字段，添加 limit
     const [licensesResult, profilesResult, bindingsResult] = await Promise.all([
       service
         .from('license_codes')
         .select('id, code_prefix, plan, status, activation_count, max_activations, expires_at, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(1000), // 限制返回数量
       service
         .from('profiles')
         .select('id, email, phone, role, license_status, created_at')
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .limit(1000), // 限制返回数量
       service
         .from('license_activations')
         .select('id, license_id, user_id, email, status, expires_at, revoked_reason, activated_at')
         .order('activated_at', { ascending: false })
+        .limit(1000) // 限制返回数量
     ])
 
     for (const result of [licensesResult, profilesResult, bindingsResult]) {
@@ -84,7 +91,8 @@ export async function GET() {
           binding_status: getEffectiveBindingStatus(binding)
         }
       }),
-      recentUsers: profiles.slice(0, 5)
+      recentUsers: profiles.slice(0, 5),
+      requestId
     })
   } catch (error) {
     return adminApiError(error, '无法加载管理总览')
