@@ -276,17 +276,43 @@ function task1Example(selection: PromptSelection) {
   if (questionType === 'map' || questionType === 'floor_plan' || questionType === 'before_after') {
     return {
       title: 'Academic Task 1 - Map',
-      promptLead: 'The maps below show changes to a small harbour area between 2005 and 2025.',
+      promptLead: 'The maps below show a river crossing area in 1968 and in the present day, together with plans for future development.',
       promptDetail: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
       questionType,
       mapSpec: {
-        title: 'Harbour Area Development (2005 vs 2025)',
-        beforeLabel: '2005',
-        afterLabel: '2025',
-        features: [
-          { id: 'dock', label: 'Main Dock', position: { x: 30, y: 40 }, change: 'unchanged', description: 'Original dock retained' },
-          { id: 'warehouse', label: 'Old Warehouse', position: { x: 60, y: 30 }, change: 'removed', description: 'Demolished' },
-          { id: 'apartments', label: 'New Apartments', position: { x: 60, y: 30 }, change: 'added', description: 'Built on warehouse site' }
+        title: 'River Crossing Area Development',
+        dataVersion: 'map-v2',
+        beforeLabel: '1968',
+        afterLabel: 'Now and Future',
+        panels: [
+          {
+            id: 'panel-1968',
+            title: '1968',
+            features: [
+              { type: 'river', x: 220, y: 0, width: 105, height: 480, path: 'M220 0 C205 80 235 150 215 240 C200 320 230 400 215 480 L310 480 C325 390 300 310 320 225 C340 140 310 70 325 0 Z' },
+              { type: 'road', x: 0, y: 250, width: 220, height: 4, style: 'current' },
+              { type: 'ferry', x: 205, y: 240, width: 25, height: 30 },
+              { type: 'forest', x: 25, y: 40, width: 150, height: 130, treeCount: 8 },
+              { type: 'housing', x: 350, y: 45, rows: 3, columns: 3 }
+            ]
+          },
+          {
+            id: 'panel-now-future',
+            title: 'Now and Future',
+            features: [
+              { type: 'river', x: 220, y: 0, width: 105, height: 480, path: 'M220 0 C205 80 235 150 215 240 C200 320 230 400 215 480 L310 480 C325 390 300 310 320 225 C340 140 310 70 325 0 Z' },
+              { type: 'road', x: 0, y: 235, width: 520, height: 4, style: 'current' },
+              { type: 'bridge', x: 220, y: 228, width: 90, height: 14 },
+              { type: 'car_park', x: 25, y: 40, width: 90, height: 70, label: 'Car park' },
+              { type: 'car_park', x: 25, y: 135, width: 145, height: 85, label: 'Car park' },
+              { type: 'building_row', x: 120, y: 45, rows: 3, columns: 5, units: 5 },
+              { type: 'housing', x: 365, y: 45, rows: 3, columns: 3 },
+              { type: 'housing', x: 375, y: 270, rows: 2, columns: 3 },
+              { type: 'footpath', x: 15, y: 330, path: 'M15 330 C100 350 200 370 350 380 C400 385 450 390 500 390', style: 'future' },
+              { type: 'church', x: 335, y: 380, planned: true },
+              { type: 'car_park', x: 410, y: 360, width: 95, height: 65, planned: true, label: 'Car park (planned)' }
+            ]
+          }
         ]
       }
     }

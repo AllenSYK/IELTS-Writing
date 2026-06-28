@@ -1747,6 +1747,69 @@ img {
   border-color: var(--map-future, #6b7280);
 }
 
+/* 旧地图格式提示 */
+.task1-map-legacy-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  background: var(--surface-variant, #f3f4f6);
+  border-radius: 12px;
+  border: 1px dashed var(--outline-variant, #d1d5db);
+}
+
+.task1-map-legacy-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--warning-container, #fef3c7);
+  color: var(--on-warning-container, #92400e);
+  margin-bottom: 16px;
+}
+
+.task1-map-legacy-notice h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--on-surface, #1f2937);
+  margin: 0 0 8px;
+}
+
+.task1-map-legacy-notice p {
+  font-size: 14px;
+  color: var(--on-surface-variant, #6b7280);
+  margin: 0 0 16px;
+  max-width: 400px;
+}
+
+.task1-map-legacy-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--primary, #3b82f6);
+  color: var(--on-primary, #ffffff);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.task1-map-legacy-link:hover {
+  background: var(--primary-dark, #2563eb);
+}
+
+.task1-map-legacy-hint {
+  font-size: 13px;
+  color: var(--on-surface-variant, #9ca3af);
+  margin: 0;
+}
+
 /* 地图元素变量 */
 :root {
   --map-bg: #ffffff;

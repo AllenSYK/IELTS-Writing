@@ -616,66 +616,46 @@ const processQuestions: Task1QuestionData[] = [
 
 const mapQuestions: Task1QuestionData[] = [
   {
-    id: 'fb-map-harbour',
+    id: 'fb-map-river-crossing',
     taskType: 'task1',
     chartType: 'map',
     title: 'Academic Task 1 - Map',
-    prompt: 'The maps below show changes to a small harbour area between 2005 and 2025.',
+    prompt: 'The maps below show a river crossing area in 1968 and in the present day, together with plans for future development.',
     instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     mapSpec: {
-      title: 'Harbour Area Development (2005 vs 2025)',
-      beforeLabel: '2005',
-      afterLabel: '2025',
-      features: [
-        { id: 'dock', label: 'Main Dock', position: { x: 30, y: 40 }, change: 'unchanged', description: 'Original dock area retained' },
-        { id: 'warehouse', label: 'Warehouse', position: { x: 60, y: 30 }, change: 'removed', description: 'Old warehouse demolished' },
-        { id: 'apartments', label: 'Apartments', position: { x: 60, y: 30 }, change: 'added', description: 'New apartment complex built on warehouse site' },
-        { id: 'promenade', label: 'Promenade', position: { x: 50, y: 60 }, change: 'added', description: 'Waterfront promenade added' },
-        { id: 'marina', label: 'Marina', position: { x: 75, y: 50 }, change: 'modified', description: 'Marina expanded with more berths' },
-        { id: 'parking', label: 'Car Park', position: { x: 20, y: 70 }, change: 'removed', description: 'Surface car park removed' },
-        { id: 'park', label: 'Park', position: { x: 20, y: 70 }, change: 'added', description: 'New public park in car park location' }
-      ]
-    }
-  },
-  {
-    id: 'fb-map-campus',
-    taskType: 'task1',
-    chartType: 'map',
-    title: 'Academic Task 1 - Map',
-    prompt: 'The maps below show a university campus in 2000 and plans for its development in 2025.',
-    instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
-    mapSpec: {
-      title: 'University Campus Development (2000 vs 2025)',
-      beforeLabel: '2000',
-      afterLabel: '2025',
-      features: [
-        { id: 'library', label: 'Library', position: { x: 50, y: 40 }, change: 'modified', description: 'Library expanded with new wing' },
-        { id: 'parking_a', label: 'Car Park A', position: { x: 20, y: 30 }, change: 'removed', description: 'Converted to green space' },
-        { id: 'parking_b', label: 'Car Park B', position: { x: 80, y: 30 }, change: 'removed', description: 'Site for new science building' },
-        { id: 'science', label: 'Science Building', position: { x: 80, y: 30 }, change: 'added', description: 'New science and technology centre' },
-        { id: 'sports', label: 'Sports Centre', position: { x: 75, y: 70 }, change: 'added', description: 'New indoor sports facility' },
-        { id: 'student_centre', label: 'Student Centre', position: { x: 30, y: 60 }, change: 'unchanged', description: 'Original student centre retained' }
-      ]
-    }
-  },
-  {
-    id: 'fb-map-town',
-    taskType: 'task1',
-    chartType: 'map',
-    title: 'Academic Task 1 - Map',
-    prompt: 'The maps below show a town centre before and after a major redevelopment project.',
-    instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
-    mapSpec: {
-      title: 'Town Centre Redevelopment',
-      beforeLabel: 'Before Redevelopment',
-      afterLabel: 'After Redevelopment',
-      features: [
-        { id: 'market', label: 'Market Square', position: { x: 50, y: 50 }, change: 'modified', description: 'Redesigned with pedestrian zone' },
-        { id: 'road', label: 'Main Road', position: { x: 50, y: 20 }, change: 'modified', description: 'Reduced to single lane, added cycle path' },
-        { id: 'shops_a', label: 'Old Shops', position: { x: 30, y: 40 }, change: 'removed', description: 'Demolished for new development' },
-        { id: 'mall', label: 'Shopping Centre', position: { x: 30, y: 40 }, change: 'added', description: 'New covered shopping centre' },
-        { id: 'bus', label: 'Bus Station', position: { x: 70, y: 70 }, change: 'modified', description: 'Modernised with covered waiting areas' },
-        { id: 'fountain', label: 'Fountain', position: { x: 50, y: 60 }, change: 'added', description: 'Decorative fountain added to square' }
+      title: 'River Crossing Area Development',
+      dataVersion: 'map-v2',
+      beforeLabel: '1968',
+      afterLabel: 'Now and Future',
+      panels: [
+        {
+          id: 'panel-1968',
+          title: '1968',
+          features: [
+            { type: 'river', x: 220, y: 0, width: 105, height: 480, path: 'M220 0 C205 80 235 150 215 240 C200 320 230 400 215 480 L310 480 C325 390 300 310 320 225 C340 140 310 70 325 0 Z' },
+            { type: 'road', x: 0, y: 250, width: 220, height: 4, style: 'current' },
+            { type: 'ferry', x: 205, y: 240, width: 25, height: 30 },
+            { type: 'forest', x: 25, y: 40, width: 150, height: 130, treeCount: 8 },
+            { type: 'housing', x: 350, y: 45, rows: 3, columns: 3 }
+          ]
+        },
+        {
+          id: 'panel-now-future',
+          title: 'Now and Future',
+          features: [
+            { type: 'river', x: 220, y: 0, width: 105, height: 480, path: 'M220 0 C205 80 235 150 215 240 C200 320 230 400 215 480 L310 480 C325 390 300 310 320 225 C340 140 310 70 325 0 Z' },
+            { type: 'road', x: 0, y: 235, width: 520, height: 4, style: 'current' },
+            { type: 'bridge', x: 220, y: 228, width: 90, height: 14 },
+            { type: 'car_park', x: 25, y: 40, width: 90, height: 70, label: 'Car park' },
+            { type: 'car_park', x: 25, y: 135, width: 145, height: 85, label: 'Car park' },
+            { type: 'building_row', x: 120, y: 45, rows: 3, columns: 5, units: 5 },
+            { type: 'housing', x: 365, y: 45, rows: 3, columns: 3 },
+            { type: 'housing', x: 375, y: 270, rows: 2, columns: 3 },
+            { type: 'footpath', x: 15, y: 330, path: 'M15 330 C100 350 200 370 350 380 C400 385 450 390 500 390', style: 'future' },
+            { type: 'church', x: 335, y: 380, planned: true },
+            { type: 'car_park', x: 410, y: 360, width: 95, height: 65, planned: true, label: 'Car park (planned)' }
+          ]
+        }
       ]
     }
   }

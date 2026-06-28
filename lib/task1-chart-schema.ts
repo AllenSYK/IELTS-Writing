@@ -106,8 +106,65 @@ export const Task1ProcessSpecSchema = z.object({
 
 export type Task1ProcessSpec = z.infer<typeof Task1ProcessSpecSchema>
 
+/**
+ * 地图数据版本
+ * - map-v1: 旧格式，使用点状节点（已废弃）
+ * - map-v2: 新格式，使用结构化SVG平面图
+ */
+export const MAP_DATA_VERSION = 'map-v2' as const
+export const MAP_DATA_VERSION_V1 = 'map-v1' as const
+
+/**
+ * 地图元素类型
+ */
+export const MapFeatureTypeSchema = z.enum([
+  'river',
+  'road',
+  'bridge',
+  'housing',
+  'forest',
+  'car_park',
+  'building_row',
+  'church',
+  'footpath',
+  'ferry'
+])
+
+/**
+ * 地图元素（map-v2格式）
+ */
+export const MapFeatureV2Schema = z.object({
+  type: MapFeatureTypeSchema,
+  x: z.number(),
+  y: z.number(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  style: z.enum(['current', 'future']).optional(),
+  label: z.string().optional(),
+  planned: z.boolean().optional(),
+  path: z.string().optional(),
+  treeCount: z.number().optional(),
+  rows: z.number().optional(),
+  columns: z.number().optional(),
+  units: z.number().optional()
+})
+
+/**
+ * 地图面板（map-v2格式）
+ */
+export const MapPanelSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  features: z.array(MapFeatureV2Schema)
+})
+
+/**
+ * 地图规格（支持v1和v2格式）
+ */
 export const Task1MapSpecSchema = z.object({
   title: z.string().min(1),
+  dataVersion: z.enum([MAP_DATA_VERSION, MAP_DATA_VERSION_V1]).optional(),
+  // v1 格式字段（已废弃，但保留兼容性）
   beforeLabel: z.string().default('Before'),
   afterLabel: z.string().default('After'),
   features: z.array(z.object({
@@ -119,7 +176,9 @@ export const Task1MapSpecSchema = z.object({
     }),
     change: z.enum(['added', 'removed', 'modified', 'unchanged']).optional(),
     description: z.string().optional()
-  })).min(1),
+  })).optional(),
+  // v2 格式字段
+  panels: z.array(MapPanelSchema).optional(),
   legend: z.array(z.object({
     color: z.string(),
     label: z.string()
@@ -127,6 +186,8 @@ export const Task1MapSpecSchema = z.object({
 })
 
 export type Task1MapSpec = z.infer<typeof Task1MapSpecSchema>
+export type MapFeatureV2 = z.infer<typeof MapFeatureV2Schema>
+export type MapPanel = z.infer<typeof MapPanelSchema>
 
 export interface Task1QuestionData {
   id: string
