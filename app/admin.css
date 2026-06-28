@@ -2066,3 +2066,106 @@
     animation: none;
   }
 }
+
+/* 批量绑定进度和结果样式 */
+.admin-batch-progress {
+  padding: 24px 0;
+}
+
+.admin-progress-bar {
+  height: 8px;
+  background: var(--surface-variant, rgba(0, 0, 0, 0.08));
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.admin-progress-fill {
+  height: 100%;
+  background: var(--primary, #4f46e5);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.admin-progress-text {
+  text-align: center;
+  color: var(--on-surface-variant, #666);
+  font-size: 14px;
+}
+
+.admin-batch-results {
+  padding: 16px 0;
+}
+
+.admin-batch-summary {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.admin-batch-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+
+.admin-batch-stat.success {
+  background: var(--success-container, #dcfce7);
+  color: var(--on-success-container, #166534);
+}
+
+.admin-batch-stat.failed {
+  background: var(--error-container, #fef2f2);
+  color: var(--on-error-container, #991b1b);
+}
+
+.admin-batch-stat strong {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.admin-batch-failed-list {
+  background: var(--surface-variant, rgba(0, 0, 0, 0.04));
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.admin-batch-failed-list h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--on-surface, #1a1a1a);
+}
+
+.admin-batch-failed-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-batch-failed-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--surface, #fff);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.admin-batch-failed-list li span {
+  font-weight: 500;
+  color: var(--on-surface, #1a1a1a);
+}
+
+.admin-batch-failed-list li small {
+  color: var(--error, #dc2626);
+  font-size: 12px;
+}

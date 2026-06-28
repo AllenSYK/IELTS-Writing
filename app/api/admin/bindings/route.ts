@@ -1,18 +1,14 @@
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { getEffectiveBindingStatus } from '@/lib/web-license/admin-license-data'
-
-function toNumber(value: string | null, fallback: number) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
+import { toQueryParamNumber } from '@/lib/admin/number-utils'
 
 export async function GET(request: Request) {
   try {
     const { service } = await requireAdminService()
     const url = new URL(request.url)
-    const page = Math.max(1, toNumber(url.searchParams.get('page'), 1))
-    const pageSize = Math.min(200, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
+    const page = Math.max(1, toQueryParamNumber(url.searchParams.get('page'), 1))
+    const pageSize = Math.min(200, Math.max(1, toQueryParamNumber(url.searchParams.get('pageSize'), 50)))
     const search = url.searchParams.get('search')?.trim().toLowerCase() || ''
     const status = url.searchParams.get('status')?.trim() || 'all'
     const licenseId = url.searchParams.get('licenseId')?.trim() || ''

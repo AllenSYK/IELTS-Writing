@@ -17,7 +17,8 @@ import {
   X
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate, maskLicenseCode } from '@/components/admin/AdminUI'
+import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
+import { maskLicenseCode } from '@/lib/admin/mask-license'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
@@ -202,7 +203,7 @@ export function AdminBindingsClient() {
         {licenseId || email || userId ? (
           <div className="admin-filter-tags" aria-label="当前筛选条件">
             {licenseId ? (
-              <span>激活码：{maskLicenseCode(labels.license || null, labels.license || licenseId)}<button type="button" onClick={() => clearFilter('licenseId')} aria-label="清除激活码筛选"><X size={13} /></button></span>
+              <span>激活码：{maskLicenseCode(labels.license || licenseId)}<button type="button" onClick={() => clearFilter('licenseId')} aria-label="清除激活码筛选"><X size={13} /></button></span>
             ) : null}
             {email ? (
               <span>邮箱：{labels.email || email}<button type="button" onClick={() => clearFilter('email')} aria-label="清除邮箱筛选"><X size={13} /></button></span>
@@ -233,7 +234,7 @@ export function AdminBindingsClient() {
                       </td>
                       <td data-label="激活码">
                         <Link className="admin-table-link" href={`/admin/licenses?licenseId=${license?.id || binding.license_id}`}>
-                          <code>{maskLicenseCode(license?.code_value, license?.code_prefix)}</code>
+                          <code>{maskLicenseCode(license?.code_value)}</code>
                         </Link>
                       </td>
                       <td data-label="套餐"><span className="admin-plan-pill">{license?.plan || '—'}</span></td>
@@ -294,7 +295,7 @@ export function AdminBindingsClient() {
               <AdminBadge value={selected.binding_status} />
             </section>
             <dl className="admin-definition-grid">
-              <div><dt>激活码</dt><dd><code>{maskLicenseCode(selected.license_codes?.code_value, selected.license_codes?.code_prefix)}</code></dd></div>
+              <div><dt>激活码</dt><dd><code>{maskLicenseCode(selected.license_codes?.code_value)}</code></dd></div>
               <div><dt>套餐</dt><dd>{selected.license_codes?.plan || '—'}</dd></div>
               <div><dt>激活时间</dt><dd>{formatAdminDate(selected.activated_at)}</dd></div>
               <div><dt>账号到期时间</dt><dd>{formatAdminDate(selected.expires_at)}</dd></div>

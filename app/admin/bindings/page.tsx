@@ -1,6 +1,11 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { AdminBindingsClient } from './AdminBindingsClient'
+
+export const metadata: Metadata = {
+  title: '邮箱绑定',
+}
 
 export default async function AdminBindingsPage() {
   try {

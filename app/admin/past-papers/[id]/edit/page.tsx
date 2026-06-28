@@ -1,6 +1,11 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { AdminPastPaperEditClient } from './AdminPastPaperEditClient'
+
+export const metadata: Metadata = {
+  title: '编辑真题',
+}
 
 export default async function AdminPastPaperEditPage({ params }: { params: Promise<{ id: string }> }) {
   try {

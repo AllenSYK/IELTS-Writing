@@ -482,7 +482,7 @@ export function ConfirmDialog({
   message: string
   confirmLabel?: string
   cancelLabel?: string
-  tone?: 'default' | 'danger'
+  tone?: 'default' | 'danger' | 'warning' | 'primary'
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -506,6 +506,16 @@ export function ConfirmDialog({
 
   if (!open) return null
 
+  // 根据 tone 确定图标和按钮样式
+  const iconConfig = {
+    default: { icon: 'info', buttonClass: 'ui-primary-button' },
+    danger: { icon: 'warning', buttonClass: 'danger-action-button' },
+    warning: { icon: 'warning', buttonClass: 'warning-action-button' },
+    primary: { icon: 'info', buttonClass: 'ui-primary-button' }
+  }
+  
+  const config = iconConfig[tone] || iconConfig.default
+
   return (
     <div className="dialog-layer" role="presentation" onMouseDown={tone === 'danger' ? undefined : onCancel}>
       <section
@@ -517,7 +527,7 @@ export function ConfirmDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <span className={`confirm-icon ${tone}`}>
-          <MaterialIcon name={tone === 'danger' ? 'warning' : 'info'} size={22} />
+          <MaterialIcon name={config.icon} size={22} />
         </span>
         <div>
           <h2 id="confirm-title" className="ui-title-md">
@@ -533,7 +543,7 @@ export function ConfirmDialog({
           </button>
           <button
             ref={confirmRef}
-            className={tone === 'danger' ? 'danger-action-button' : 'ui-primary-button'}
+            className={config.buttonClass}
             type="button"
             onClick={onConfirm}
           >

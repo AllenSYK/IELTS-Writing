@@ -1,6 +1,11 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { AdminPastPapersClient } from './AdminPastPapersClient'
+
+export const metadata: Metadata = {
+  title: '真题题库',
+}
 
 export default async function AdminPastPapersPage() {
   try {

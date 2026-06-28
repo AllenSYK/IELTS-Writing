@@ -22,7 +22,8 @@ import {
   UsersRound
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate, maskLicenseCode } from '@/components/admin/AdminUI'
+import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
+import { maskLicenseCode } from '@/lib/admin/mask-license'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
@@ -90,6 +91,7 @@ export function AdminLicensesClient() {
     id: focusedId || null
   })
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set())
+  const [revealedCodes, setRevealedCodes] = useState<Record<string, string>>({})
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [form, setForm] = useState({
     countPreset: '1',
@@ -240,13 +242,54 @@ export function AdminLicensesClient() {
     if (action) await action()
   }
 
-  function toggleReveal(id: string) {
-    setRevealed((current) => {
-      const next = new Set(current)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  async function revealLicenseCode(id: string) {
+    // 如果已经显示，则隐藏
+    if (revealed.has(id)) {
+      setRevealed((current) => {
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+      return
+    }
+    
+    // 否则通过 API 获取完整码
+    try {
+      const response = await fetch(`/api/admin/licenses/${id}/reveal`)
+      const data = await response.json().catch(() => ({}))
+      
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || '获取完整激活码失败')
+      }
+      
+      // 将完整码存储到临时状态
+      setRevealedCodes(prev => ({ ...prev, [id]: data.code_value }))
+      setRevealed((current) => {
+        const next = new Set(current)
+        next.add(id)
+        return next
+      })
+      
+      // 5 分钟后自动隐藏
+      setTimeout(() => {
+        setRevealedCodes(prev => {
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
+        setRevealed((current) => {
+          const next = new Set(current)
+          next.delete(id)
+          return next
+        })
+      }, 5 * 60 * 1000)
+    } catch (caught) {
+      pushToast({ 
+        kind: 'error', 
+        title: '获取完整激活码失败', 
+        message: caught instanceof Error ? caught.message : '请稍后重试' 
+      })
+    }
   }
 
   return (
@@ -313,15 +356,16 @@ export function AdminLicensesClient() {
               <tbody>
                 {licenses.map((license) => {
                   const visible = revealed.has(license.id)
+                  const fullCode = revealedCodes[license.id]
                   return (
                     <tr key={license.id}>
                       <td data-label="激活码">
                         <div className="admin-code-cell">
-                          <code>{visible && license.code_value ? license.code_value : maskLicenseCode(license.code_value, license.code_prefix)}</code>
-                          <button type="button" onClick={() => toggleReveal(license.id)} aria-label={visible ? '隐藏激活码' : '显示激活码'}>
+                          <code>{visible && fullCode ? fullCode : maskLicenseCode(license.code_value)}</code>
+                          <button type="button" onClick={() => void revealLicenseCode(license.id)} aria-label={visible ? '隐藏激活码' : '显示激活码'}>
                             {visible ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
-                          {license.code_value ? <button type="button" onClick={() => void copyText(license.code_value || '')} aria-label="复制激活码"><Copy size={14} /></button> : null}
+                          {visible && fullCode ? <button type="button" onClick={() => void copyText(fullCode)} aria-label="复制激活码"><Copy size={14} /></button> : null}
                         </div>
                       </td>
                       <td data-label="套餐"><span className="admin-plan-pill">{license.plan}</span></td>
@@ -491,10 +535,31 @@ export function AdminLicensesClient() {
             <section className="admin-license-hero">
               <span className="admin-list-icon"><KeyRound size={20} /></span>
               <div>
-                <code>{selected.code_value || maskLicenseCode(null, selected.code_prefix)}</code>
+                <code>{revealedCodes[selected.id] || maskLicenseCode(selected.code_value)}</code>
                 <div><span className="admin-plan-pill">{selected.plan}</span><AdminBadge value={selected.status} /></div>
               </div>
-              {selected.code_value ? <button className="admin-secondary-button" type="button" onClick={() => void copyText(selected.code_value || '')}><Copy size={15} />复制</button> : null}
+              {selected.code_value ? (
+                <button 
+                  className="admin-secondary-button" 
+                  type="button" 
+                  onClick={() => {
+                    if (revealedCodes[selected.id]) {
+                      void copyText(revealedCodes[selected.id])
+                    } else {
+                      void revealLicenseCode(selected.id).then(() => {
+                        // 获取后复制
+                        setTimeout(() => {
+                          if (revealedCodes[selected.id]) {
+                            void copyText(revealedCodes[selected.id])
+                          }
+                        }, 100)
+                      })
+                    }
+                  }}
+                >
+                  <Copy size={15} />复制
+                </button>
+              ) : null}
             </section>
             <dl className="admin-definition-grid">
               <div><dt>用户有效天数</dt><dd>{selected.duration_days} 天</dd></div>

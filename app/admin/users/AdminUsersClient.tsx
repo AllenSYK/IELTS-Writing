@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   Trash2,
   UserCog,
-  LockKeyhole
+  LockKeyhole,
+  X
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
@@ -118,6 +119,8 @@ export function AdminUsersClient() {
   const [batchPlan, setBatchPlan] = useState('standard')
   const [batchDays, setBatchDays] = useState(365)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; results?: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> } | null>(null)
+  const [batchResults, setBatchResults] = useState<Array<{ ok: boolean; email: string | null; message?: string; userId: string }> | null>(null)
   const focusedDetailRef = useRef('')
 
   const openDetail = useCallback(async (user: UserRow) => {
@@ -216,7 +219,13 @@ export function AdminUsersClient() {
     event.preventDefault()
     const targets = users.filter((user) => activeSelectedIds.has(user.id))
     if (!targets.length) return
+    
+    // 防止重复提交
+    if (submitting) return
+    
     setSubmitting(true)
+    setBatchProgress({ current: 0, total: targets.length })
+    
     try {
       let codes: string[] = []
       if (batchMode === 'new') {
@@ -240,29 +249,166 @@ export function AdminUsersClient() {
         codes = targets.map(() => batchCode.trim())
       }
 
-      const results = await Promise.all(targets.map(async (user, index) => {
-        const response = await fetch(`/api/admin/users/${user.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'bind', licenseCode: codes[index] })
-        })
-        const data = await response.json().catch(() => ({}))
-        return { ok: response.ok && data.success, email: user.email, message: data.message }
-      }))
+      // 串行处理，逐个绑定并更新进度
+      const results: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> = []
+      
+      for (let i = 0; i < targets.length; i++) {
+        const user = targets[i]
+        setBatchProgress(prev => prev ? { ...prev, current: i + 1 } : null)
+        
+        try {
+          const response = await fetch(`/api/admin/users/${user.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'bind', licenseCode: codes[i] })
+          })
+          const data = await response.json().catch(() => ({}))
+          results.push({ 
+            ok: response.ok && data.success, 
+            email: user.email, 
+            message: data.message,
+            userId: user.id
+          })
+        } catch {
+          results.push({ 
+            ok: false, 
+            email: user.email, 
+            message: '请求失败',
+            userId: user.id
+          })
+        }
+      }
+      
       const succeeded = results.filter((item) => item.ok).length
-      const failed = results.length - succeeded
-      pushToast({
-        kind: failed ? 'warning' : 'success',
-        title: `批量绑定完成：成功 ${succeeded}，失败 ${failed}`,
-        message: failed ? results.find((item) => !item.ok)?.message : undefined
-      })
-      setBatchOpen(false)
-      setSelectedIds(new Set())
+      const failed = results.filter((item) => !item.ok).length
+      
+      // 保存结果以便重试失败项
+      setBatchResults(results)
+      
+      if (failed === 0) {
+        pushToast({
+          kind: 'success',
+          title: `批量绑定完成：成功 ${succeeded} 项`
+        })
+        setBatchOpen(false)
+        setSelectedIds(new Set())
+        setBatchResults(null)
+      } else {
+        pushToast({
+          kind: 'warning',
+          title: `批量绑定完成：成功 ${succeeded}，失败 ${failed}`,
+          message: '可点击"重试失败项"按钮重新处理失败的绑定。'
+        })
+      }
+      
       await mutate().catch(() => undefined)
     } catch (caught) {
       pushToast({ kind: 'error', title: '批量绑定失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
     } finally {
       setSubmitting(false)
+      setBatchProgress(null)
+    }
+  }
+
+  // 重试失败项
+  async function retryFailedBindings() {
+    if (!batchResults || submitting) return
+    
+    const failedItems = batchResults.filter(r => !r.ok)
+    if (!failedItems.length) return
+    
+    setSubmitting(true)
+    setBatchProgress({ current: 0, total: failedItems.length })
+    
+    try {
+      // 如果是现有模式，使用同一个激活码
+      const code = batchMode === 'existing' ? batchCode.trim() : ''
+      
+      const newResults: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> = []
+      
+      for (let i = 0; i < failedItems.length; i++) {
+        const item = failedItems[i]
+        setBatchProgress(prev => prev ? { ...prev, current: i + 1 } : null)
+        
+        // 如果是新建模式，需要为每个用户生成新的激活码
+        let activationCode = code
+        if (batchMode === 'new') {
+          try {
+            const createResponse = await fetch('/api/admin/licenses/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                count: 1,
+                plan: batchPlan,
+                durationDays: batchDays,
+                maxActivations: 1,
+                expiresAt: null,
+                note: `重试绑定 ${item.email}`
+              })
+            })
+            const created = await createResponse.json().catch(() => ({}))
+            if (createResponse.ok && created.success && created.codes?.[0]) {
+              activationCode = created.codes[0].code
+            }
+          } catch {
+            // 生成失败，跳过
+            newResults.push({ ...item, message: '生成激活码失败' })
+            continue
+          }
+        }
+        
+        if (!activationCode) {
+          newResults.push({ ...item, message: '无可用激活码' })
+          continue
+        }
+        
+        try {
+          const response = await fetch(`/api/admin/users/${item.userId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'bind', licenseCode: activationCode })
+          })
+          const data = await response.json().catch(() => ({}))
+          newResults.push({ 
+            ok: response.ok && data.success, 
+            email: item.email, 
+            message: data.message,
+            userId: item.userId
+          })
+        } catch {
+          newResults.push({ ...item, message: '请求失败' })
+        }
+      }
+      
+      // 合并结果
+      const allResults = [
+        ...batchResults.filter(r => r.ok), // 之前成功的
+        ...newResults
+      ]
+      setBatchResults(allResults)
+      
+      const succeeded = newResults.filter(r => r.ok).length
+      const stillFailed = newResults.filter(r => !r.ok).length
+      
+      if (stillFailed === 0) {
+        pushToast({ kind: 'success', title: `重试完成：全部 ${succeeded} 项成功` })
+        setBatchOpen(false)
+        setSelectedIds(new Set())
+        setBatchResults(null)
+      } else {
+        pushToast({
+          kind: 'warning',
+          title: `重试完成：成功 ${succeeded}，仍失败 ${stillFailed}`,
+          message: '可继续重试剩余失败项。'
+        })
+      }
+      
+      await mutate().catch(() => undefined)
+    } catch (caught) {
+      pushToast({ kind: 'error', title: '重试失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
+    } finally {
+      setSubmitting(false)
+      setBatchProgress(null)
     }
   }
 
@@ -453,32 +599,97 @@ export function AdminUsersClient() {
         ) : null}
       </CenteredDialog>
 
-      <CenteredDialog open={batchOpen} title="批量绑定激活码" description={`为已选择的 ${activeSelectedIds.size} 位用户分配使用权限。`} className="admin-create-dialog" onClose={() => !submitting && setBatchOpen(false)} footer={(
-        <>
-          <button className="admin-secondary-button" type="button" onClick={() => setBatchOpen(false)} disabled={submitting}>取消</button>
-          <button className="admin-primary-button" type="submit" form="batch-bind-form" disabled={submitting || !activeSelectedIds.size}>
-            {submitting ? <Loader2 className="admin-spin" size={16} /> : <ShieldCheck size={16} />}{submitting ? '正在绑定' : '开始批量绑定'}
-          </button>
-        </>
-      )}>
-        <form id="batch-bind-form" className="admin-generate-form" onSubmit={batchBind}>
-          <div className="admin-segmented">
-            <button className={batchMode === 'existing' ? 'is-active' : ''} type="button" onClick={() => setBatchMode('existing')}>使用现有激活码</button>
-            <button className={batchMode === 'new' ? 'is-active' : ''} type="button" onClick={() => setBatchMode('new')}>新生成激活码</button>
-          </div>
-          {batchMode === 'existing' ? (
-            <label className="admin-field"><span>完整激活码</span><input value={batchCode} onChange={(event) => setBatchCode(event.target.value)} placeholder="激活码需有足够的最大激活次数" required /></label>
-          ) : (
-            <div className="admin-form-grid">
-              <label className="admin-field"><span>套餐</span><select value={batchPlan} onChange={(event) => setBatchPlan(event.target.value)}><option value="standard">Standard</option><option value="pro">Pro</option><option value="premium">Premium</option><option value="admin">Admin</option></select></label>
-              <label className="admin-field"><span>账号有效天数</span><input type="number" min={1} max={3650} value={batchDays} onChange={(event) => setBatchDays(Number(event.target.value))} /></label>
+      <CenteredDialog 
+        open={batchOpen} 
+        title="批量绑定激活码" 
+        description={`为已选择的 ${activeSelectedIds.size} 位用户分配使用权限。`} 
+        className="admin-create-dialog" 
+        onClose={() => {
+          if (!submitting) {
+            setBatchOpen(false)
+            setBatchResults(null)
+            setBatchProgress(null)
+          }
+        }} 
+        footer={(
+          <>
+            <button className="admin-secondary-button" type="button" onClick={() => {
+              setBatchOpen(false)
+              setBatchResults(null)
+              setBatchProgress(null)
+            }} disabled={submitting}>取消</button>
+            {batchResults && batchResults.some(r => !r.ok) ? (
+              <button className="admin-primary-button" type="button" onClick={retryFailedBindings} disabled={submitting}>
+                {submitting ? <Loader2 className="admin-spin" size={16} /> : <RefreshCw size={16} />}
+                {submitting ? '正在重试' : `重试失败项（${batchResults.filter(r => !r.ok).length}）`}
+              </button>
+            ) : (
+              <button className="admin-primary-button" type="submit" form="batch-bind-form" disabled={submitting || !activeSelectedIds.size}>
+                {submitting ? <Loader2 className="admin-spin" size={16} /> : <ShieldCheck size={16} />}
+                {submitting ? '正在绑定' : '开始批量绑定'}
+              </button>
+            )}
+          </>
+        )}
+      >
+        {batchProgress ? (
+          <div className="admin-batch-progress">
+            <div className="admin-progress-bar">
+              <div 
+                className="admin-progress-fill" 
+                style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+              />
             </div>
-          )}
-          <div className="admin-confirm-summary">
-            <strong>将处理 {activeSelectedIds.size} 位用户</strong>
-            <p>{batchMode === 'existing' ? '所有用户尝试绑定同一个现有激活码，受最大激活次数限制。' : '系统会为每位用户生成一个独立激活码并立即绑定。'}</p>
+            <p className="admin-progress-text">
+              正在处理 {batchProgress.current} / {batchProgress.total} ...
+            </p>
           </div>
-        </form>
+        ) : batchResults ? (
+          <div className="admin-batch-results">
+            <div className="admin-batch-summary">
+              <div className="admin-batch-stat success">
+                <CheckCircle2 size={18} />
+                <span>成功 <strong>{batchResults.filter(r => r.ok).length}</strong></span>
+              </div>
+              <div className="admin-batch-stat failed">
+                <X size={18} />
+                <span>失败 <strong>{batchResults.filter(r => !r.ok).length}</strong></span>
+              </div>
+            </div>
+            {batchResults.some(r => !r.ok) && (
+              <div className="admin-batch-failed-list">
+                <h4>失败详情</h4>
+                <ul>
+                  {batchResults.filter(r => !r.ok).map((r, i) => (
+                    <li key={i}>
+                      <span>{r.email || r.userId}</span>
+                      <small>{r.message || '操作失败'}</small>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <form id="batch-bind-form" className="admin-generate-form" onSubmit={batchBind}>
+            <div className="admin-segmented">
+              <button className={batchMode === 'existing' ? 'is-active' : ''} type="button" onClick={() => setBatchMode('existing')}>使用现有激活码</button>
+              <button className={batchMode === 'new' ? 'is-active' : ''} type="button" onClick={() => setBatchMode('new')}>新生成激活码</button>
+            </div>
+            {batchMode === 'existing' ? (
+              <label className="admin-field"><span>完整激活码</span><input value={batchCode} onChange={(event) => setBatchCode(event.target.value)} placeholder="激活码需有足够的最大激活次数" required /></label>
+            ) : (
+              <div className="admin-form-grid">
+                <label className="admin-field"><span>套餐</span><select value={batchPlan} onChange={(event) => setBatchPlan(event.target.value)}><option value="standard">Standard</option><option value="pro">Pro</option><option value="premium">Premium</option><option value="admin">Admin</option></select></label>
+                <label className="admin-field"><span>账号有效天数</span><input type="number" min={1} max={3650} value={batchDays} onChange={(event) => setBatchDays(Number(event.target.value))} /></label>
+              </div>
+            )}
+            <div className="admin-confirm-summary">
+              <strong>将处理 {activeSelectedIds.size} 位用户</strong>
+              <p>{batchMode === 'existing' ? '所有用户尝试绑定同一个现有激活码，受最大激活次数限制。' : '系统会为每位用户生成一个独立激活码并立即绑定。'}</p>
+            </div>
+          </form>
+        )}
       </CenteredDialog>
 
       <ConfirmDialog

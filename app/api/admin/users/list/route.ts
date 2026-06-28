@@ -1,19 +1,15 @@
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { UNBOUND_BINDING_REASON } from '@/lib/web-license/admin-license-data'
+import { toQueryParamNumber } from '@/lib/admin/number-utils'
 import type { User } from '@supabase/supabase-js'
-
-function toNumber(value: string | null, fallback: number) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
 
 export async function GET(request: Request) {
   try {
     const { service } = await requireAdminService()
     const url = new URL(request.url)
-    const page = Math.max(1, toNumber(url.searchParams.get('page'), 1))
-    const pageSize = Math.min(100, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
+    const page = Math.max(1, toQueryParamNumber(url.searchParams.get('page'), 1))
+    const pageSize = Math.min(100, Math.max(1, toQueryParamNumber(url.searchParams.get('pageSize'), 50)))
     const search = url.searchParams.get('search')?.trim().toLowerCase() || ''
     const filter = url.searchParams.get('filter')?.trim().toLowerCase() || 'all'
     const userId = url.searchParams.get('userId')?.trim() || ''

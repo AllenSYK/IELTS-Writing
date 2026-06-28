@@ -6,6 +6,7 @@ import {
   getEffectiveLicenseStatus,
   UNBOUND_BINDING_REASON
 } from '@/lib/web-license/admin-license-data'
+import { toQueryParamNumber } from '@/lib/admin/number-utils'
 
 const CreateSchema = z.object({
   count: z.number().int().min(1).max(500).default(1),
@@ -15,11 +16,6 @@ const CreateSchema = z.object({
   expiresAt: z.string().datetime().optional().nullable(),
   note: z.string().max(500).optional().nullable()
 })
-
-function toNumber(value: string | null, fallback: number) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
 
 function sanitizeSearchInput(value: string): string {
   return value
@@ -35,8 +31,8 @@ export async function GET(request: Request) {
   try {
     const { service } = await requireAdminService()
     const url = new URL(request.url)
-    const page = Math.max(1, toNumber(url.searchParams.get('page'), 1))
-    const pageSize = Math.min(200, Math.max(1, toNumber(url.searchParams.get('pageSize'), 50)))
+    const page = Math.max(1, toQueryParamNumber(url.searchParams.get('page'), 1))
+    const pageSize = Math.min(200, Math.max(1, toQueryParamNumber(url.searchParams.get('pageSize'), 50)))
     const search = sanitizeSearchInput(url.searchParams.get('search') || '')
     const status = url.searchParams.get('status')?.trim() || 'all'
     const plan = url.searchParams.get('plan')?.trim() || 'all'
@@ -91,8 +87,12 @@ export async function GET(request: Request) {
         ...license,
         activation_count: activationCount
       })
+      // 列表 API 不返回完整激活码，只返回掩码后的值
+      const { code_value, ...rest } = license
       return {
-        ...license,
+        ...rest,
+        // 保留 code_value 用于掩码显示，但不返回完整值
+        code_value: code_value ? `${code_value.slice(0, 4)}••••••••${code_value.slice(-4)}` : null,
         activation_count: activationCount,
         remaining_count: Math.max(0, license.max_activations - activationCount),
         status: effectiveStatus

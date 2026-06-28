@@ -1,6 +1,11 @@
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { AdminUsersClient } from './AdminUsersClient'
+
+export const metadata: Metadata = {
+  title: '用户管理',
+}
 
 export default async function AdminUsersPage() {
   try {

@@ -2,32 +2,45 @@
 
 import { FormEvent, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { Bell, Menu, Plus, Search } from 'lucide-react'
-
-const pageMeta = [
-  { match: (path: string) => path === '/admin', eyebrow: 'Overview', title: '管理中心' },
-  { match: (path: string) => path.startsWith('/admin/licenses'), eyebrow: 'Licenses', title: '激活码管理' },
-  { match: (path: string) => path.startsWith('/admin/bindings'), eyebrow: 'Bindings', title: '邮箱绑定' },
-  { match: (path: string) => path.startsWith('/admin/users'), eyebrow: 'Users', title: '用户管理' },
-  { match: (path: string) => path.startsWith('/admin/past-papers'), eyebrow: 'Past Papers', title: '真题题库' },
-  { match: (path: string) => path.startsWith('/admin/settings'), eyebrow: 'Settings', title: '管理设置' }
-]
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Bell, Menu, Plus, Search, X } from 'lucide-react'
+import { getAdminRouteMeta } from '@/lib/admin/admin-routes'
 
 export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMenu: () => void }) {
   const pathname = usePathname()
   const router = useRouter()
-  const [search, setSearch] = useState('')
-  const meta = pageMeta.find((item) => item.match(pathname)) ?? pageMeta[0]
+  const searchParams = useSearchParams()
+  const urlSearch = searchParams.get('search') || ''
+  const [search, setSearch] = useState(urlSearch)
+  const [isComposing, setIsComposing] = useState(false)
+  const meta = getAdminRouteMeta(pathname)
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // 输入法组合状态下不提交
+    if (isComposing) return
+    
     const query = search.trim()
-    if (!query) return
-    const target = pathname.startsWith('/admin/users') || pathname.startsWith('/admin/bindings')
-      ? pathname
-      : '/admin/licenses'
-    router.push(`${target}?search=${encodeURIComponent(query)}`)
+    const searchConfig = meta.search
+    
+    // 如果当前页面没有搜索配置（如概览页），则不执行搜索
+    if (!searchConfig) return
+    
+    if (!query) {
+      // 清空搜索时恢复默认列表
+      router.push(searchConfig.targetPath)
+      return
+    }
+    
+    router.push(`${searchConfig.targetPath}?${searchConfig.paramName}=${encodeURIComponent(query)}`)
+  }
+
+  function clearSearch() {
+    setSearch('')
+    const searchConfig = meta.search
+    if (searchConfig) {
+      router.push(searchConfig.targetPath)
+    }
   }
 
   return (
@@ -42,15 +55,29 @@ export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMen
         </div>
       </div>
 
-      <form className="admin-global-search" role="search" onSubmit={submitSearch}>
-        <Search size={17} aria-hidden="true" />
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="搜索激活码、邮箱或用户 ID"
-          aria-label="全局搜索"
-        />
-      </form>
+      {meta.search && (
+        <form className="admin-global-search" role="search" onSubmit={submitSearch}>
+          <Search size={17} aria-hidden="true" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onCompositionStart={() => setIsComposing(true)}
+            onCompositionEnd={() => setIsComposing(false)}
+            placeholder={meta.search.placeholder}
+            aria-label={meta.search.placeholder}
+          />
+          {search && (
+            <button
+              type="button"
+              className="admin-search-clear"
+              onClick={clearSearch}
+              aria-label="清除搜索"
+            >
+              <X size={15} aria-hidden="true" />
+            </button>
+          )}
+        </form>
+      )}
 
       <div className="admin-topbar-actions">
         <button className="admin-icon-button" type="button" aria-label="通知" title="暂无新通知">

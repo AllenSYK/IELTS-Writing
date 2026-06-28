@@ -107,11 +107,28 @@ export function AdminPastPapersClient() {
         }
       />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <select className="filter-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}>
-          <option value="">全部状态</option>
-          {Object.entries(PastPaperStatusLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+      <div className="admin-filter-bar" role="search" aria-label="真题筛选">
+        <label className="admin-select-field">
+          <span>状态</span>
+          <select 
+            value={statusFilter} 
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+            aria-label="按状态筛选"
+          >
+            <option value="">全部状态</option>
+            {Object.entries(PastPaperStatusLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        {statusFilter && (
+          <button 
+            className="admin-text-button" 
+            type="button" 
+            onClick={() => { setStatusFilter(''); setPage(1) }}
+            aria-label="清除状态筛选"
+          >
+            清除筛选
+          </button>
+        )}
       </div>
 
       {error ? <AdminError message="加载失败" onRetry={() => void mutate()} /> : loading ? <AdminTableSkeleton columns={8} rows={8} /> : items.length === 0 ? <AdminEmpty title="暂无真题" message="请新增真题。" /> : (

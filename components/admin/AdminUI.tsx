@@ -116,9 +116,4 @@ export function formatAdminDate(value?: string | null, fallback = '暂无') {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-export function maskLicenseCode(code?: string | null, prefix?: string) {
-  if (!code) return `${prefix || 'IELTS-••••'}-••••-••••`
-  const parts = code.split('-')
-  if (parts.length !== 4) return code
-  return `${parts[0]}-${parts[1]}-••••-${parts[3]}`
-}
+export { maskLicenseCode, maskLicenseCodeWithPrefix } from '@/lib/admin/mask-license'
