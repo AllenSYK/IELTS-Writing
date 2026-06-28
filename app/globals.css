@@ -1654,7 +1654,199 @@ img {
   background: #dc2626;
 }
 
+/* 新的地图可视化样式 */
+.task1-map-visual {
+  width: 100%;
+  padding: 16px 0;
+}
+
+.task1-map-header {
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.task1-map-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--on-surface, #1f2937);
+  margin: 0;
+}
+
+.task1-map-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+}
+
+.map-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.map-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface, #1f2937);
+  margin: 0 0 12px 0;
+  text-align: center;
+}
+
+.map-panel-content {
+  width: 100%;
+  aspect-ratio: 520 / 480;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--outline-variant, #e5e7eb);
+  background: var(--map-bg, #ffffff);
+}
+
+.map-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.map-change-arrow {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 40px;
+}
+
+.map-legend {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--on-surface-variant, #4b5563);
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-legend-line {
+  display: inline-block;
+  width: 24px;
+  height: 0;
+  border-top: 3px solid;
+}
+
+.map-legend-line.solid {
+  border-top-style: solid;
+  border-color: var(--map-road, #4b5563);
+}
+
+.map-legend-line.dashed {
+  border-top-style: dashed;
+  border-color: var(--map-future, #6b7280);
+}
+
+/* 地图元素变量 */
+:root {
+  --map-bg: #ffffff;
+  --map-border: #e5e7eb;
+  --map-river: #d1d5db;
+  --map-river-stroke: #9ca3af;
+  --map-river-text: #4b5563;
+  --map-road: #4b5563;
+  --map-bridge: #374151;
+  --map-bridge-stroke: #1f2937;
+  --map-future: #6b7280;
+  --map-tree-canopy: #6b7280;
+  --map-tree-canopy-stroke: #4b5563;
+  --map-tree-trunk: #78716c;
+  --map-house-roof: #4b5563;
+  --map-house-roof-stroke: #374151;
+  --map-house-wall: #e5e7eb;
+  --map-house-wall-stroke: #9ca3af;
+  --map-carpark: #e5e7eb;
+  --map-carpark-border: #9ca3af;
+  --map-carpark-planned: #f3f4f6;
+  --map-building: #d1d5db;
+  --map-building-stroke: #9ca3af;
+  --map-church: #374151;
+  --map-church-wall: #f3f4f6;
+  --map-church-planned: #e5e7eb;
+  --map-ferry: #9ca3af;
+  --map-ferry-stroke: #6b7280;
+}
+
+/* 响应式布局 */
+@media (max-width: 768px) {
+  .task1-map-grid {
+    flex-direction: column;
+    gap: 24px;
+  }
+  
+  .map-change-arrow {
+    transform: rotate(90deg);
+    padding-top: 0;
+  }
+  
+  .map-panel-content {
+    aspect-ratio: auto;
+    min-height: 300px;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
+  :root {
+    --map-bg: #1f2937;
+    --map-border: #374151;
+    --map-river: #4b5563;
+    --map-river-stroke: #6b7280;
+    --map-river-text: #9ca3af;
+    --map-road: #9ca3af;
+    --map-bridge: #6b7280;
+    --map-bridge-stroke: #9ca3af;
+    --map-future: #9ca3af;
+    --map-tree-canopy: #6b7280;
+    --map-tree-canopy-stroke: #9ca3af;
+    --map-tree-trunk: #9ca3af;
+    --map-house-roof: #6b7280;
+    --map-house-roof-stroke: #9ca3af;
+    --map-house-wall: #374151;
+    --map-house-wall-stroke: #4b5563;
+    --map-carpark: #374151;
+    --map-carpark-border: #4b5563;
+    --map-carpark-planned: #4b5563;
+    --map-building: #4b5563;
+    --map-building-stroke: #6b7280;
+    --map-church: #9ca3af;
+    --map-church-wall: #374151;
+    --map-church-planned: #4b5563;
+    --map-ferry: #6b7280;
+    --map-ferry-stroke: #9ca3af;
+  }
+  
+  .exam-graph-frame {
+    background: var(--surface-container-low, #1d1f24);
+    border-color: rgba(193, 198, 215, 0.15);
+  }
+
+  .task1-visual-scroll-shell::before {
+    background: linear-gradient(90deg, rgba(29, 31, 36, 0.96), rgba(29, 31, 36, 0));
+  }
+
+  .task1-visual-scroll-shell::after {
+    background: linear-gradient(270deg, rgba(29, 31, 36, 0.96), rgba(29, 31, 36, 0));
+  }
+
+  .task1-table th {
+    background: var(--primary-fixed-dim, #3a4a6b);
+    color: var(--on-primary-fixed-variant, #adc6ff);
+  }
+
+  .task1-map-svg {
+    border-color: rgba(193, 198, 215, 0.2);
+  }
+}
   .exam-graph-frame {
     background: var(--surface-container-low, #1d1f24);
     border-color: rgba(193, 198, 215, 0.15);
