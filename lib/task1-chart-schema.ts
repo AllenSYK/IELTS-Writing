@@ -588,3 +588,185 @@ export function createChartSpecLog(spec: Task1ChartSpec | undefined) {
 
   return { chartKind: spec.kind, categoryCount, seriesCount, dataPointCount }
 }
+
+type VisualDataSpecs = {
+  chartSpec?: Task1ChartSpec
+  processSpec?: Task1ProcessSpec
+  mapSpec?: Task1MapSpec
+  questionType: string
+}
+
+export function convertVisualDataToSpecs(
+  visualTypes: string[],
+  visualData: Record<string, unknown> | null | undefined,
+  title: string
+): VisualDataSpecs {
+  if (!visualData || !visualTypes.length) {
+    return { questionType: visualTypes[0] || 'unknown' }
+  }
+
+  const primaryType = visualTypes[0]
+
+  if (primaryType === 'table' && Array.isArray(visualData.columns) && Array.isArray(visualData.rows)) {
+    return {
+      questionType: 'table',
+      chartSpec: {
+        kind: 'table',
+        title,
+        tableData: {
+          columns: visualData.columns as string[],
+          rows: visualData.rows as (string | number | null)[][]
+        }
+      }
+    }
+  }
+
+  if (primaryType === 'line_chart' || primaryType === 'line') {
+    const years = visualData.years as number[] | undefined
+    const seriesRaw = visualData.series_approximate || visualData.series || {}
+    if (years && typeof seriesRaw === 'object') {
+      const series = Object.entries(seriesRaw).map(([name, values]) => ({
+        id: name.toLowerCase().replace(/\s+/g, '-'),
+        name,
+        type: 'line' as const,
+        values: (values as number[]).map((v) => v ?? null)
+      }))
+      return {
+        questionType: 'line_chart',
+        chartSpec: {
+          kind: 'line',
+          title,
+          xAxis: { categories: years.map(String), unit: '' },
+          yAxis: { unit: (visualData.unit as string) || '' },
+          series
+        }
+      }
+    }
+  }
+
+  if (primaryType === 'bar_chart' || primaryType === 'bar') {
+    const years = visualData.years as number[] | undefined
+    const ageGroups = visualData.age_groups as string[] | undefined
+    const categories = visualData.categories_approximate || visualData.categories || {}
+    const xAxisLabels = years?.map(String) || ageGroups || []
+    if (xAxisLabels.length && typeof categories === 'object') {
+      const series = Object.entries(categories).map(([name, values]) => ({
+        id: name.toLowerCase().replace(/\s+/g, '-'),
+        name,
+        type: 'bar' as const,
+        values: (values as number[]).map((v) => v ?? null)
+      }))
+      return {
+        questionType: 'bar_chart',
+        chartSpec: {
+          kind: 'bar',
+          title,
+          xAxis: { categories: xAxisLabels, unit: '' },
+          yAxis: { unit: (visualData.unit as string) || '' },
+          series
+        }
+      }
+    }
+  }
+
+  if (primaryType === 'pie_chart' || primaryType === 'pie') {
+    const yearsData = visualData.years as Record<string, number[]> | undefined
+    if (yearsData && Object.keys(yearsData).length > 1) {
+      const yearKeys = Object.keys(yearsData)
+      const categories = visualData.categories as string[] | undefined
+      if (categories) {
+        const charts: Task1StandaloneChartSpec[] = yearKeys.map((year) => ({
+          chartType: 'pie' as const,
+          title: year,
+          units: '',
+          legend: true,
+          pieData: categories.map((cat, i) => ({
+            label: cat,
+            value: yearsData[year][i] ?? null
+          }))
+        }))
+        return {
+          questionType: 'mixed_charts',
+          chartSpec: { kind: 'mixed', title, charts }
+        }
+      }
+    }
+    const singleData = visualData.data as { label: string; value: number }[] | undefined
+    if (singleData) {
+      return {
+        questionType: 'pie_chart',
+        chartSpec: {
+          kind: 'pie',
+          title,
+          pieData: singleData.map((d) => ({ label: d.label, value: d.value }))
+        }
+      }
+    }
+    const flatCategories = visualData.categories as string[] | undefined
+    const flatValues = visualData.values as number[] | undefined
+    if (flatCategories && flatValues) {
+      return {
+        questionType: 'pie_chart',
+        chartSpec: {
+          kind: 'pie',
+          title,
+          pieData: flatCategories.map((cat, i) => ({ label: cat, value: flatValues[i] ?? null }))
+        }
+      }
+    }
+  }
+
+  if (primaryType === 'process_diagram' || primaryType === 'process') {
+    const steps = visualData.steps as { step: number; name: string; details?: string }[] | undefined
+    if (steps) {
+      const stages = steps.map((s) => ({
+        id: `step-${s.step}`,
+        label: s.name,
+        description: s.details
+      }))
+      const connections = steps.slice(0, -1).map((s, i) => ({
+        from: `step-${s.step}`,
+        to: `step-${steps[i + 1].step}`
+      }))
+      return {
+        questionType: 'process',
+        processSpec: {
+          title,
+          stages,
+          connections
+        }
+      }
+    }
+  }
+
+  if (primaryType === 'map') {
+    const periods = Object.keys(visualData).filter((k) => Array.isArray(visualData[k]))
+    if (periods.length >= 2) {
+      const features: Task1MapSpec['features'] = []
+      let featureId = 0
+      for (const period of periods) {
+        const items = visualData[period] as string[]
+        for (const item of items) {
+          features.push({
+            id: `f-${featureId++}`,
+            label: item.length > 60 ? item.slice(0, 57) + '...' : item,
+            position: { x: 20 + (featureId % 5) * 15, y: 20 + Math.floor(featureId / 5) * 20 },
+            change: period === periods[0] ? 'unchanged' : 'modified',
+            description: item
+          })
+        }
+      }
+      return {
+        questionType: 'map',
+        mapSpec: {
+          title,
+          beforeLabel: periods[0],
+          afterLabel: periods[periods.length - 1],
+          features
+        }
+      }
+    }
+  }
+
+  return { questionType: primaryType }
+}

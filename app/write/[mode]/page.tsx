@@ -54,6 +54,7 @@ import {
   type PromptSelection
 } from '@/lib/writing-options'
 import { userScopedStorageKey } from '@/lib/user-storage'
+import { convertVisualDataToSpecs } from '@/lib/task1-chart-schema'
 import {
   clampWritingEditorSplitRatio,
   defaultWritingEditorSplitRatio,
@@ -359,6 +360,7 @@ export default function WritePage() {
         const requestedSelection = selectionFromSearchParams(searchParams)
         const recordId = searchParams.get('record')
         const uploadedTaskId = mode === 'mock' ? null : searchParams.get('customTask')
+        const pastPaperId = mode === 'mock' ? null : searchParams.get('pastPaper')
         setCustomTaskId(uploadedTaskId)
         let currentDraftId = searchParams.get('draft') || ''
         let managedDraft: ManagedDraftData | null = null
@@ -500,6 +502,49 @@ export default function WritePage() {
                   imageAlt: bankQuestion.imageAlt || question.imageAlt
                 }
               }
+            }
+          }
+          if (!question && pastPaperId) {
+            try {
+              const response = await fetch(`/api/past-papers/${encodeURIComponent(pastPaperId)}`, { cache: 'no-store' })
+              const data = await response.json() as {
+                success?: boolean
+                question?: {
+                  id: string
+                  taskType: string
+                  title: string
+                  questionText: string
+                  task1VisualTypes?: string[]
+                  task1VisualData?: Record<string, unknown>
+                  task2QuestionType?: string
+                }
+                message?: string
+              }
+              if (!response.ok || !data.success || !data.question) throw new Error(data.message || '真题读取失败')
+              const pp = data.question
+              const specs = pp.task1VisualTypes
+                ? convertVisualDataToSpecs(pp.task1VisualTypes, pp.task1VisualData ?? null, pp.title)
+                : { questionType: 'unknown' }
+              const promptLead = pp.questionText.split('\n').find((l) => l.trim().length > 0) || pp.title
+              const promptDetail = pp.questionText.split('\n').slice(1).join('\n').trim() || 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.'
+              question = {
+                id: pp.id,
+                taskType: (pp.taskType?.includes('task1') ? 'task1' : 'task2') as 'task1' | 'task2',
+                title: pp.title,
+                promptLead,
+                promptDetail,
+                durationMinutes: pp.taskType?.includes('task1') ? 20 : 40,
+                wordTarget: pp.taskType?.includes('task1') ? 150 : 250,
+                questionType: specs.questionType as WritingQuestion['questionType'],
+                trainingType: 'academic',
+                generatedSource: 'static-bank',
+                chartSpec: specs.chartSpec,
+                processSpec: specs.processSpec,
+                mapSpec: specs.mapSpec
+              }
+            } catch (caught) {
+              if (cancelled) return
+              setError(caught instanceof Error ? caught.message : '真题读取失败')
             }
           }
           if (!question && uploadedTaskId) {
