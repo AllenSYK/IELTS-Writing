@@ -7,6 +7,7 @@ import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import type {
   StudyPlan,
   StudyPlanProfile,
@@ -27,15 +28,31 @@ type PlanData = {
   quota: StudyPlanGenerationQuota
 }
 
+class ApiResponseError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiResponseError'
+    this.status = status
+  }
+}
+
 async function fetchPlan(): Promise<PlanData> {
   const res = await fetch('/api/study-plan')
-  return res.json()
+  const payload = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new ApiResponseError(
+      (payload && typeof payload === 'object' && 'message' in payload ? String((payload as Record<string, unknown>).message) : null) || `请求失败（${res.status}）`,
+      res.status
+    )
+  }
+  return payload as PlanData
 }
 
 export default function StudyPlanPage() {
   const { userId } = useUserSession()
   const { pushToast } = useToast()
-  const { data, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false })
+  const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
   const [generating, setGenerating] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -60,19 +77,36 @@ export default function StudyPlanPage() {
 
   if (!userId || isLoading) return <PageSkeleton />
 
+  if (error) {
+    return (
+      <main className="ui-page" data-main-content tabIndex={-1}>
+        <section className="analytics-main" style={{ paddingTop: 40 }}>
+          <header className="page-section-header">
+            <h1 className="ui-title-display">学习规划</h1>
+          </header>
+          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+            <MaterialIcon name="error" size={48} />
+            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>加载失败</h2>
+            <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
+              {error.status === 401 ? '请重新登录后再试。' : '学习规划加载失败，请稍后重试。'}
+            </p>
+            <button className="ui-primary-button" type="button" style={{ marginTop: 16 }} onClick={() => void mutate()}>
+              重新加载
+            </button>
+          </GlassPanel>
+        </section>
+      </main>
+    )
+  }
+
   const plan = data?.plan ?? null
   const profile = data?.profile ?? null
   const quota = data?.quota
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = getDateKeyInTimeZone()
   const todayTasks = plan?.tasks?.filter((t) => t.scheduledDate === today) ?? []
-  const weekTasks = plan?.tasks?.filter((t) => {
-    const d = new Date(t.scheduledDate)
-    const now = new Date(today)
-    const end = new Date(now)
-    end.setDate(end.getDate() + 7)
-    return d >= now && d <= end
-  }) ?? []
+  const weekEnd = addDaysToDateKey(today, 6)
+  const weekTasks = plan?.tasks?.filter((t) => t.scheduledDate >= today && t.scheduledDate <= weekEnd) ?? []
   const completedThisWeek = weekTasks.filter((t) => t.status === 'completed').length
 
   return (

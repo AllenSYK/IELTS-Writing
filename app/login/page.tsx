@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
@@ -35,13 +35,37 @@ async function postWithTimeout<T>(url: string, payload: unknown, timeoutMs = 150
 
 export default function LoginPage() {
   const router = useRouter()
-  const { refreshUser } = useUserSession()
+  const { refreshUser, status: sessionStatus } = useUserSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
+
+  useEffect(() => {
+    if (sessionStatus === 'authenticated') {
+      router.replace('/dashboard')
+    }
+  }, [sessionStatus, router])
+
+  if (sessionStatus === 'loading') {
+    return (
+      <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
+        <section className="auth-panel auth-panel-modern">
+          <div className="auth-brand-mark" aria-hidden="true">
+            <span>W</span>
+          </div>
+          <header className="auth-copy">
+            <p className="auth-kicker">IELTS Writing</p>
+            <h1>加载中…</h1>
+          </header>
+        </section>
+      </main>
+    )
+  }
+
+  if (sessionStatus === 'authenticated') return null
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -101,7 +125,7 @@ export default function LoginPage() {
               <input
                 type="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => { setEmail(event.target.value); if (error) setError('') }}
                 autoComplete="email"
                 placeholder="name@example.com"
                 required
@@ -116,7 +140,7 @@ export default function LoginPage() {
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => { setPassword(event.target.value); if (error) setError('') }}
                 autoComplete="current-password"
                 placeholder="输入密码"
                 required

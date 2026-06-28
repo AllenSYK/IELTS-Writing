@@ -44,9 +44,10 @@ export default function SettingsPage() {
   const [draftProfile, setDraftProfile] = useState<UserProfile>(() => profile)
   const [profileSaveStatus, setProfileSaveStatus] = useState<ProfileSaveStatus>('clean')
   const [attemptedProfileSave, setAttemptedProfileSave] = useState(false)
-  const [license, setLicense] = useState<LicenseInfo>({ status: 'active' })
+  const [license, setLicense] = useState<LicenseInfo>({ status: 'loading' })
   const [refreshingLicense, setRefreshingLicense] = useState(false)
   const [confirmResetLayout, setConfirmResetLayout] = useState(false)
+  const [profileSaveTimer, setProfileSaveTimer] = useState<number | null>(null)
 
   const profileErrors = useMemo(() => validateUserProfile(draftProfile), [draftProfile])
   const profileHasErrors = hasProfileErrors(profileErrors)
@@ -93,6 +94,13 @@ export default function SettingsPage() {
     }
   }, [pushToast])
 
+  useEffect(() => {
+    window.queueMicrotask(() => void refreshLicense(false))
+    return () => {
+      if (profileSaveTimer) window.clearTimeout(profileSaveTimer)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   function resetLayout() {
     if (!userId) return
     Object.keys(window.localStorage)
@@ -138,7 +146,8 @@ export default function SettingsPage() {
       setProfileSaveStatus('success')
       setAttemptedProfileSave(false)
       pushToast({ kind: 'success', title: '个人资料已保存', message: '头像、目标分和分析页已同步更新。' })
-      window.setTimeout(() => setProfileSaveStatus('clean'), 1600)
+      const timer = window.setTimeout(() => setProfileSaveStatus('clean'), 1600)
+      setProfileSaveTimer(timer)
     } catch (error) {
       setProfileSaveStatus('error')
       pushToast({ kind: 'error', title: '保存失败', message: error instanceof Error ? error.message : '请稍后重试。' })

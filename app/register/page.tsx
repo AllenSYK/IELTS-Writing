@@ -297,7 +297,7 @@ export default function RegisterPage() {
                   <input
                     type="email"
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={(event) => { setEmail(event.target.value); if (error) setError('') }}
                     autoComplete="email"
                     placeholder="name@example.com"
                     required
@@ -310,7 +310,7 @@ export default function RegisterPage() {
                 <input
                   type="password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => { setPassword(event.target.value); if (error) setError('') }}
                   autoComplete="new-password"
                   minLength={8}
                   placeholder="至少 8 位"
