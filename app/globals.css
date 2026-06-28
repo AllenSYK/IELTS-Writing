@@ -1847,28 +1847,6 @@ img {
     border-color: rgba(193, 198, 215, 0.2);
   }
 }
-  .exam-graph-frame {
-    background: var(--surface-container-low, #1d1f24);
-    border-color: rgba(193, 198, 215, 0.15);
-  }
-
-  .task1-visual-scroll-shell::before {
-    background: linear-gradient(90deg, rgba(29, 31, 36, 0.96), rgba(29, 31, 36, 0));
-  }
-
-  .task1-visual-scroll-shell::after {
-    background: linear-gradient(270deg, rgba(29, 31, 36, 0.96), rgba(29, 31, 36, 0));
-  }
-
-  .task1-table th {
-    background: var(--primary-fixed-dim, #3a4a6b);
-    color: var(--on-primary-fixed-variant, #adc6ff);
-  }
-
-  .task1-map-svg {
-    border-color: rgba(193, 198, 215, 0.2);
-  }
-}
 
 .exam-requirement {
   margin-top: auto;
