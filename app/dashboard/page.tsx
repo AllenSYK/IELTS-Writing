@@ -16,6 +16,11 @@ const WritingActivityHeatmap = dynamic(
   }
 )
 
+const DashboardLearningTasks = dynamic(
+  () => import('@/components/dashboard/DashboardLearningTasks').then((m) => ({ default: m.DashboardLearningTasks })),
+  { loading: () => null }
+)
+
 function formatDate(value?: string | null) {
   if (!value) return '暂无'
   return new Date(value).toLocaleString('zh-CN')
@@ -67,6 +72,8 @@ export default async function DashboardPage() {
             <div><dt>最近使用</dt><dd>{formatDate(check.activation.last_used_at)}</dd></div>
           </dl>
         </section>
+
+        <DashboardLearningTasks />
 
         <WritingActivityHeatmap userId={user.id} />
       </section>
