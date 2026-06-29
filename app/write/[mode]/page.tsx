@@ -256,6 +256,7 @@ export default function WritePage() {
   const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [customTaskId, setCustomTaskId] = useState<string | null>(null)
+  const [studyPlanTaskId, setStudyPlanTaskId] = useState<string | null>(null)
   const [draftId, setDraftId] = useState('')
 
   const activeQuestion = mode === 'mock' ? mockQuestions?.[activeMockTask] ?? null : singleQuestion
@@ -420,7 +421,9 @@ export default function WritePage() {
         const recordId = searchParams.get('record')
         const uploadedTaskId = mode === 'mock' ? null : searchParams.get('customTask')
         const pastPaperId = mode === 'mock' ? null : searchParams.get('pastPaper')
+        const studyPlanTaskId = searchParams.get('studyPlanTaskId')
         setCustomTaskId(uploadedTaskId)
+        setStudyPlanTaskId(studyPlanTaskId)
         let currentDraftId = searchParams.get('draft') || ''
         let managedDraft: ManagedDraftData | null = null
 
@@ -645,6 +648,12 @@ export default function WritePage() {
         const endAt = readTimerEnd(localTimerKey, initialDurationMinutes, restoredSeconds)
         const initialTimeLeft = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
         timeLeftRef.current = initialTimeLeft
+
+        if (studyPlanTaskId && !cancelled) {
+          try {
+            await fetch(`/api/study-plan/tasks/${studyPlanTaskId}/start`, { method: 'POST' })
+          } catch { /* non-critical */ }
+        }
 
         setHydrated(true)
       })()
@@ -942,11 +951,21 @@ export default function WritePage() {
         questionSource: activeQuestion.generatedSource === 'user_upload' ? 'user_upload' : undefined,
         uploadedTaskId: typeof activeQuestion.structuredData?.uploadedTaskId === 'string'
           ? activeQuestion.structuredData.uploadedTaskId
-          : undefined
+          : undefined,
+        studyPlanTaskId: studyPlanTaskId || undefined
       }
 
       await saveWritingRecord(userId, record)
       if (activeQuestion.generatedSource !== 'user_upload') markGeneratedPromptCompleted(activeQuestion.id, userId)
+      if (studyPlanTaskId) {
+        try {
+          await fetch(`/api/study-plan/tasks/${studyPlanTaskId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ writingRecordId: record.id })
+          })
+        } catch { /* non-critical, task completion is best-effort */ }
+      }
       if (draftId) {
         try {
           await completeManagedDraft(userId, draftId, record.id)
@@ -1107,6 +1126,7 @@ export default function WritePage() {
         promptLead: mockQuestions.task1.promptLead,
         promptDetail: mockQuestions.task1.promptDetail,
         imageUrl: mockQuestions.task1.image,
+        studyPlanTaskId: studyPlanTaskId || undefined,
         components: {
           task1: {
             taskType: 'task1',
@@ -1149,6 +1169,15 @@ export default function WritePage() {
       await saveWritingRecord(userId, record)
       if (task1Evaluation) markGeneratedPromptCompleted(mockQuestions.task1.id, userId)
       if (task2Evaluation) markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
+      if (studyPlanTaskId) {
+        try {
+          await fetch(`/api/study-plan/tasks/${studyPlanTaskId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ writingRecordId: record.id })
+          })
+        } catch { /* non-critical */ }
+      }
       if (draftId) {
         try {
           await completeManagedDraft(userId, draftId, record.id)

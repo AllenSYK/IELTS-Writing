@@ -55,7 +55,8 @@ const StoredWritingRecordSchema = z.object({
   promptDetail: z.string().optional(),
   imageUrl: z.string().optional(),
   questionSource: z.literal('user_upload').optional(),
-  uploadedTaskId: z.string().optional()
+  uploadedTaskId: z.string().optional(),
+  studyPlanTaskId: z.string().optional()
 }).passthrough()
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -578,6 +579,7 @@ export type WritingRecordListItem = {
   ccScore: string | null
   lrScore: string | null
   graScore: string | null
+  studyPlanTaskId: string | null
 }
 
 export async function loadWritingRecordsLightweight(): Promise<WritingRecordListItem[]> {

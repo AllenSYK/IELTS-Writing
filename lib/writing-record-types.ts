@@ -181,6 +181,7 @@ export type WritingRecord = {
   imageUrl?: string
   questionSource?: 'user_upload'
   uploadedTaskId?: string
+  studyPlanTaskId?: string
 }
 
 export const WritingRecordsStorageKey = 'ielts-writing-writing-records-v1'
