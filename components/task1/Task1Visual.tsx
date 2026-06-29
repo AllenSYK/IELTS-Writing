@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useRef, useState, lazy, type ReactNode } from 'react'
+import { memo, Suspense, useCallback, useEffect, useRef, useState, lazy, type ReactNode } from 'react'
 import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec } from '@/lib/task1-chart-schema'
 import { resolveChartRenderer } from '@/lib/task1-chart-schema'
 
@@ -21,7 +21,7 @@ type Task1VisualProps = {
   className?: string
 }
 
-export function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, className }: Task1VisualProps) {
+export const Task1Visual = memo(function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, className }: Task1VisualProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -135,7 +135,7 @@ export function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, classN
       </div>
     )
   }
-}
+})
 
 function ChartError({ chartType, message }: { chartType: string; message: string }) {
   return (

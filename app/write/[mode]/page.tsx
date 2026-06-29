@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import { AsyncButton, ConfirmDialog, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
@@ -106,6 +106,68 @@ function formatTime(seconds: number) {
   return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
 }
 
+function defaultSecondsForMode(mode: WritingTaskType) {
+  return mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600
+}
+
+const IsolatedTimer = memo(function IsolatedTimer({
+  timerKey,
+  durationMinutes,
+  onExpire
+}: {
+  timerKey: string
+  durationMinutes: number
+  onExpire: () => void
+}) {
+  const [timeLeft, setTimeLeft] = useState(() => {
+    if (!timerKey) return durationMinutes * 60
+    const endAt = readTimerEnd(timerKey, durationMinutes)
+    return Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
+  })
+
+  useEffect(() => {
+    if (!timerKey) return
+    const timer = window.setInterval(() => {
+      const endAt = readTimerEnd(timerKey, durationMinutes)
+      const next = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
+      setTimeLeft(next)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [durationMinutes, timerKey])
+
+  useEffect(() => {
+    if (timeLeft === 0) onExpire()
+  }, [timeLeft, onExpire])
+
+  const progress = 62.8 - (timeLeft / (durationMinutes * 60)) * 62.8
+  const timerTone = timeLeft <= 60 ? 'timer-critical' : timeLeft <= 600 ? 'timer-warning' : ''
+
+  return (
+    <div className="exam-info-item">
+      <div className="mini-ring">
+        <svg viewBox="0 0 24 24">
+          <circle className="track" cx="12" cy="12" fill="transparent" r="10" strokeWidth="2" />
+          <circle
+            className="value"
+            cx="12"
+            cy="12"
+            fill="transparent"
+            r="10"
+            strokeDasharray="62.8"
+            strokeDashoffset={progress}
+            strokeLinecap="round"
+            strokeWidth="2"
+          />
+        </svg>
+        <MaterialIcon name="timer" filled />
+      </div>
+      <span className={`exam-timer ${timerTone}`} aria-live={timeLeft <= 60 ? 'assertive' : 'polite'}>
+        {formatTime(timeLeft)}
+      </span>
+    </div>
+  )
+})
+
 function defaultQuestionFor(mode: WritingTaskType, selection = DefaultPromptSelection) {
   return randomQuestionForSelection(mode === 'task1' ? 'task1' : 'task2', selection)
 }
@@ -171,7 +233,6 @@ export default function WritePage() {
   const [mockEssays, setMockEssays] = useState<MockEssays>({ task1: '', task2: '' })
   const debouncedEssay = useDebouncedValue(essay, 900)
   const debouncedMockEssays = useDebouncedValue(mockEssays, 900)
-  const [timeLeft, setTimeLeft] = useState(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
   const [spellcheck, setSpellcheck] = useState(false)
   const [hydrated, setHydrated] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('restoring')
@@ -213,9 +274,7 @@ export default function WritePage() {
     [mockEssays]
   )
   const totalMockWords = mockWordCounts.task1 + mockWordCounts.task2
-  const progress = 62.8 - (timeLeft / (durationMinutes * 60)) * 62.8
   const loading = submitStatus !== 'idle' && submitStatus !== 'error' && submitStatus !== 'success'
-  const timerTone = timeLeft <= 60 ? 'timer-critical' : timeLeft <= 600 ? 'timer-warning' : ''
   const promptChoiceSummary =
     customTaskId
       ? '自定义题目'
@@ -586,7 +645,6 @@ export default function WritePage() {
         const endAt = readTimerEnd(localTimerKey, initialDurationMinutes, restoredSeconds)
         const initialTimeLeft = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
         timeLeftRef.current = initialTimeLeft
-        setTimeLeft(initialTimeLeft)
 
         setHydrated(true)
       })()
@@ -634,17 +692,6 @@ export default function WritePage() {
   useEffect(() => () => resizeCleanupRef.current?.(), [])
 
   useEffect(() => {
-    if (!timerKey) return
-    const timer = window.setInterval(() => {
-      const endAt = readTimerEnd(timerKey, durationMinutes)
-      const next = Math.max(0, Math.ceil((endAt - Date.now()) / 1000))
-      timeLeftRef.current = next
-      setTimeLeft(next)
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [durationMinutes, timerKey])
-
-  useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
@@ -671,12 +718,9 @@ export default function WritePage() {
     saveCurrentDraft()
   }, [activeQuestion, draftId, hydrated])
 
-  useEffect(() => {
-    if (timeLeft === 0 && hydrated && submitStatus === 'idle') {
-      const timer = window.setTimeout(() => setShowTimeConfirm(true), 0)
-      return () => window.clearTimeout(timer)
-    }
-  }, [hydrated, submitStatus, timeLeft])
+  const handleTimerExpire = useCallback(() => {
+    if (hydrated && submitStatus === 'idle') setShowTimeConfirm(true)
+  }, [hydrated, submitStatus])
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -881,7 +925,7 @@ export default function WritePage() {
         essay,
         originalEssay: essay,
         submittedAt: now,
-        durationSeconds: durationMinutes * 60 - timeLeft,
+        durationSeconds: durationMinutes * 60 - timeLeftRef.current,
         wordCount,
         evaluation,
         acceptedChanges: [],
@@ -1015,7 +1059,7 @@ export default function WritePage() {
       await new Promise((resolve) => window.setTimeout(resolve, 150))
 
       const now = new Date().toISOString()
-      const elapsedSeconds = durationMinutes * 60 - timeLeft
+      const elapsedSeconds = durationMinutes * 60 - timeLeftRef.current
       const task1Share = totalMockWords > 0 ? mockWordCounts.task1 / totalMockWords : 0.33
       const task1Duration = Math.round(elapsedSeconds * task1Share)
       const task2Duration = Math.max(0, elapsedSeconds - task1Duration)
@@ -1246,28 +1290,11 @@ export default function WritePage() {
         </div>
 
         <div className="exam-info-pill">
-          <div className="exam-info-item">
-            <div className="mini-ring">
-              <svg viewBox="0 0 24 24">
-                <circle className="track" cx="12" cy="12" fill="transparent" r="10" strokeWidth="2" />
-                <circle
-                  className="value"
-                  cx="12"
-                  cy="12"
-                  fill="transparent"
-                  r="10"
-                  strokeDasharray="62.8"
-                  strokeDashoffset={progress}
-                  strokeLinecap="round"
-                  strokeWidth="2"
-                />
-              </svg>
-              <MaterialIcon name="timer" filled />
-            </div>
-            <span className={`exam-timer ${timerTone}`} aria-live={timeLeft <= 60 ? 'assertive' : 'polite'}>
-              {formatTime(timeLeft)}
-            </span>
-          </div>
+          <IsolatedTimer
+            timerKey={timerKey}
+            durationMinutes={durationMinutes}
+            onExpire={handleTimerExpire}
+          />
           <div className="exam-divider" />
           <div className="exam-info-item">
             <span className="ui-label">{mode === 'mock' ? (activeMockTask === 'task1' ? 'Task 1' : 'Task 2') : '字数'}</span>
