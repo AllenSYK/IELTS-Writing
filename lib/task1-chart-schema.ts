@@ -829,6 +829,27 @@ export function convertVisualDataToSpecs(
   }
 
   if (primaryType === 'map') {
+    // Fast path: visualData is already a complete MapSchemaV2 object
+    // (stored directly in DB as task1_visual_data with dataVersion='map-v2' and panels[])
+    if (
+      visualData.dataVersion === 'map-v2' &&
+      Array.isArray(visualData.panels) &&
+      visualData.panels.length > 0
+    ) {
+      return {
+        questionType: 'map',
+        mapSpec: {
+          title: (visualData.title as string) || title,
+          dataVersion: 'map-v2',
+          beforeLabel: (visualData.beforeLabel as string) || (visualData.panels[0] as Record<string, unknown>)?.title as string || 'Before',
+          afterLabel: (visualData.afterLabel as string) || (visualData.panels[visualData.panels.length - 1] as Record<string, unknown>)?.title as string || 'After',
+          panels: visualData.panels as Task1MapSpec['panels'],
+          legend: visualData.legend as Task1MapSpec['legend'],
+        },
+      }
+    }
+
+    // Legacy path: visualData has period keys with string arrays
     const periods = Object.keys(visualData).filter((k) => Array.isArray(visualData[k]))
     if (periods.length >= 2) {
       // Convert to v2 format with panels

@@ -25,7 +25,7 @@ import {
   roundToHalfBand
 } from '../lib/ielts-scoring'
 import type { EssayAnnotation } from '../lib/writing-records'
-import { prepareTask1ChartSpec, validateChartSpec } from '../lib/task1-chart-schema'
+import { prepareTask1ChartSpec, validateChartSpec, convertVisualDataToSpecs } from '../lib/task1-chart-schema'
 import { getFallbackQuestionsByType } from '../lib/task1-fallback-questions'
 import {
   UploadMaxBytes,
@@ -182,6 +182,69 @@ test('Task 1 visual schema reconstructs line, pie, table, map, and process visua
     }
   ]
   visuals.forEach((visual) => assert.equal(UploadedTask1VisualSchema.safeParse(visual).success, true))
+})
+
+test('convertVisualDataToSpecs passes through MapSchemaV2 directly', () => {
+  // Simulates a DB row where task1_visual_data is already full V2 format
+  const v2VisualData = {
+    dataVersion: 'map-v2',
+    title: 'River Crossing Area Development',
+    beforeLabel: '1968',
+    afterLabel: 'Now and Future',
+    panels: [
+      {
+        id: 'panel-1968',
+        title: '1968',
+        features: [
+          { type: 'river', x: 220, y: 0, width: 105, height: 480 },
+          { type: 'road', x: 0, y: 250, width: 220, height: 4, style: 'current' },
+          { type: 'housing', x: 350, y: 45, rows: 3, columns: 3 },
+        ],
+      },
+      {
+        id: 'panel-now-future',
+        title: 'Now and Future',
+        features: [
+          { type: 'river', x: 220, y: 0, width: 105, height: 480 },
+          { type: 'bridge', x: 220, y: 228, width: 90, height: 14 },
+          { type: 'church', x: 335, y: 380, planned: true },
+        ],
+      },
+    ],
+  }
+
+  const result = convertVisualDataToSpecs(['map'], v2VisualData, 'Test Title')
+
+  assert.equal(result.questionType, 'map')
+  assert.ok(result.mapSpec, 'mapSpec must be produced for V2 data')
+  assert.equal(result.mapSpec!.dataVersion, 'map-v2')
+  assert.equal(result.mapSpec!.panels?.length, 2)
+  assert.equal(result.mapSpec!.panels![0].id, 'panel-1968')
+  assert.equal(result.mapSpec!.panels![0].features.length, 3)
+  assert.equal(result.mapSpec!.panels![1].id, 'panel-now-future')
+  assert.equal(result.mapSpec!.panels![1].features.length, 3)
+})
+
+test('convertVisualDataToSpecs produces mapSpec for legacy string-array format', () => {
+  // Simulates old DB format: { "1968": ["road", "river"], "now": ["bridge", "housing"] }
+  const legacyVisualData = {
+    '1968': ['Main road runs east to west', 'River flows north to south'],
+    'now': ['Bridge over river', 'New housing estate'],
+  }
+
+  const result = convertVisualDataToSpecs(['map'], legacyVisualData, 'Legacy Map')
+
+  assert.equal(result.questionType, 'map')
+  assert.ok(result.mapSpec, 'mapSpec must be produced for legacy format')
+  assert.equal(result.mapSpec!.dataVersion, 'map-v2')
+  assert.equal(result.mapSpec!.panels?.length, 2)
+  assert.ok(result.mapSpec!.panels![0].features.length > 0)
+})
+
+test('convertVisualDataToSpecs returns empty questionType for null visualData', () => {
+  const result = convertVisualDataToSpecs(['map'], null, 'Empty')
+  assert.equal(result.questionType, 'map')
+  assert.equal(result.mapSpec, undefined)
 })
 
 test('Mixed Task 1 keeps a line chart and pie chart as separate visuals', () => {

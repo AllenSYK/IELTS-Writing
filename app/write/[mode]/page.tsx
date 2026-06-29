@@ -1415,6 +1415,22 @@ export default function WritePage() {
               </div>
             ) : null}
 
+            {/* Diagnostic: map type but no mapSpec */}
+            {activeQuestion.taskType === 'task1' && activeQuestion.questionType === 'map' && !activeQuestion.mapSpec ? (
+              <div className="task1-chart-error" role="alert">
+                <span className="task1-chart-error-icon">!</span>
+                <p className="task1-chart-error-title">地图数据缺失</p>
+                <p className="task1-chart-error-message">
+                  此题目被标记为地图题，但未能加载地图可视化数据。请刷新页面或选择其他题目。
+                  {process.env.NODE_ENV === 'development' ? (
+                    <code style={{ display: 'block', marginTop: 8, fontSize: 11, opacity: 0.7 }}>
+                      questionId: {activeQuestion.id}, questionType: {activeQuestion.questionType}, hasMapSpec: {String(!!activeQuestion.mapSpec)}
+                    </code>
+                  ) : null}
+                </p>
+              </div>
+            ) : null}
+
             {activeQuestion.generatedSource === 'user_upload' && activeQuestion.structuredData?.parseStatus === 'partial' ? (
               <p className="custom-task-warning" role="status">
                 部分图表数据未能完全复原，请同时参考原始图片。
