@@ -65,6 +65,7 @@ function mapPlan(row: Record<string, unknown>, tasks: unknown[]) {
     userId: row.user_id,
     version: row.version,
     status: row.status,
+    currentPhase: row.current_phase ?? 'foundation',
     periodStart: row.period_start,
     periodEnd: row.period_end,
     diagnosis: row.diagnosis,
@@ -86,6 +87,10 @@ function mapTask(row: Record<string, unknown>) {
     taskType: row.task_type,
     source: row.source,
     questionId: row.question_id,
+    title: row.title ?? '',
+    description: row.description ?? '',
+    difficulty: row.difficulty ?? 'medium',
+    priority: row.priority ?? 2,
     focusCriteria: row.focus_criteria ?? [],
     focusErrorTags: row.focus_error_tags ?? [],
     estimatedMinutes: row.estimated_minutes,
@@ -94,6 +99,9 @@ function mapTask(row: Record<string, unknown>) {
     draftId: row.draft_id,
     startedAt: row.started_at,
     completedAt: row.completed_at,
+    skipReason: row.skip_reason,
+    generatedReason: row.generated_reason ?? '',
+    writingMode: row.writing_mode,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
@@ -115,6 +123,9 @@ function mapProfile(row: Record<string, unknown>) {
     task2Ratio: row.task2_ratio,
     preferWeakness: row.prefer_weakness,
     weekendExtended: row.weekend_extended,
-    timezone: row.timezone
+    timezone: row.timezone,
+    intensity: row.intensity ?? 'standard',
+    allowTimedPractice: row.allow_timed_practice ?? true,
+    currentLevel: row.current_level
   }
 }
