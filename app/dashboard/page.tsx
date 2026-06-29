@@ -1,8 +1,20 @@
 import { redirect } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { CalendarDays, CheckCircle2, Clock3 } from 'lucide-react'
-import { WritingActivityHeatmap } from '@/components/dashboard/WritingActivityHeatmap'
 import { checkActiveWebLicenseForUser, getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
 import { accountDisplayName } from '@/lib/phone-auth'
+
+const WritingActivityHeatmap = dynamic(
+  () => import('@/components/dashboard/WritingActivityHeatmap').then((m) => ({ default: m.WritingActivityHeatmap })),
+  {
+    loading: () => (
+      <section className="dashboard-panel" aria-busy="true">
+        <h2>学习热力图</h2>
+        <div style={{ minHeight: 160, borderRadius: 8, background: 'var(--surface-variant, #e7e8ec)' }} />
+      </section>
+    )
+  }
+)
 
 function formatDate(value?: string | null) {
   if (!value) return '暂无'

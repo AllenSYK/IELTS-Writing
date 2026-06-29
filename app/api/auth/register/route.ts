@@ -20,8 +20,7 @@ const RegisterSchema = z.object({
   })
 })
 
-async function isEmailRegistered(email: string) {
-  const service = createSupabaseServiceRoleClient()
+async function isEmailRegistered(service: ReturnType<typeof createSupabaseServiceRoleClient>, email: string) {
   const { data, error } = await service
     .from('profiles')
     .select('id')
@@ -43,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     const service = createSupabaseServiceRoleClient()
-    if (await isEmailRegistered(email)) {
+    if (await isEmailRegistered(service, email)) {
       return json({ success: false, code: 'EMAIL_REGISTERED', message: '该邮箱已经注册' }, { status: 409 })
     }
 

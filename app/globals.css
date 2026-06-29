@@ -1322,6 +1322,19 @@ img {
   margin: 0;
 }
 
+.task1-visual-loading {
+  min-height: 200px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--surface-variant, #e7e8ec) 25%, var(--surface, #f4f5f9) 50%, var(--surface-variant, #e7e8ec) 75%);
+  background-size: 200% 100%;
+  animation: task1-visual-loading-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes task1-visual-loading-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .task1-table-container {
   width: 100%;
   overflow: visible;

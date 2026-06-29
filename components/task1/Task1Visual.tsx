@@ -1,15 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState, lazy, type ReactNode } from 'react'
 import type { Task1ChartSpec, Task1ProcessSpec, Task1MapSpec } from '@/lib/task1-chart-schema'
 import { resolveChartRenderer } from '@/lib/task1-chart-schema'
-import { LineChartQuestion } from './LineChartQuestion'
-import { BarChartQuestion } from './BarChartQuestion'
-import { PieChartQuestion } from './PieChartQuestion'
-import { TableQuestion } from './TableQuestion'
-import { MixedChartQuestion } from './MixedChartQuestion'
-import { ProcessDiagramQuestion } from './ProcessDiagramQuestion'
-import { MapQuestion } from './MapQuestion'
+
+const LineChartQuestion = lazy(() => import('./LineChartQuestion').then((m) => ({ default: m.LineChartQuestion })))
+const BarChartQuestion = lazy(() => import('./BarChartQuestion').then((m) => ({ default: m.BarChartQuestion })))
+const PieChartQuestion = lazy(() => import('./PieChartQuestion').then((m) => ({ default: m.PieChartQuestion })))
+const TableQuestion = lazy(() => import('./TableQuestion').then((m) => ({ default: m.TableQuestion })))
+const MixedChartQuestion = lazy(() => import('./MixedChartQuestion').then((m) => ({ default: m.MixedChartQuestion })))
+const ProcessDiagramQuestion = lazy(() => import('./ProcessDiagramQuestion').then((m) => ({ default: m.ProcessDiagramQuestion })))
+const MapQuestion = lazy(() => import('./MapQuestion').then((m) => ({ default: m.MapQuestion })))
 
 type Task1VisualProps = {
   chartType: string
@@ -74,18 +75,20 @@ export function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, classN
     }
   }, [measure, renderer])
 
+  const chartFallback = <div className="task1-visual-loading" aria-hidden="true" />
+
   if (renderer === 'process') {
     if (!processSpec) {
       return <ChartError chartType={chartType} message="流程图数据缺失" />
     }
-    return renderVisual(<ProcessDiagramQuestion spec={processSpec} />)
+    return renderVisual(<Suspense fallback={chartFallback}><ProcessDiagramQuestion spec={processSpec} /></Suspense>)
   }
 
   if (renderer === 'map') {
     if (!mapSpec) {
       return <ChartError chartType={chartType} message="地图数据缺失" />
     }
-    return renderVisual(<MapQuestion spec={mapSpec} />)
+    return renderVisual(<Suspense fallback={chartFallback}><MapQuestion spec={mapSpec} /></Suspense>)
   }
 
   if (!chartSpec) {
@@ -93,13 +96,13 @@ export function Task1Visual({ chartType, chartSpec, processSpec, mapSpec, classN
   }
 
   return renderVisual(
-    <>
+    <Suspense fallback={chartFallback}>
       {renderer === 'line' && <LineChartQuestion spec={chartSpec} />}
       {renderer === 'bar' && <BarChartQuestion spec={chartSpec} />}
       {renderer === 'pie' && <PieChartQuestion spec={chartSpec} />}
       {renderer === 'table' && <TableQuestion spec={chartSpec} />}
       {renderer === 'mixed' && <MixedChartQuestion spec={chartSpec} />}
-    </>
+    </Suspense>
   )
 
   function renderVisual(content: ReactNode) {
