@@ -20,11 +20,31 @@ const loginRequiredRoutes = ['/activate', '/settings', '/support']
 // 需要有效许可证的路由
 const activeLicenseRequiredRoutes = ['/dashboard', '/practice', '/history', '/write', '/result', '/analytics', '/study-plan', '/ielts']
 
-// 所有用户路由（需要登录）
-const userRoutes = [...authEntryRoutes, ...loginRequiredRoutes, ...activeLicenseRequiredRoutes]
+// 需要登录的路由（不包括 authEntryRoutes）
+const loginProtectedRoutes = [...loginRequiredRoutes, ...activeLicenseRequiredRoutes]
 
 function startsWithRoute(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+}
+
+/**
+ * 安全的 next 参数生成
+ * 防止 /login?next=/login 等循环重定向
+ */
+export function getSafeLoginNext(pathname: string): string | null {
+  const authEntryPaths = new Set(['/login', '/register', '/forgot-password', '/reset-password'])
+
+  // 如果是认证入口路径，不生成 next 参数
+  if (authEntryPaths.has(pathname)) {
+    return null
+  }
+
+  // 防止开放重定向
+  if (!pathname.startsWith('/') || pathname.startsWith('//')) {
+    return null
+  }
+
+  return pathname
 }
 
 export function getAuthRouteInfo(pathname: string) {
@@ -38,7 +58,7 @@ export function getAuthRouteInfo(pathname: string) {
     isAdminRoute,
     isPublicRoute: startsWithRoute(pathname, publicRoutes),
     isAuthEntryRoute: startsWithRoute(pathname, authEntryRoutes),
-    isUserRoute: startsWithRoute(pathname, userRoutes),
+    isLoginProtectedRoute: startsWithRoute(pathname, loginProtectedRoutes),
     isLoginRequiredRoute: startsWithRoute(pathname, loginRequiredRoutes),
     isActiveLicenseRoute: startsWithRoute(pathname, activeLicenseRequiredRoutes)
   }
@@ -75,19 +95,29 @@ export function resolveAuthRedirect({
     return null
   }
 
-  // 未登录用户
+  // 认证入口路由（/login, /register 等）
+  if (route.isAuthEntryRoute) {
+    // 未登录用户可以正常访问
+    if (!isAuthenticated) {
+      return null
+    }
+    // 已登录用户跳转到合理页面
+    if (role === 'admin') {
+      return '/admin/licenses'
+    }
+    return licenseActive ? '/dashboard' : '/activate'
+  }
+
+  // 以下路由需要登录
   if (!isAuthenticated) {
-    return route.isUserRoute ? `/login?next=${encodeURIComponent(pathname)}` : null
+    // 使用安全的 next 参数生成
+    const next = getSafeLoginNext(pathname)
+    return next ? `/login?next=${encodeURIComponent(next)}` : '/login'
   }
 
   // 管理员访问用户页面：重定向到管理后台
   if (role === 'admin') {
-    return route.isUserRoute ? '/admin/licenses' : null
-  }
-
-  // 已登录用户访问登录/注册等入口页：跳转到合理页面
-  if (route.isAuthEntryRoute) {
-    return licenseActive ? '/dashboard' : '/activate'
+    return route.isLoginProtectedRoute ? '/admin/licenses' : null
   }
 
   // 激活页：已有许可证则跳转到仪表板
