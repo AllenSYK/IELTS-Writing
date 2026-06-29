@@ -40,27 +40,46 @@ function extractTagsFromEvaluation(evaluation: EssayEvaluation): string[] {
   return tags
 }
 
-function criterionKeyForRecord(record: WritingRecord): string[] {
-  if (record.taskType === 'task1') return ['Task Achievement', 'Coherence and Cohesion', 'Lexical Resource', 'Grammatical Range and Accuracy']
-  if (record.taskType === 'task2') return ['Task Response', 'Coherence and Cohesion', 'Lexical Resource', 'Grammatical Range and Accuracy']
-  return ['Task Achievement', 'Task Response', 'Coherence and Cohesion', 'Lexical Resource', 'Grammatical Range and Accuracy']
+function scoreForCriterion(evaluation: EssayEvaluation, key: string): number | null {
+  const criteria = evaluation.criteria ?? {}
+  const value = (criteria as Record<string, unknown>)[key] as { score?: string } | undefined
+  if (value?.score) {
+    const n = parseFloat(value.score)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
 }
 
-function scoreForCriterion(evaluation: EssayEvaluation, criterion: string): number | null {
-  const criteria = evaluation.criteria ?? {}
-  for (const [key, value] of Object.entries(criteria)) {
-    const labels: Record<string, string> = {
-      taskAchievement: 'Task Achievement',
-      taskResponse: 'Task Response',
-      coherenceCohesion: 'Coherence and Cohesion',
-      lexicalResource: 'Lexical Resource',
-      grammaticalRangeAccuracy: 'Grammatical Range and Accuracy'
-    }
-    if (labels[key] === criterion && value?.score) {
-      const n = parseFloat(value.score)
-      return Number.isFinite(n) ? n : null
-    }
+function extractCriteriaScores(evaluation: EssayEvaluation): Record<string, number | null> {
+  return {
+    taskAchievement: scoreForCriterion(evaluation, 'taskAchievement'),
+    taskResponse: scoreForCriterion(evaluation, 'taskResponse'),
+    coherenceCohesion: scoreForCriterion(evaluation, 'coherenceCohesion'),
+    lexicalResource: scoreForCriterion(evaluation, 'lexicalResource'),
+    grammaticalRangeAccuracy: scoreForCriterion(evaluation, 'grammaticalRangeAccuracy')
   }
+}
+
+function task1Subtype(record: WritingRecord): string | null {
+  const qt = record.questionType || ''
+  if (qt.includes('line') || qt.includes('line_graph')) return 'line'
+  if (qt.includes('bar')) return 'bar'
+  if (qt.includes('pie')) return 'pie'
+  if (qt.includes('table')) return 'table'
+  if (qt.includes('mixed')) return 'mixed'
+  if (qt.includes('map')) return 'map'
+  if (qt.includes('process') || qt.includes('flow')) return 'process'
+  return null
+}
+
+function task2Subtype(record: WritingRecord): string | null {
+  const qt = record.questionType || ''
+  if (qt.includes('agree') || qt.includes('opinion')) return 'agree_disagree'
+  if (qt.includes('discuss') || qt.includes('both')) return 'discuss_both'
+  if (qt.includes('advantage') || qt.includes('disadvantage')) return 'advantages'
+  if (qt.includes('problem') || qt.includes('solution')) return 'problem_solution'
+  if (qt.includes('cause') || qt.includes('effect')) return 'cause_effect'
+  if (qt.includes('two') || qt.includes('double')) return 'two_part'
   return null
 }
 
@@ -68,27 +87,73 @@ export function buildStudyPlanDiagnosis(records: WritingRecord[]): StudyPlanDiag
   if (records.length === 0) {
     return {
       currentAverage: null,
+      task1Average: null,
+      task2Average: null,
+      taTr: null,
+      cc: null,
+      lr: null,
+      gra: null,
       strongestCriteria: [],
       weakestCriteria: [],
       priorityErrorTags: [],
-      dataSufficiency: 'none'
+      dataSufficiency: 'none',
+      profileConfidence: 'low',
+      task1SubtypePerformance: {},
+      task2SubtypePerformance: {}
     }
   }
 
   const tagCounts = new Map<string, number>()
   const criterionScores = new Map<string, number[]>()
+  const task1Scores: number[] = []
+  const task2Scores: number[] = []
+  const taTrScores: number[] = []
+  const ccScores: number[] = []
+  const lrScores: number[] = []
+  const graScores: number[] = []
+  const task1SubtypeMap = new Map<string, number[]>()
+  const task2SubtypeMap = new Map<string, number[]>()
 
   for (const record of records.slice(0, 30)) {
     const tags = extractTagsFromEvaluation(record.evaluation)
     for (const tag of tags) {
       tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
     }
-    for (const criterion of criterionKeyForRecord(record)) {
-      const score = scoreForCriterion(record.evaluation, criterion)
-      if (score !== null) {
-        const arr = criterionScores.get(criterion) || []
-        arr.push(score)
-        criterionScores.set(criterion, arr)
+
+    const scores = extractCriteriaScores(record.evaluation)
+    const overallBand = parseFloat(record.evaluation.overallBand || record.evaluation.bandEstimate)
+    const validBand = Number.isFinite(overallBand) ? overallBand : null
+
+    if (record.taskType === 'task1' && validBand !== null) {
+      task1Scores.push(validBand)
+      const subtype = task1Subtype(record)
+      if (subtype) {
+        const arr = task1SubtypeMap.get(subtype) || []
+        arr.push(validBand)
+        task1SubtypeMap.set(subtype, arr)
+      }
+    }
+    if (record.taskType === 'task2' && validBand !== null) {
+      task2Scores.push(validBand)
+      const subtype = task2Subtype(record)
+      if (subtype) {
+        const arr = task2SubtypeMap.get(subtype) || []
+        arr.push(validBand)
+        task2SubtypeMap.set(subtype, arr)
+      }
+    }
+
+    const taTr = scores.taskAchievement ?? scores.taskResponse
+    if (taTr !== null) taTrScores.push(taTr)
+    if (scores.coherenceCohesion !== null) ccScores.push(scores.coherenceCohesion)
+    if (scores.lexicalResource !== null) lrScores.push(scores.lexicalResource)
+    if (scores.grammaticalRangeAccuracy !== null) graScores.push(scores.grammaticalRangeAccuracy)
+
+    for (const [key, value] of Object.entries(scores)) {
+      if (value !== null) {
+        const arr = criterionScores.get(key) || []
+        arr.push(value)
+        criterionScores.set(key, arr)
       }
     }
   }
@@ -120,15 +185,39 @@ export function buildStudyPlanDiagnosis(records: WritingRecord[]): StudyPlanDiag
     })
     .filter((n): n is number => n !== null)
 
-  const currentAverage = overallScores.length > 0
-    ? overallScores.reduce((a, b) => a + b, 0) / overallScores.length
-    : null
+  const avg = (arr: number[]) => arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null
+
+  const task1Avg = avg(task1Scores)
+  const task2Avg = avg(task2Scores)
+  const taTrAvg = avg(taTrScores)
+  const ccAvg = avg(ccScores)
+  const lrAvg = avg(lrScores)
+  const graAvg = avg(graScores)
+
+  const subtypeMapToObj = (map: Map<string, number[]>) => {
+    const obj: Record<string, number | null> = {}
+    for (const [key, scores] of map) {
+      obj[key] = avg(scores)
+    }
+    return obj
+  }
+
+  const confidence = records.length >= 10 ? 'high' : records.length >= 4 ? 'medium' : 'low'
 
   return {
-    currentAverage: currentAverage ? Math.round(currentAverage * 10) / 10 : null,
+    currentAverage: overallScores.length > 0 ? avg(overallScores) : null,
+    task1Average: task1Avg,
+    task2Average: task2Avg,
+    taTr: taTrAvg,
+    cc: ccAvg,
+    lr: lrAvg,
+    gra: graAvg,
     strongestCriteria,
     weakestCriteria,
     priorityErrorTags,
-    dataSufficiency: records.length >= 5 ? 'sufficient' : records.length >= 2 ? 'limited' : 'none'
+    dataSufficiency: records.length >= 5 ? 'sufficient' : records.length >= 2 ? 'limited' : 'none',
+    profileConfidence: confidence,
+    task1SubtypePerformance: subtypeMapToObj(task1SubtypeMap),
+    task2SubtypePerformance: subtypeMapToObj(task2SubtypeMap)
   }
 }
