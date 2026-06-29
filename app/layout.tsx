@@ -4,7 +4,6 @@ import { AppInteractionProvider } from '@/components/interaction-system'
 import { AppRuntime } from '@/components/layout/AppRuntime'
 import './globals.css'
 import './styles/web-audit-refactor.css'
-import './admin.css'
 
 export const metadata: Metadata = {
   title: '空与梦 IELTS Writing',

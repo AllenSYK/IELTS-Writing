@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { AdminLayoutClient } from '@/components/admin/AdminLayoutClient'
 import { getCurrentSupabaseUser, getWebProfile } from '@/lib/web-license/auth'
 import { accountDisplayName } from '@/lib/phone-auth'
+import '../admin.css'
 
 export const metadata: Metadata = {
   title: {
