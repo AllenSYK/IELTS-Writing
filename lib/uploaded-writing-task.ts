@@ -427,17 +427,79 @@ function uploadedProcessSpec(result: UploadedTask1Result): Task1ProcessSpec | un
 function uploadedMapSpec(result: UploadedTask1Result): Task1MapSpec | undefined {
   const visual = result.visuals.find((item) => item.kind === 'map')
   if (!visual || visual.kind !== 'map' || visual.locations.some((location) => !location.position)) return undefined
+
+  // Convert legacy point-based format to v2 block format
+  const locations = visual.locations
+  const beforeLocations = locations.filter((loc) => loc.before)
+  const afterLocations = locations.filter((loc) => loc.after)
+
+  function locationToFeature(loc: typeof locations[number], _index: number) {
+    const label = (loc.name || '').toLowerCase()
+    const combined = `${label} ${loc.before || ''} ${loc.after || ''} ${loc.features.join(' ')}`.toLowerCase()
+
+    let type: 'river' | 'road' | 'bridge' | 'housing' | 'forest' | 'car_park' | 'building_row' | 'church' | 'footpath' | 'ferry' = 'building_row'
+    let extra: Record<string, unknown> = {}
+
+    if (combined.includes('river') || combined.includes('water')) {
+      type = 'river'
+      extra = { width: 100, height: 400 }
+    } else if (combined.includes('road') || combined.includes('street')) {
+      type = 'road'
+      extra = { width: 520, height: 4, style: 'current' }
+    } else if (combined.includes('bridge')) {
+      type = 'bridge'
+      extra = { width: 90, height: 14 }
+    } else if (combined.includes('forest') || combined.includes('tree') || combined.includes('wood')) {
+      type = 'forest'
+      extra = { width: 120, height: 100, treeCount: 6 }
+    } else if (combined.includes('house') || combined.includes('housing') || combined.includes('residential')) {
+      type = 'housing'
+      extra = { rows: 2, columns: 3 }
+    } else if (combined.includes('car park') || combined.includes('parking')) {
+      type = 'car_park'
+      extra = { width: 100, height: 70, label: loc.name }
+    } else if (combined.includes('church')) {
+      type = 'church'
+      extra = { planned: false }
+    } else if (combined.includes('path') || combined.includes('footpath')) {
+      type = 'footpath'
+      extra = { style: 'future' }
+    } else if (combined.includes('ferry') || combined.includes('dock') || combined.includes('harbour')) {
+      type = 'ferry'
+      extra = { width: 25, height: 30 }
+    }
+
+    const pos = loc.position!
+    return {
+      type,
+      x: Math.round(pos.x * 5.2),
+      y: Math.round(pos.y * 4.8),
+      ...extra,
+    }
+  }
+
+  const beforePanel = {
+    id: 'panel-before',
+    title: 'Before',
+    features: beforeLocations.length > 0
+      ? beforeLocations.map((loc, i) => locationToFeature(loc, i))
+      : [{ type: 'road' as const, x: 0, y: 240, width: 520, height: 4, style: 'current' as const }],
+  }
+
+  const afterPanel = {
+    id: 'panel-after',
+    title: 'After',
+    features: afterLocations.length > 0
+      ? afterLocations.map((loc, i) => locationToFeature(loc, i))
+      : [{ type: 'road' as const, x: 0, y: 240, width: 520, height: 4, style: 'current' as const }],
+  }
+
   return {
     title: visual.title || 'Uploaded Task 1 map',
+    dataVersion: 'map-v2',
     beforeLabel: 'Before',
     afterLabel: 'After',
-    features: visual.locations.map((location, index) => ({
-      id: `location_${index + 1}`,
-      label: location.name || `Location ${index + 1}`,
-      position: location.position!,
-      change: location.before === location.after ? 'unchanged' : 'modified',
-      description: [location.before, location.after, ...location.features].filter(Boolean).join(' → ')
-    }))
+    panels: [beforePanel, afterPanel],
   }
 }
 

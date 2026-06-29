@@ -345,14 +345,14 @@ export function MapLegend({ className = '' }: { className?: string }) {
 }
 
 // 地图面板容器
-export function MapPanel({ 
-  title, 
+export function MapPanel({
+  title,
   children,
-  className = '' 
-}: { 
+  className = ''
+}: {
   title: string
   children: React.ReactNode
-  className?: string 
+  className?: string
 }) {
   return (
     <div className={`map-panel ${className}`}>
@@ -362,4 +362,199 @@ export function MapPanel({
       </div>
     </div>
   )
+}
+
+import type { MapFeatureV2 } from '@/lib/task1-chart-schema'
+
+/**
+ * Dynamic map panel that renders features from v2 schema data.
+ * This replaces the hardcoded Map1968/MapNowFuture for data-driven rendering.
+ */
+export function DynamicMapPanel({ features }: { features: MapFeatureV2[] }) {
+  return (
+    <svg viewBox="0 0 520 480" className="map-svg" preserveAspectRatio="xMidYMid meet">
+      {/* Background */}
+      <rect x="0" y="0" width="520" height="480" fill="var(--map-bg, #ffffff)" rx="8" />
+
+      {features.map((feature, index) => (
+        <DynamicFeature key={index} feature={feature} />
+      ))}
+
+      {/* Border */}
+      <rect
+        x="0" y="0" width="520" height="480"
+        fill="none"
+        stroke="var(--map-border, #e5e7eb)"
+        strokeWidth="1"
+        rx="8"
+      />
+    </svg>
+  )
+}
+
+function DynamicFeature({ feature }: { feature: MapFeatureV2 }) {
+  const { type, x, y } = feature
+
+  switch (type) {
+    case 'river':
+      return feature.path ? (
+        <RiverShape path={feature.path} />
+      ) : (
+        <rect
+          x={x} y={y}
+          width={feature.width || 100}
+          height={feature.height || 400}
+          fill="var(--map-river, #d1d5db)"
+          stroke="var(--map-river-stroke, #9ca3af)"
+          strokeWidth="1"
+          rx="4"
+        />
+      )
+
+    case 'road':
+      return (
+        <line
+          x1={x} y1={y}
+          x2={x + (feature.width || 520)}
+          y2={y}
+          stroke={feature.style === 'future' ? 'var(--map-future, #6b7280)' : 'var(--map-road, #4b5563)'}
+          strokeWidth={feature.style === 'future' ? 3 : 4}
+          strokeDasharray={feature.style === 'future' ? '8 6' : 'none'}
+          strokeLinecap="round"
+        />
+      )
+
+    case 'bridge':
+      return (
+        <BridgeShape
+          x={x} y={y}
+          width={feature.width || 90}
+          height={feature.height || 14}
+        />
+      )
+
+    case 'housing': {
+      const rows = feature.rows || 2
+      const cols = feature.columns || 3
+      const houseSize = 20
+      const gapX = 45
+      const gapY = 45
+      return (
+        <g>
+          {Array.from({ length: rows }).map((_, r) =>
+            Array.from({ length: cols }).map((_, c) => (
+              <HouseIcon
+                key={`${r}-${c}`}
+                x={x + c * gapX}
+                y={y + r * gapY}
+                size={houseSize}
+              />
+            ))
+          )}
+        </g>
+      )
+    }
+
+    case 'forest': {
+      const treeCount = feature.treeCount || 6
+      const width = feature.width || 120
+      const height = feature.height || 100
+      // Distribute trees in a grid-like pattern
+      const cols = Math.ceil(Math.sqrt(treeCount))
+      const rows = Math.ceil(treeCount / cols)
+      return (
+        <g>
+          {Array.from({ length: treeCount }).map((_, i) => {
+            const col = i % cols
+            const row = Math.floor(i / cols)
+            const tx = x + 15 + (col * (width - 30) / Math.max(cols - 1, 1))
+            const ty = y + 15 + (row * (height - 30) / Math.max(rows - 1, 1))
+            return <TreeIcon key={i} x={tx} y={ty} size={16} />
+          })}
+        </g>
+      )
+    }
+
+    case 'car_park':
+      return (
+        <CarParkBlock
+          x={x} y={y}
+          width={feature.width || 100}
+          height={feature.height || 70}
+          planned={feature.planned || feature.style === 'future'}
+          label={feature.label || 'Car park'}
+        />
+      )
+
+    case 'building_row':
+      return (
+        <BuildingRow
+          x={x} y={y}
+          units={feature.units || feature.columns || 5}
+          unitWidth={28}
+          unitHeight={18}
+          gap={3}
+        />
+      )
+
+    case 'church':
+      return (
+        <ChurchIcon
+          x={x} y={y}
+          planned={feature.planned || feature.style === 'future'}
+          size={30}
+        />
+      )
+
+    case 'footpath':
+      return feature.path ? (
+        <g>
+          <path
+            d={feature.path}
+            fill="none"
+            stroke="var(--map-future, #6b7280)"
+            strokeWidth="4"
+            strokeDasharray="10 8"
+            strokeLinecap="round"
+          />
+        </g>
+      ) : (
+        <line
+          x1={x} y1={y}
+          x2={x + (feature.width || 200)}
+          y2={y + (feature.height || 60)}
+          stroke="var(--map-future, #6b7280)"
+          strokeWidth="4"
+          strokeDasharray="10 8"
+          strokeLinecap="round"
+        />
+      )
+
+    case 'ferry':
+      return (
+        <g>
+          <rect
+            x={x} y={y}
+            width={feature.width || 25}
+            height={feature.height || 30}
+            fill="var(--map-ferry, #9ca3af)"
+            stroke="var(--map-ferry-stroke, #6b7280)"
+            strokeWidth="1.5"
+            rx="2"
+          />
+          <text
+            x={x + (feature.width || 25) / 2}
+            y={y + (feature.height || 30) + 12}
+            textAnchor="middle"
+            fontSize="8"
+            fill="var(--on-surface, #1f2937)"
+          >
+            Ferry
+          </text>
+        </g>
+      )
+
+    default:
+      return null
+  }
 }

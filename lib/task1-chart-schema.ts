@@ -831,29 +831,66 @@ export function convertVisualDataToSpecs(
   if (primaryType === 'map') {
     const periods = Object.keys(visualData).filter((k) => Array.isArray(visualData[k]))
     if (periods.length >= 2) {
-      const features: Task1MapSpec['features'] = []
-      let featureId = 0
-      for (const period of periods) {
+      // Convert to v2 format with panels
+      const panels: MapPanel[] = periods.map((period, periodIndex) => {
         const items = visualData[period] as string[]
-        const isBefore = period === periods[0]
-        for (const item of items) {
-          const pos = estimateMapPosition(item, featureId)
-          features.push({
-            id: `f-${featureId++}`,
-            label: item.length > 50 ? item.slice(0, 47) + '...' : item,
-            position: pos,
-            change: isBefore ? 'unchanged' : 'modified',
-            description: item
-          })
+        const features: MapFeatureV2[] = items.map((item, itemIndex) => {
+          const d = item.toLowerCase()
+          let type: MapFeatureV2['type'] = 'building_row'
+          let extra: Partial<MapFeatureV2> = {}
+
+          if (d.includes('river') || d.includes('water')) {
+            type = 'river'
+            extra = { width: 100, height: 400 }
+          } else if (d.includes('road') || d.includes('street')) {
+            type = 'road'
+            extra = { width: 520, height: 4, style: periodIndex === 0 ? 'current' : 'future' }
+          } else if (d.includes('bridge')) {
+            type = 'bridge'
+            extra = { width: 90, height: 14 }
+          } else if (d.includes('forest') || d.includes('tree') || d.includes('wood')) {
+            type = 'forest'
+            extra = { width: 120, height: 100, treeCount: 6 }
+          } else if (d.includes('house') || d.includes('housing') || d.includes('residential')) {
+            type = 'housing'
+            extra = { rows: 2, columns: 3 }
+          } else if (d.includes('car park') || d.includes('parking')) {
+            type = 'car_park'
+            extra = { width: 100, height: 70, label: item.slice(0, 20) }
+          } else if (d.includes('church')) {
+            type = 'church'
+            extra = { planned: periodIndex > 0 }
+          } else if (d.includes('path') || d.includes('footpath')) {
+            type = 'footpath'
+            extra = { style: 'future' }
+          } else if (d.includes('ferry') || d.includes('dock') || d.includes('harbour')) {
+            type = 'ferry'
+            extra = { width: 25, height: 30 }
+          }
+
+          // Position based on directional keywords
+          const pos = estimateMapPosition(item, itemIndex)
+          const x = Math.round(pos.x * 5.2)
+          const y = Math.round(pos.y * 4.8)
+
+          return { type, x, y, ...extra }
+        })
+
+        return {
+          id: `panel-${periodIndex}`,
+          title: period,
+          features,
         }
-      }
+      })
+
       return {
         questionType: 'map',
         mapSpec: {
           title,
+          dataVersion: 'map-v2',
           beforeLabel: periods[0],
           afterLabel: periods[periods.length - 1],
-          features
+          panels,
         }
       }
     }
