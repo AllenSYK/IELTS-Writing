@@ -1,8 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
 import type { Task1MapSpec } from '@/lib/task1-chart-schema'
-import { legacyMapReadAdapter } from '@/lib/validators/mapSchema'
 import { Task1MapVisual } from './map/Task1MapVisual'
 
 type Props = {
@@ -10,19 +8,17 @@ type Props = {
 }
 
 /**
- * 地图题组件
+ * Map question component.
  *
- * Uses legacyMapReadAdapter to render any stored map data (including legacy v1)
- * as block-based v2 visualization. This is the ONLY allowed place for v1->v2 conversion.
+ * Renders V2 block-based map data directly.
+ * Legacy V1 data has been purged from the database and is rejected at all write boundaries.
+ * No runtime conversion is performed — all stored data is guaranteed V2.
  */
 export function MapQuestion({ spec }: Props) {
-  // Adapt legacy specs for display only - never persisted
-  const displaySpec = useMemo(() => legacyMapReadAdapter(spec), [spec])
-
   return (
     <Task1MapVisual
-      title={displaySpec.title}
-      spec={displaySpec}
+      title={spec.title}
+      spec={spec}
     />
   )
 }

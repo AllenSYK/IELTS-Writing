@@ -2,10 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   validateMapSchemaStrict,
-  MapSchemaValidationError,
-  legacyMapReadAdapter,
-  isLegacyMapSpec,
-  legacyPointsToBlockMap
+  MapSchemaValidationError
 } from '../lib/validators/mapSchema'
 import { MAP_DATA_VERSION, type Task1MapSpec } from '../lib/task1-chart-schema'
 
@@ -41,21 +38,8 @@ const validV2Spec: Task1MapSpec = {
   ],
 }
 
-const validV2SpecWithMissingDataVersion: Task1MapSpec = {
-  title: 'Test Map No Version',
-  beforeLabel: 'Before',
-  afterLabel: 'After',
-  panels: [
-    {
-      id: 'panel-1',
-      title: 'Before',
-      features: [{ type: 'road', x: 0, y: 240, width: 520, height: 4 }],
-    },
-  ],
-}
-
 // ────────────────────────────────────────────────────────────────
-// V1 legacy fixtures
+// V1 legacy fixtures (must be rejected)
 // ────────────────────────────────────────────────────────────────
 
 const legacyV1Spec = {
@@ -114,6 +98,19 @@ const featureWithLegacyPosition = {
   ],
 }
 
+const v2MissingDataVersion = {
+  title: 'V2 Missing Version',
+  beforeLabel: 'Before',
+  afterLabel: 'After',
+  panels: [
+    {
+      id: 'panel-1',
+      title: 'Before',
+      features: [{ type: 'road' as const, x: 0, y: 240, width: 520, height: 4 }],
+    },
+  ],
+}
+
 // ════════════════════════════════════════════════════════════════
 // TEST: validateMapSchemaStrict - V2 input passes
 // ════════════════════════════════════════════════════════════════
@@ -125,7 +122,17 @@ test('validateMapSchemaStrict accepts valid V2 schema', () => {
   assert.equal(result.panels?.[0]?.features.length, 3)
 })
 
-test('validateMapSchemaStrict rejects V1 with dataVersion=map-v1', () => {
+test('validateMapSchemaStrict is idempotent on valid V2', () => {
+  const first = validateMapSchemaStrict(validV2Spec)
+  const second = validateMapSchemaStrict(first)
+  assert.deepEqual(first, second)
+})
+
+// ════════════════════════════════════════════════════════════════
+// TEST: validateMapSchemaStrict - V1 input is REJECTED (not converted)
+// ════════════════════════════════════════════════════════════════
+
+test('rejects V1 with dataVersion=map-v1', () => {
   assert.throws(
     () => validateMapSchemaStrict(legacyV1Spec),
     (err: unknown) => {
@@ -137,7 +144,7 @@ test('validateMapSchemaStrict rejects V1 with dataVersion=map-v1', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects V1 without dataVersion', () => {
+test('rejects V1 without dataVersion', () => {
   assert.throws(
     () => validateMapSchemaStrict(legacyV1SpecNoVersion),
     (err: unknown) => {
@@ -148,7 +155,7 @@ test('validateMapSchemaStrict rejects V1 without dataVersion', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects mixed schema with both features.position and panels', () => {
+test('rejects mixed schema with both features.position and panels', () => {
   assert.throws(
     () => validateMapSchemaStrict(mixedSchemaSpec),
     (err: unknown) => {
@@ -160,7 +167,7 @@ test('validateMapSchemaStrict rejects mixed schema with both features.position a
   )
 })
 
-test('validateMapSchemaStrict rejects feature with legacy position field', () => {
+test('rejects feature with legacy position field', () => {
   assert.throws(
     () => validateMapSchemaStrict(featureWithLegacyPosition),
     (err: unknown) => {
@@ -172,7 +179,22 @@ test('validateMapSchemaStrict rejects feature with legacy position field', () =>
   )
 })
 
-test('validateMapSchemaStrict rejects null input', () => {
+test('rejects V2 without explicit dataVersion', () => {
+  assert.throws(
+    () => validateMapSchemaStrict(v2MissingDataVersion),
+    (err: unknown) => {
+      assert.ok(err instanceof MapSchemaValidationError)
+      assert.equal(err.code, 'INVALID_MAP_SCHEMA_VERSION')
+      return true
+    }
+  )
+})
+
+// ════════════════════════════════════════════════════════════════
+// TEST: validateMapSchemaStrict - structural validation
+// ════════════════════════════════════════════════════════════════
+
+test('rejects null input', () => {
   assert.throws(
     () => validateMapSchemaStrict(null),
     (err: unknown) => {
@@ -183,7 +205,7 @@ test('validateMapSchemaStrict rejects null input', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects non-object input', () => {
+test('rejects non-object input', () => {
   assert.throws(
     () => validateMapSchemaStrict('not an object'),
     (err: unknown) => {
@@ -194,7 +216,7 @@ test('validateMapSchemaStrict rejects non-object input', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects empty panels array', () => {
+test('rejects empty panels array', () => {
   assert.throws(
     () => validateMapSchemaStrict({ title: 'Empty', dataVersion: MAP_DATA_VERSION, panels: [] }),
     (err: unknown) => {
@@ -206,7 +228,7 @@ test('validateMapSchemaStrict rejects empty panels array', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects panel without id', () => {
+test('rejects panel without id', () => {
   assert.throws(
     () => validateMapSchemaStrict({
       title: 'No ID',
@@ -222,7 +244,7 @@ test('validateMapSchemaStrict rejects panel without id', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects feature without type', () => {
+test('rejects feature without type', () => {
   assert.throws(
     () => validateMapSchemaStrict({
       title: 'No Type',
@@ -238,7 +260,7 @@ test('validateMapSchemaStrict rejects feature without type', () => {
   )
 })
 
-test('validateMapSchemaStrict rejects feature without numeric x/y', () => {
+test('rejects feature without numeric x/y', () => {
   assert.throws(
     () => validateMapSchemaStrict({
       title: 'Bad XY',
@@ -255,105 +277,16 @@ test('validateMapSchemaStrict rejects feature without numeric x/y', () => {
 })
 
 // ════════════════════════════════════════════════════════════════
-// TEST: legacyMapReadAdapter converts V1 for display
-// ════════════════════════════════════════════════════════════════
-
-test('legacyMapReadAdapter passes through valid V2 unchanged', () => {
-  const result = legacyMapReadAdapter(validV2Spec)
-  assert.equal(result.dataVersion, MAP_DATA_VERSION)
-  assert.equal(result.panels?.length, 2)
-})
-
-test('legacyMapReadAdapter adds dataVersion to V2 spec missing it', () => {
-  const result = legacyMapReadAdapter(validV2SpecWithMissingDataVersion)
-  assert.equal(result.dataVersion, MAP_DATA_VERSION)
-  assert.equal(result.panels?.length, 1)
-})
-
-test('legacyMapReadAdapter converts V1 to V2 for display', () => {
-  const result = legacyMapReadAdapter(legacyV1Spec as Task1MapSpec)
-  assert.equal(result.dataVersion, MAP_DATA_VERSION)
-  assert.ok(result.panels && result.panels.length > 0)
-  // Should have before/after panels
-  assert.equal(result.panels.length, 2)
-  assert.equal(result.panels[0].title, '2005')
-  assert.equal(result.panels[1].title, '2025')
-  // Each panel should have features
-  assert.ok(result.panels[0].features.length > 0)
-  assert.ok(result.panels[1].features.length > 0)
-  // Features should have type, x, y (not legacy position)
-  for (const panel of result.panels) {
-    for (const feature of panel.features) {
-      assert.ok(typeof feature.type === 'string')
-      assert.ok(typeof feature.x === 'number')
-      assert.ok(typeof feature.y === 'number')
-      assert.ok(!('position' in feature))
-    }
-  }
-})
-
-test('legacyMapReadAdapter converts V1 with no dataVersion', () => {
-  const result = legacyMapReadAdapter(legacyV1SpecNoVersion as Task1MapSpec)
-  assert.equal(result.dataVersion, MAP_DATA_VERSION)
-  assert.ok(result.panels && result.panels.length > 0)
-})
-
-// ════════════════════════════════════════════════════════════════
-// TEST: isLegacyMapSpec detection
-// ════════════════════════════════════════════════════════════════
-
-test('isLegacyMapSpec returns false for V2 schema', () => {
-  assert.equal(isLegacyMapSpec(validV2Spec), false)
-})
-
-test('isLegacyMapSpec returns true for V1 with dataVersion=map-v1', () => {
-  assert.equal(isLegacyMapSpec(legacyV1Spec as Task1MapSpec), true)
-})
-
-test('isLegacyMapSpec returns true for V1 without dataVersion', () => {
-  assert.equal(isLegacyMapSpec(legacyV1SpecNoVersion as Task1MapSpec), true)
-})
-
-test('isLegacyMapSpec returns false for V2 missing dataVersion but with panels', () => {
-  assert.equal(isLegacyMapSpec(validV2SpecWithMissingDataVersion), false)
-})
-
-// ════════════════════════════════════════════════════════════════
-// TEST: Round-trip - V1 adapter output passes strict validation
-// ════════════════════════════════════════════════════════════════
-
-test('legacyMapReadAdapter output passes validateMapSchemaStrict', () => {
-  const adapted = legacyMapReadAdapter(legacyV1Spec as Task1MapSpec)
-  // The adapted output should be valid V2
-  assert.doesNotThrow(() => validateMapSchemaStrict(adapted))
-})
-
-test('legacyPointsToBlockMap output passes validateMapSchemaStrict', () => {
-  const converted = legacyPointsToBlockMap(legacyV1Spec as Task1MapSpec)
-  assert.doesNotThrow(() => validateMapSchemaStrict(converted))
-})
-
-// ════════════════════════════════════════════════════════════════
-// TEST: validateMapSchemaStrict is idempotent on valid V2
-// ════════════════════════════════════════════════════════════════
-
-test('validateMapSchemaStrict is idempotent on valid V2', () => {
-  const first = validateMapSchemaStrict(validV2Spec)
-  const second = validateMapSchemaStrict(first)
-  assert.deepEqual(first, second)
-})
-
-// ════════════════════════════════════════════════════════════════
-// TEST: validateMapSchemaStrict rejects all V1 patterns
+// TEST: All V1 patterns are rejected by strict validation
 // ════════════════════════════════════════════════════════════════
 
 test('V1 input is rejected by API (not converted)', () => {
-  // V1 schemas must never pass strict validation
   const v1Schemas = [
     legacyV1Spec,
     legacyV1SpecNoVersion,
     mixedSchemaSpec,
     featureWithLegacyPosition,
+    v2MissingDataVersion,
   ]
 
   for (const schema of v1Schemas) {
@@ -363,28 +296,37 @@ test('V1 input is rejected by API (not converted)', () => {
         assert.ok(err instanceof MapSchemaValidationError)
         return true
       },
-      `Expected rejection for: ${schema.title}`
+      `Expected rejection for: ${(schema as { title: string }).title}`
     )
   }
 })
 
-test('V2 input passes strict validation', () => {
-  // Only fully valid V2 specs pass strict validation
-  assert.doesNotThrow(
-    () => validateMapSchemaStrict(validV2Spec),
-    `Expected pass for: ${validV2Spec.title}`
-  )
+// ════════════════════════════════════════════════════════════════
+// TEST: No legacy conversion functions exist
+// ════════════════════════════════════════════════════════════════
+
+test('mapSchema module exports only validateMapSchemaStrict and MapSchemaValidationError', async () => {
+  const mod = await import('../lib/validators/mapSchema')
+  const exports = Object.keys(mod).sort()
+  assert.deepEqual(exports, ['MapSchemaValidationError', 'validateMapSchemaStrict'])
 })
 
-test('V2 without dataVersion is rejected by strict validation', () => {
-  // Specs without explicit dataVersion are rejected at write boundary
-  // They can still be read via legacyMapReadAdapter for display
-  assert.throws(
-    () => validateMapSchemaStrict(validV2SpecWithMissingDataVersion),
-    (err: unknown) => {
-      assert.ok(err instanceof MapSchemaValidationError)
-      assert.equal(err.code, 'INVALID_MAP_SCHEMA_VERSION')
-      return true
-    }
-  )
+test('legacyMapReadAdapter is removed', async () => {
+  const mod = await import('../lib/validators/mapSchema')
+  assert.equal('legacyMapReadAdapter' in mod, false, 'legacyMapReadAdapter must be removed')
+})
+
+test('ensureMapV2 alias is removed', async () => {
+  const mod = await import('../lib/validators/mapSchema')
+  assert.equal('ensureMapV2' in mod, false, 'ensureMapV2 alias must be removed')
+})
+
+test('legacyPointsToBlockMap is removed', async () => {
+  const mod = await import('../lib/validators/mapSchema')
+  assert.equal('legacyPointsToBlockMap' in mod, false, 'legacyPointsToBlockMap must be removed')
+})
+
+test('isLegacyMapSpec is removed', async () => {
+  const mod = await import('../lib/validators/mapSchema')
+  assert.equal('isLegacyMapSpec' in mod, false, 'isLegacyMapSpec must be removed')
 })

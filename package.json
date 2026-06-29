@@ -14,6 +14,8 @@
     "test": "node --test --experimental-strip-types --loader ./tests/alias-loader.mjs tests/*.test.ts",
     "test:license-e2e": "node scripts/verify-license-activation.mjs",
     "migration:check": "node scripts/check-admin-schema-migration.mjs",
+    "check:legacy-map": "node scripts/check-no-legacy-map.mjs",
+    "ci": "npm run check:legacy-map && npm run typecheck && npm run lint && npm test",
     "supabase:migrate": "supabase db push"
   },
   "dependencies": {
