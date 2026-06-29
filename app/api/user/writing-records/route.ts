@@ -8,7 +8,45 @@ import {
   writingRecordFromRow
 } from '@/lib/writing-record-persistence'
 import { parseStoredWritingRecord } from '@/lib/writing-records'
+import { validateMapSchemaStrict, MapSchemaValidationError } from '@/lib/validators/mapSchema'
 import { measureGradingStage } from '@/lib/grading-performance'
+
+/**
+ * Validate any mapSpec fields within a writing record at the API write boundary.
+ */
+function validateRecordMapSpecs(record: unknown): { ok: true } | { ok: false; message: string } {
+  if (!record || typeof record !== 'object') return { ok: true }
+  const r = record as Record<string, unknown>
+
+  // Check top-level mapSpec
+  if (r.mapSpec && typeof r.mapSpec === 'object') {
+    try {
+      validateMapSchemaStrict(r.mapSpec)
+    } catch (err) {
+      const code = err instanceof MapSchemaValidationError ? err.code : 'INVALID_MAP_SCHEMA'
+      return { ok: false, message: `Record contains invalid map schema: ${code}` }
+    }
+  }
+
+  // Check components.task1.mapSpec and components.task2.mapSpec
+  const components = r.components
+  if (components && typeof components === 'object') {
+    for (const key of ['task1', 'task2']) {
+      const comp = (components as Record<string, unknown>)[key]
+      if (!comp || typeof comp !== 'object') continue
+      const c = comp as Record<string, unknown>
+      if (!c.mapSpec || typeof c.mapSpec !== 'object') continue
+      try {
+        validateMapSchemaStrict(c.mapSpec)
+      } catch (err) {
+        const code = err instanceof MapSchemaValidationError ? err.code : 'INVALID_MAP_SCHEMA'
+        return { ok: false, message: `Record component ${key} contains invalid map schema: ${code}` }
+      }
+    }
+  }
+
+  return { ok: true }
+}
 
 const SaveRecordSchema = z.object({
   record: z.unknown()
@@ -51,6 +89,12 @@ export async function POST(request: Request) {
 
   const supabase = await createSupabaseServerClient()
   let prepared = prepareWritingRecordForServer(user.id, record)
+
+  // Validate mapSpec in record data at write boundary
+  const mapValidation = validateRecordMapSpecs(prepared.record)
+  if (!mapValidation.ok) {
+    return json({ success: false, code: 'INVALID_MAP_SCHEMA', message: mapValidation.message }, { status: 400 })
+  }
 
   if (prepared.record.requestId) {
     const { data: existing, error: lookupError } = await supabase

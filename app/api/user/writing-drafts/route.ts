@@ -9,7 +9,37 @@ import {
   type DraftDeleteQuota,
   type DraftRecord
 } from '@/lib/writing-drafts'
+import { validateMapSchemaStrict, MapSchemaValidationError } from '@/lib/validators/mapSchema'
 import type { WritingTaskType } from '@/lib/writing-records'
+
+/**
+ * Validate any mapSpec fields within draft data at the API write boundary.
+ * Rejects V1 schemas; only V2 is allowed to be persisted.
+ */
+function validateDraftMapSpecs(draft: unknown): { ok: true } | { ok: false; message: string } {
+  if (!draft || typeof draft !== 'object') return { ok: true }
+  const d = draft as Record<string, unknown>
+
+  // Check task, task1, task2 fields for mapSpec
+  for (const key of ['task', 'task1', 'task2']) {
+    const task = d[key]
+    if (!task || typeof task !== 'object') continue
+    const t = task as Record<string, unknown>
+    if (!t.mapSpec || typeof t.mapSpec !== 'object') continue
+
+    try {
+      validateMapSchemaStrict(t.mapSpec)
+    } catch (err) {
+      const code = err instanceof MapSchemaValidationError ? err.code : 'INVALID_MAP_SCHEMA'
+      return {
+        ok: false,
+        message: `Draft contains invalid map schema in ${key}: ${code} - ${err instanceof Error ? err.message : 'unknown'}`
+      }
+    }
+  }
+
+  return { ok: true }
+}
 
 const TaskTypeSchema = z.enum(['task1', 'task2', 'mock'])
 
@@ -149,6 +179,12 @@ export async function POST(request: Request) {
   const parsed = CreateDraftSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return draftError('DRAFT_CREATE_FAILED', 400)
 
+  // Validate mapSpec in draft data at write boundary
+  const mapValidation = validateDraftMapSpecs(parsed.data.draft)
+  if (!mapValidation.ok) {
+    return json({ success: false, code: 'INVALID_MAP_SCHEMA', message: mapValidation.message }, { status: 400 })
+  }
+
   const supabase = await createSupabaseServerClient()
   const { data, error } = await supabase.rpc('create_writing_draft', {
     p_id: parsed.data.id,
@@ -195,6 +231,12 @@ export async function PATCH(request: Request) {
 
   const parsed = UpdateDraftSchema.safeParse(body)
   if (!parsed.success) return draftError('DRAFT_UPDATE_FAILED', 400)
+
+  // Validate mapSpec in draft data at write boundary
+  const mapValidation = validateDraftMapSpecs(parsed.data.draft)
+  if (!mapValidation.ok) {
+    return json({ success: false, code: 'INVALID_MAP_SCHEMA', message: mapValidation.message }, { status: 400 })
+  }
 
   const { data, error } = await supabase.rpc('update_writing_draft', {
     p_id: parsed.data.id,

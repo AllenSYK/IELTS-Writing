@@ -6,6 +6,7 @@ import type {
   Task1ProcessSpec,
   Task1StandaloneChartSpec
 } from '@/lib/task1-chart-schema'
+import { validateMapSchemaStrict } from '@/lib/validators/mapSchema'
 
 export const UploadMaxBytes = 10 * 1024 * 1024
 export const UploadMaxPixels = 40_000_000
@@ -565,7 +566,12 @@ export function buildUploadedWritingQuestion(input: {
     imageAlt: '用户上传的 IELTS Task 1 原始题目图片',
     chartSpec: uploadedChartSpec(input.result),
     processSpec: uploadedProcessSpec(input.result),
-    mapSpec: uploadedMapSpec(input.result),
+    mapSpec: (() => {
+      const spec = uploadedMapSpec(input.result)
+      if (!spec) return undefined
+      // Strict V2-only validation at write boundary
+      return validateMapSchemaStrict(spec)
+    })(),
     structuredData: {
       source: 'user_upload',
       uploadedTaskId: input.uploadId,

@@ -11,6 +11,8 @@ import { MAP_DATA_VERSION } from '@/lib/task1-chart-schema'
  *   { id, title, features: [{ type, x, y, width?, height?, ... }] }
  *
  * This transformer creates a best-effort block layout from point positions.
+ *
+ * @deprecated Only for UI read adapter. Never use in API/DB write paths.
  */
 export function legacyPointsToBlockMap(spec: Task1MapSpec): Task1MapSpec {
   // Already v2 with panels
@@ -40,7 +42,7 @@ export function legacyPointsToBlockMap(spec: Task1MapSpec): Task1MapSpec {
     (f) => f.change !== 'removed'
   )
 
-  function convertFeature(f: NonNullable<typeof features>[number], index: number): MapFeatureV2 {
+  function convertFeature(f: NonNullable<typeof features>[number], _index: number): MapFeatureV2 {
     const label = (f.label || '').toLowerCase()
     const desc = (f.description || '').toLowerCase()
     const combined = `${label} ${desc}`
@@ -179,10 +181,117 @@ export function legacyPointsToBlockMap(spec: Task1MapSpec): Task1MapSpec {
 }
 
 /**
- * Ensure a map spec is in v2 format. Auto-converts legacy formats.
- * This is the main entry point for runtime schema normalization.
+ * Strict validation for MapSchema at write-time (API/DB boundaries).
+ *
+ * RULE: Only MapSchemaV2 is accepted. V1 and mixed schemas are REJECTED.
+ * This function NEVER converts or migrates - it only validates.
+ *
+ * @throws Error with code 'INVALID_MAP_SCHEMA_VERSION' if not V2
+ * @throws Error with code 'INVALID_MAP_SCHEMA' if structure is invalid
  */
-export function ensureMapV2(spec: Task1MapSpec): Task1MapSpec {
+export function validateMapSchemaStrict(spec: unknown): Task1MapSpec {
+  if (!spec || typeof spec !== 'object') {
+    throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Map spec must be an object')
+  }
+
+  const s = spec as Record<string, unknown>
+
+  // Must have dataVersion = 'map-v2'
+  if (s.dataVersion !== MAP_DATA_VERSION) {
+    throw new MapSchemaValidationError(
+      'INVALID_MAP_SCHEMA_VERSION',
+      `Map schema must be v2 (got: ${String(s.dataVersion ?? 'undefined')}). Legacy v1 format is not allowed.`
+    )
+  }
+
+  // Must have panels array
+  if (!Array.isArray(s.panels) || s.panels.length === 0) {
+    throw new MapSchemaValidationError(
+      'INVALID_MAP_SCHEMA',
+      'Map schema v2 requires non-empty panels[] array'
+    )
+  }
+
+  // Must NOT have legacy features with position
+  if (Array.isArray(s.features) && s.features.length > 0) {
+    const hasLegacyPosition = s.features.some(
+      (f: unknown) => f && typeof f === 'object' && 'position' in (f as Record<string, unknown>)
+    )
+    if (hasLegacyPosition) {
+      throw new MapSchemaValidationError(
+        'INVALID_MAP_SCHEMA_VERSION',
+        'Map schema must not contain legacy features[].position data'
+      )
+    }
+  }
+
+  // Validate each panel
+  for (const panel of s.panels) {
+    if (!panel || typeof panel !== 'object') {
+      throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Each panel must be an object')
+    }
+    const p = panel as Record<string, unknown>
+    if (typeof p.id !== 'string' || !p.id) {
+      throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Panel must have a string id')
+    }
+    if (typeof p.title !== 'string' || !p.title) {
+      throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Panel must have a string title')
+    }
+    if (!Array.isArray(p.features)) {
+      throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Panel must have a features[] array')
+    }
+
+    // Validate each feature in panel
+    for (const feature of p.features) {
+      if (!feature || typeof feature !== 'object') {
+        throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Each feature must be an object')
+      }
+      const f = feature as Record<string, unknown>
+      if (typeof f.type !== 'string' || !f.type) {
+        throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Feature must have a string type')
+      }
+      if (typeof f.x !== 'number' || typeof f.y !== 'number') {
+        throw new MapSchemaValidationError('INVALID_MAP_SCHEMA', 'Feature must have numeric x and y')
+      }
+      // Reject if feature has legacy position field
+      if ('position' in f) {
+        throw new MapSchemaValidationError(
+          'INVALID_MAP_SCHEMA_VERSION',
+          'Feature must not contain legacy position field'
+        )
+      }
+    }
+  }
+
+  // Return typed spec (we've validated it's V2)
+  return spec as Task1MapSpec
+}
+
+/**
+ * Custom error class for map schema validation failures.
+ * Provides a machine-readable code for API responses.
+ */
+export class MapSchemaValidationError extends Error {
+  code: string
+
+  constructor(code: string, message: string) {
+    super(message)
+    this.name = 'MapSchemaValidationError'
+    this.code = code
+  }
+}
+
+/**
+ * Legacy read adapter for UI rendering only.
+ *
+ * Converts any map spec (v1 or v2) to v2 format for display purposes.
+ * This is the ONLY place where v1->v2 conversion is allowed.
+ *
+ * NEVER use this in API or DB write paths - use validateMapSchemaStrict() instead.
+ *
+ * @deprecated Only for backward-compatible UI rendering of old stored data
+ */
+export function legacyMapReadAdapter(spec: Task1MapSpec): Task1MapSpec {
   // Already v2 with panels
   if (spec.dataVersion === MAP_DATA_VERSION && spec.panels && spec.panels.length > 0) {
     return spec
@@ -196,9 +305,12 @@ export function ensureMapV2(spec: Task1MapSpec): Task1MapSpec {
     }
   }
 
-  // Legacy format - convert
+  // Legacy format - convert for display only
   return legacyPointsToBlockMap(spec)
 }
+
+// Keep old export name as alias for backward compatibility during migration
+export const ensureMapV2 = legacyMapReadAdapter
 
 /**
  * Check if a map spec is legacy (v1) format
