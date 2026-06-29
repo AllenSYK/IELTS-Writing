@@ -246,6 +246,8 @@ function PlanContent({ plan, profile, quota, onRegenerate, generating, onSelectT
 
       {suggestions.length > 0 && <AICoaching suggestions={suggestions} />}
 
+      <WeeklyReviewSection />
+
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button
           className="ui-primary-button"
@@ -365,11 +367,21 @@ function TaskCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () => voi
         {task.status === 'pending' && writable && writeMode && (
           <Link
             className="ui-primary-button"
-            href={`/write/${writeMode}`}
+            href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}
             style={{ fontSize: 13, padding: '6px 12px' }}
             onClick={(e) => e.stopPropagation()}
           >
             开始任务
+          </Link>
+        )}
+        {task.status === 'in_progress' && writable && writeMode && (
+          <Link
+            className="ui-primary-button"
+            href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}
+            style={{ fontSize: 13, padding: '6px 12px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            继续任务
           </Link>
         )}
         {task.status === 'completed' && task.writingRecordId && (
@@ -630,9 +642,9 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
                 </button>
               </>
             )}
-            {task.status === 'pending' && writable && writeMode && (
-              <Link className="ui-primary-button" href={`/write/${writeMode}`} onClick={onClose}>
-                开始任务
+            {(task.status === 'pending' || task.status === 'in_progress') && writable && writeMode && (
+              <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} onClick={onClose}>
+                {task.status === 'pending' ? '开始任务' : '继续任务'}
               </Link>
             )}
             {task.status === 'completed' && task.writingRecordId && (
@@ -836,6 +848,70 @@ function getAlternatives(taskType: StudyPlanTaskType) {
     { newTaskType: 'error_review', newTitle: '错误复盘', newDescription: '回顾最近作文中的重复错误。' },
     { newTaskType: 'review', newTitle: '复习回顾', newDescription: '复习之前的学习内容。' }
   ]
+}
+
+type WeeklyReviewData = {
+  weekStart: string
+  weekEnd: string
+  completionRate: number
+  totalTasks: number
+  completedTasks: number
+  skippedTasks: number
+  averageBand: number | null
+  task1Band: number | null
+  task2Band: number | null
+  summary: string
+}
+
+function WeeklyReviewSection() {
+  const { data, isLoading } = useSWR<{ review: WeeklyReviewData | null }>(
+    'study-plan-review',
+    async () => {
+      const res = await fetch('/api/study-plan/review')
+      if (!res.ok) return { review: null }
+      return res.json()
+    },
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  )
+
+  if (isLoading || !data?.review) return null
+
+  const review = data.review
+
+  return (
+    <GlassPanel className="ui-hover-glow">
+      <h2 className="ui-title-md" style={{ marginBottom: 12 }}>本周复盘</h2>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
+        <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
+          <span className="ui-label">完成率</span>
+          <strong style={{ display: 'block', fontSize: 18 }}>{review.completionRate}%</strong>
+        </div>
+        <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
+          <span className="ui-label">完成任务</span>
+          <strong style={{ display: 'block', fontSize: 18 }}>{review.completedTasks}/{review.totalTasks}</strong>
+        </div>
+        {review.averageBand !== null && (
+          <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
+            <span className="ui-label">平均分</span>
+            <strong style={{ display: 'block', fontSize: 18 }}>{review.averageBand.toFixed(1)}</strong>
+          </div>
+        )}
+        {review.task1Band !== null && (
+          <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
+            <span className="ui-label">Task 1</span>
+            <strong style={{ display: 'block', fontSize: 18 }}>{review.task1Band.toFixed(1)}</strong>
+          </div>
+        )}
+        {review.task2Band !== null && (
+          <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
+            <span className="ui-label">Task 2</span>
+            <strong style={{ display: 'block', fontSize: 18 }}>{review.task2Band.toFixed(1)}</strong>
+          </div>
+        )}
+      </div>
+      <p className="ui-body-md">{review.summary}</p>
+    </GlassPanel>
+  )
 }
 
 function CreatePlanWizard({ profile, diagnosis, generating, onGenerate, onClose }: {

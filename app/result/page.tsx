@@ -394,11 +394,18 @@ export default function ResultPage() {
             <h1 className="ui-title-display">{record.title}</h1>
             <p className="ui-body-md">
               Submitted on {formatDate(record.submittedAt)} • {record.wordCount} Words • {TaskTypeLabels[record.taskType]}
+              {Boolean((record as Record<string, unknown>).studyPlanTaskId) && ' • 来源：学习计划'}
             </p>
           </div>
         </header>
 
         <div className="result-actions-row">
+          {Boolean((record as Record<string, unknown>).studyPlanTaskId) && (
+            <Link className="ui-primary-button" href="/study-plan">
+              <MaterialIcon name="school" size={18} />
+              返回学习计划
+            </Link>
+          )}
           <Link className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="基于原题重写一篇新作文">
             <MaterialIcon name="edit_note" size={18} />
             基于原题重写

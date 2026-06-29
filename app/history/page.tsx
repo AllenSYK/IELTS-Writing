@@ -64,6 +64,11 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecordList
           {record.processingStatus && record.processingStatus !== 'complete' ? (
             <span className="task-badge is-custom">{record.processingStatus === 'failed' ? '处理失败' : '处理中'}</span>
           ) : null}
+          {record.studyPlanTaskId ? (
+            <span className="task-badge" style={{ background: 'rgba(0, 88, 188, 0.1)', color: '#0058bc', borderColor: 'rgba(0, 88, 188, 0.2)' }}>
+              <MaterialIcon name="school" size={12} /> 学习计划
+            </span>
+          ) : null}
           <span className="ui-label history-date">
             <MaterialIcon name="calendar_today" size={16} />
             {formatDate(record.submittedAt)}

@@ -68,7 +68,7 @@ export function DashboardLearningTasks() {
               {writable && writeMode && (
                 <Link
                   className="ui-primary-button"
-                  href={`/write/${writeMode}`}
+                  href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}
                   style={{ fontSize: 12, padding: '4px 10px' }}
                 >
                   开始

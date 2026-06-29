@@ -102,7 +102,8 @@ export async function GET() {
       'processing_status',
       'request_id',
       'evaluation',
-      'evaluation->>summary'
+      'evaluation->>summary',
+      "record_data->>'studyPlanTaskId'"
     ].join(', '))
     .eq('user_id', user.id)
     .order('submitted_at', { ascending: false })
@@ -129,7 +130,8 @@ export async function GET() {
       trScore: extractCriterionFromEvaluation(evaluation, 'taskResponse', 'task_response'),
       ccScore: extractCriterionFromEvaluation(evaluation, 'coherenceCohesion', 'coherence_cohesion'),
       lrScore: extractCriterionFromEvaluation(evaluation, 'lexicalResource', 'lexical_resource'),
-      graScore: extractCriterionFromEvaluation(evaluation, 'grammaticalRangeAccuracy', 'grammatical_range_accuracy')
+      graScore: extractCriterionFromEvaluation(evaluation, 'grammaticalRangeAccuracy', 'grammatical_range_accuracy'),
+      studyPlanTaskId: (r.studyPlanTaskId as string) || null
     }
   })
 
