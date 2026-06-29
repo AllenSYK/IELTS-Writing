@@ -2,9 +2,9 @@ import { z } from 'zod'
 import {
   AiConfigurationError,
   AiProviderError,
-  apiStatusForAiError,
-  generateWritingPromptWithAi
-} from '@/lib/ai'
+  apiStatusForAiError
+} from '@/lib/ai-provider'
+import { generateWritingPromptWithAi } from '@/lib/writing-prompt-generation'
 import { recordAiUsage } from '@/lib/ai-usage'
 import { apiError, json } from '@/lib/http'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'

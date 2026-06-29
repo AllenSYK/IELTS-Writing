@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { sendWelcomeEmail } from '@/lib/email/send-register-code'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
 import { hashRegistrationToken, isValidEmail, normalizeEmail } from '@/lib/auth/email-verification'
 import {
