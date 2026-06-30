@@ -44,7 +44,7 @@ export async function PATCH(
 
     const { data: existingTask } = await service
       .from('study_plan_tasks')
-      .select('id, writing_record_id, status')
+      .select('id, writing_record_id, status, task_type')
       .eq('id', id)
       .eq('user_id', userId)
       .maybeSingle()
@@ -83,6 +83,7 @@ export async function PATCH(
     }
 
     updateAbilityProfile(service, userId).catch(() => {})
+    awardTaskPoints(service, userId, id, (existingTask.task_type as string) ?? 'review').catch(() => {})
 
     return json({ success: true, result: data })
   }
@@ -102,6 +103,17 @@ export async function PATCH(
 
   if (error) return json({ success: false, message: error.message }, { status: 500 })
   return json({ success: true })
+}
+
+async function awardTaskPoints(service: ReturnType<typeof createSupabaseServiceRoleClient>, userId: string, taskId: string, taskType: string) {
+  try {
+    await service.rpc('award_adjustment_points', {
+      p_user_id: userId,
+      p_task_id: taskId,
+      p_task_type: taskType,
+      p_idempotency_key: `task_complete_${taskId}`
+    })
+  } catch { /* best-effort */ }
 }
 
 async function updateAbilityProfile(service: ReturnType<typeof createSupabaseServiceRoleClient>, userId: string) {

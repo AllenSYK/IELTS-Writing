@@ -36,6 +36,24 @@ type PlanData = {
   quota: StudyPlanGenerationQuota
 }
 
+type GenerationJob = {
+  id: string
+  status: string
+  progress: number
+  currentStep: string | null
+  resultPlanId: string | null
+  errorMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type AdjustmentPoints = {
+  success: boolean
+  balance: number
+  lifetimeEarned: number
+  lifetimeSpent: number
+}
+
 class ApiResponseError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -66,34 +84,55 @@ export default function StudyPlanPage() {
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
-  const [generating, setGenerating] = useState(false)
+  const { data: jobData, mutate: mutateJob } = useSWR<{ success: boolean; job: GenerationJob | null }>(
+    userId ? 'study-plan-job' : null,
+    async () => {
+      const res = await fetch('/api/study-plan/generation-jobs/current')
+      return res.json()
+    },
+    { refreshInterval: 3000, revalidateOnFocus: true }
+  )
+  const { data: pointsData } = useSWR<AdjustmentPoints>(
+    userId ? 'study-plan-points' : null,
+    async () => {
+      const res = await fetch('/api/study-plan/adjustment-points')
+      return res.json()
+    },
+    { revalidateOnFocus: false, dedupingInterval: 30000 }
+  )
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
 
+  const activeJob = jobData?.job ?? null
+  const isJobActive = activeJob && ['queued', 'analyzing_history', 'building_profile', 'generating_tasks', 'saving'].includes(activeJob.status)
+  const adjustmentBalance = pointsData?.balance ?? 0
+
   const handleGenerate = useCallback(async (formData?: Record<string, unknown>) => {
-    if (generating) return
-    setGenerating(true)
     try {
-      const res = await fetch('/api/study-plan/generate', {
+      const res = await fetch('/api/study-plan/generation-jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData ?? {})
       })
-      const json = await res.json() as { success?: boolean; code?: string; message?: string }
-      if (!res.ok || !json.success) {
-        pushToast({ kind: 'error', title: '规划失败', message: json.message || '请稍后重试。' })
+      const json = await res.json() as { success?: boolean; jobId?: string; status?: string; message?: string }
+      if (!res.ok && res.status !== 202 && res.status !== 200) {
+        pushToast({ kind: 'error', title: '创建失败', message: json.message || '请稍后重试' })
         return
       }
-      pushToast({ kind: 'success', title: '学习规划已生成' })
       setShowCreate(false)
-      void mutate()
+      void mutateJob()
+      pushToast({ kind: 'success', title: '正在后台生成学习计划', message: '你可以离开此页面，完成后会自动通知。' })
     } catch {
-      pushToast({ kind: 'error', title: '规划失败', message: '请稍后重试。' })
-    } finally {
-      setGenerating(false)
+      pushToast({ kind: 'error', title: '创建失败', message: '请稍后重试' })
     }
-  }, [generating, pushToast, mutate])
+  }, [pushToast, mutateJob])
+
+  const handleJobComplete = useCallback(() => {
+    void mutate()
+    void mutateJob()
+    pushToast({ kind: 'success', title: '学习计划已生成', message: '点击查看详情。' })
+  }, [mutate, mutateJob, pushToast])
 
   if (!userId || isLoading) return <PageSkeleton variant="chart" />
 
@@ -123,6 +162,19 @@ export default function StudyPlanPage() {
   const profile = data?.profile ?? null
   const quota = data?.quota
 
+  if (isJobActive && !plan) {
+    return (
+      <main className="ui-page" data-main-content tabIndex={-1}>
+        <section className="analytics-main" style={{ paddingTop: 40 }}>
+          <header className="page-section-header">
+            <h1 className="ui-title-display">学习规划</h1>
+          </header>
+          <GenerationProgressCard job={activeJob} onComplete={handleJobComplete} onCancel={() => void mutateJob()} />
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="analytics-main" style={{ paddingTop: 40 }}>
@@ -131,36 +183,59 @@ export default function StudyPlanPage() {
             <h1 className="ui-title-display">雅思写作学习规划</h1>
             <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标和真实写作表现，动态调整每日任务。</p>
           </div>
-          {plan && (
-            <button className="ui-secondary-button" type="button" onClick={() => setShowSettings(true)}>
-              <MaterialIcon name="tune" size={18} />
-              调整计划
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {adjustmentBalance > 0 && (
+              <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <MaterialIcon name="stars" size={14} />
+                调整点：{adjustmentBalance}
+              </span>
+            )}
+            {plan && (
+              <button className="ui-secondary-button" type="button" onClick={() => setShowSettings(true)}>
+                <MaterialIcon name="tune" size={18} />
+                调整计划
+              </button>
+            )}
+          </div>
         </header>
 
-        {!plan ? (
+        {isJobActive && plan && (
+          <GenerationProgressCard job={activeJob} onComplete={handleJobComplete} onCancel={() => void mutateJob()} />
+        )}
+
+        {activeJob?.status === 'failed' && (
+          <GlassPanel style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <MaterialIcon name="error" size={20} />
+            <div style={{ flex: 1 }}>
+              <p className="ui-body-md">上次计划生成失败</p>
+              {activeJob.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
+            </div>
+            <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={() => handleGenerate()}>
+              重试
+            </button>
+          </GlassPanel>
+        )}
+
+        {!plan && !isJobActive ? (
           <EmptyPlan
             quota={quota}
-            generating={generating}
             onGenerate={() => setShowCreate(true)}
           />
-        ) : (
+        ) : plan ? (
           <PlanContent
             plan={plan}
             profile={profile}
             quota={quota}
             onRegenerate={() => handleGenerate()}
-            generating={generating}
             onSelectTask={setSelectedTask}
+            adjustmentBalance={adjustmentBalance}
           />
-        )}
+        ) : null}
 
         {showCreate && (
           <CreatePlanWizard
             profile={profile}
             diagnosis={plan?.diagnosis}
-            generating={generating}
             onGenerate={handleGenerate}
             onClose={() => setShowCreate(false)}
           />
@@ -187,9 +262,8 @@ export default function StudyPlanPage() {
   )
 }
 
-function EmptyPlan({ quota, generating, onGenerate }: {
+function EmptyPlan({ quota, onGenerate }: {
   quota?: StudyPlanGenerationQuota
-  generating: boolean
   onGenerate: () => void
 }) {
   return (
@@ -202,17 +276,60 @@ function EmptyPlan({ quota, generating, onGenerate }: {
       <button
         className="ui-primary-button"
         type="button"
-        disabled={generating}
         onClick={onGenerate}
         style={{ marginTop: 16 }}
       >
-        {generating ? '正在分析…' : '创建学习计划'}
+        创建学习计划
       </button>
       {quota && quota.remainingCount <= 0 && (
         <p className="ui-label" style={{ marginTop: 8, color: 'var(--error)' }}>
           本月重新规划次数已用完，下个月将自动恢复。
         </p>
       )}
+    </GlassPanel>
+  )
+}
+
+function GenerationProgressCard({ job, onComplete, onCancel }: {
+  job: GenerationJob
+  onComplete: () => void
+  onCancel: () => void
+}) {
+  const isComplete = job.status === 'completed'
+  const isFailed = job.status === 'failed'
+
+  if (isComplete) {
+    setTimeout(onComplete, 1500)
+  }
+
+  return (
+    <GlassPanel style={{ padding: 20, background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <MaterialIcon name={isComplete ? 'check_circle' : isFailed ? 'error' : 'hourglass_top'} size={24} />
+        <div style={{ flex: 1 }}>
+          <h2 className="ui-title-md">{isComplete ? '学习计划已生成' : isFailed ? '生成失败' : '正在生成你的雅思写作计划'}</h2>
+          <p className="ui-body-md">{isComplete ? '计划已准备就绪' : isFailed ? (job.errorMessage || '请稍后重试') : (job.currentStep || '正在准备...')}</p>
+        </div>
+        {!isComplete && !isFailed && (
+          <button className="ui-secondary-button" type="button" onClick={onCancel} style={{ fontSize: 13, padding: '6px 12px' }}>
+            取消
+          </button>
+        )}
+      </div>
+      <div style={{ height: 8, borderRadius: 4, background: 'var(--surface-container-low)', overflow: 'hidden' }}>
+        <div
+          style={{
+            height: '100%',
+            borderRadius: 4,
+            background: isFailed ? 'var(--error)' : 'var(--primary)',
+            transition: 'width 0.5s ease',
+            width: `${job.progress}%`
+          }}
+        />
+      </div>
+      <p className="ui-label" style={{ marginTop: 8 }}>
+        {isComplete ? '完成' : isFailed ? '失败' : `进度：${job.progress}%`}
+      </p>
     </GlassPanel>
   )
 }
@@ -280,13 +397,13 @@ function ExamSprintBanner({ examDays, profile, tasks, today }: {
   )
 }
 
-function PlanContent({ plan, profile, quota, onRegenerate, generating, onSelectTask }: {
+function PlanContent({ plan, profile, quota, onRegenerate, onSelectTask, adjustmentBalance }: {
   plan: StudyPlan
   profile: StudyPlanProfile | null
   quota?: StudyPlanGenerationQuota
   onRegenerate: () => void
-  generating: boolean
   onSelectTask: (task: StudyPlanTask) => void
+  adjustmentBalance: number
 }) {
   const today = getDateKeyInTimeZone()
   const todayTasks = plan.tasks?.filter((t) => t.scheduledDate === today && t.status !== 'rescheduled') ?? []
@@ -325,15 +442,21 @@ function PlanContent({ plan, profile, quota, onRegenerate, generating, onSelectT
 
       <WeeklyReviewSection />
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <button
           className="ui-primary-button"
           type="button"
-          disabled={generating || (quota?.remainingCount ?? 0) <= 0}
+          disabled={(quota?.remainingCount ?? 0) <= 0}
           onClick={onRegenerate}
         >
-          {generating ? '正在生成…' : '重新规划'}
+          重新规划
         </button>
+        {adjustmentBalance > 0 && (
+          <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <MaterialIcon name="stars" size={14} />
+            调整点：{adjustmentBalance}
+          </span>
+        )}
         {quota && (
           <span className="ui-label" style={{ alignSelf: 'center' }}>
             本月已规划 {quota.usedCount} / {quota.limit} 次
@@ -991,10 +1114,9 @@ function WeeklyReviewSection() {
   )
 }
 
-function CreatePlanWizard({ profile, diagnosis, generating, onGenerate, onClose }: {
+function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
   profile: StudyPlanProfile | null
   diagnosis?: StudyPlanDiagnosis
-  generating: boolean
   onGenerate: (data: Record<string, unknown>) => void
   onClose: () => void
 }) {
@@ -1024,10 +1146,9 @@ function CreatePlanWizard({ profile, diagnosis, generating, onGenerate, onClose 
           <button
             className="ui-primary-button"
             type="button"
-            disabled={generating}
             onClick={() => onGenerate(form)}
           >
-            {generating ? '正在生成…' : '生成我的学习计划'}
+            后台生成学习计划
           </button>
         </div>
       }
