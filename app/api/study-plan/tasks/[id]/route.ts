@@ -68,7 +68,16 @@ export async function PATCH(
     if (error) {
       const msg = error.message || ''
       if (msg.includes('STUDY_PLAN_TASK_NOT_FOUND')) {
-        return json({ success: false, message: 'Task not found or invalid state' }, { status: 409 })
+        return json({ success: false, message: 'Task not found' }, { status: 404 })
+      }
+      if (msg.includes('STUDY_PLAN_TASK_ALREADY_LINKED')) {
+        return json({ success: false, message: 'Task already completed with a different record' }, { status: 409 })
+      }
+      if (msg.includes('STUDY_PLAN_TASK_INVALID_STATE')) {
+        return json({ success: false, message: 'Task cannot be completed in current state' }, { status: 409 })
+      }
+      if (msg.includes('STUDY_PLAN_ACCESS_DENIED')) {
+        return json({ success: false, message: 'Access denied' }, { status: 403 })
       }
       return json({ success: false, message: error.message }, { status: 500 })
     }
