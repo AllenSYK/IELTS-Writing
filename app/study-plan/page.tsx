@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
-import { useToast, ConfirmDialog } from '@/components/interaction-system'
+import { useToast } from '@/components/interaction-system'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
@@ -15,15 +15,12 @@ import type {
   StudyPlanGenerationQuota,
   StudyPlanTask,
   StudyPlanTaskType,
-  StudyPlanDiagnosis,
-  AICoachingSuggestion
+  StudyPlanDiagnosis
 } from '@/lib/study-plan-types'
 import {
   StudyPlanTaskTypeLabels,
   StudyPlanTaskStatusLabels,
   PlanPhaseLabels,
-  ErrorTagLabels,
-  SkipReasonLabels,
   ShortCriterionLabels,
   isWritableTaskType,
   taskTypeToWriteMode
@@ -53,6 +50,8 @@ type AdjustmentPoints = {
   lifetimeEarned: number
   lifetimeSpent: number
 }
+
+type PageState = 'loading' | 'empty' | 'generating' | 'loading_plan' | 'ready' | 'failed'
 
 class ApiResponseError extends Error {
   status: number
@@ -84,14 +83,26 @@ export default function StudyPlanPage() {
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
-  const { data: jobData, mutate: mutateJob } = useSWR<{ success: boolean; job: GenerationJob | null }>(
-    userId ? 'study-plan-job' : null,
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [jobPolling, setJobPolling] = useState(false)
+  const [pageState, setPageState] = useState<PageState>('loading')
+  const [showCreate, setShowCreate] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+
+  const { data: jobData } = useSWR<{ success: boolean; job: GenerationJob | null }>(
+    jobPolling && jobId ? `study-plan-job-${jobId}` : null,
     async () => {
-      const res = await fetch('/api/study-plan/generation-jobs/current')
+      const res = await fetch(`/api/study-plan/generation-jobs/${jobId}`)
       return res.json()
     },
-    { refreshInterval: 3000, revalidateOnFocus: true }
+    { refreshInterval: 2000, revalidateOnFocus: false }
   )
+
   const { data: pointsData } = useSWR<AdjustmentPoints>(
     userId ? 'study-plan-points' : null,
     async () => {
@@ -100,13 +111,35 @@ export default function StudyPlanPage() {
     },
     { revalidateOnFocus: false, dedupingInterval: 30000 }
   )
-  const [showCreate, setShowCreate] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
 
   const activeJob = jobData?.job ?? null
-  const isJobActive = activeJob && ['queued', 'analyzing_history', 'building_profile', 'generating_tasks', 'saving'].includes(activeJob.status)
   const adjustmentBalance = pointsData?.balance ?? 0
+  const plan = data?.plan ?? null
+  const profile = data?.profile ?? null
+  const quota = data?.quota
+
+  const resolvedState: PageState = useMemo(() => {
+    if (isLoading) return 'loading'
+    if (error) return 'failed'
+    if (jobPolling && activeJob) {
+      if (activeJob.status === 'completed') return 'loading_plan'
+      if (activeJob.status === 'failed') return 'failed'
+      return 'generating'
+    }
+    if (plan) return 'ready'
+    return 'empty'
+  }, [isLoading, error, plan, jobPolling, activeJob])
+
+  const prevResolvedRef = useRef(resolvedState)
+  useEffect(() => {
+    if (resolvedState === 'loading_plan' && prevResolvedRef.current !== 'loading_plan') {
+      setJobPolling(false)
+      mutate().then(() => {
+        pushToast({ kind: 'success', title: '学习计划已生成' })
+      }).catch(() => {})
+    }
+    prevResolvedRef.current = resolvedState
+  }, [resolvedState, mutate, pushToast])
 
   const handleGenerate = useCallback(async (formData?: Record<string, unknown>) => {
     try {
@@ -120,36 +153,46 @@ export default function StudyPlanPage() {
         pushToast({ kind: 'error', title: '创建失败', message: json.message || '请稍后重试' })
         return
       }
+      if (json.jobId) {
+        setJobId(json.jobId)
+        setJobPolling(true)
+        setPageState('generating')
+      }
       setShowCreate(false)
-      void mutateJob()
       pushToast({ kind: 'success', title: '正在后台生成学习计划', message: '你可以离开此页面，完成后会自动通知。' })
     } catch {
       pushToast({ kind: 'error', title: '创建失败', message: '请稍后重试' })
     }
-  }, [pushToast, mutateJob])
+  }, [pushToast])
 
-  const handleJobComplete = useCallback(() => {
-    void mutate()
-    void mutateJob()
-    pushToast({ kind: 'success', title: '学习计划已生成', message: '点击查看详情。' })
-  }, [mutate, mutateJob, pushToast])
+  const handleRetry = useCallback(async () => {
+    if (!activeJob?.id) return
+    try {
+      await fetch(`/api/study-plan/generation-jobs/${activeJob.id}/retry`, { method: 'POST' })
+      setJobId(activeJob.id)
+      setJobPolling(true)
+      setPageState('generating')
+    } catch {
+      pushToast({ kind: 'error', title: '重试失败' })
+    }
+  }, [activeJob, pushToast])
 
-  if (!userId || isLoading) return <PageSkeleton variant="chart" />
+  if (!userId) return <PageSkeleton variant="chart" />
 
-  if (error) {
+  if (resolvedState === 'loading' && !plan) return <PageSkeleton variant="chart" />
+
+  if (resolvedState === 'failed' && !plan && !jobPolling) {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
-        <section className="analytics-main" style={{ paddingTop: 40 }}>
-          <header className="page-section-header">
-            <h1 className="ui-title-display">学习规划</h1>
-          </header>
-          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+        <section className="study-plan-page">
+          <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
+          <GlassPanel style={styles.emptyCard}>
             <MaterialIcon name="error" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>加载失败</h2>
             <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
-              {error.status === 401 ? '请重新登录后再试。' : '学习规划加载失败，请稍后重试。'}
+              {error?.status === 401 ? '请重新登录后再试。' : '学习规划加载失败，请稍后重试。'}
             </p>
-            <button className="ui-primary-button" type="button" style={{ marginTop: 16 }} onClick={() => void mutate()}>
+            <button className="ui-primary-button" type="button" style={{ marginTop: 16 }} onClick={() => { void mutate() }}>
               重新加载
             </button>
           </GlassPanel>
@@ -158,18 +201,47 @@ export default function StudyPlanPage() {
     )
   }
 
-  const plan = data?.plan ?? null
-  const profile = data?.profile ?? null
-  const quota = data?.quota
-
-  if (isJobActive && !plan) {
+  if (resolvedState === 'generating' || resolvedState === 'loading_plan') {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
-        <section className="analytics-main" style={{ paddingTop: 40 }}>
-          <header className="page-section-header">
-            <h1 className="ui-title-display">学习规划</h1>
-          </header>
-          <GenerationProgressCard job={activeJob} onComplete={handleJobComplete} onCancel={() => void mutateJob()} />
+        <section className="study-plan-page">
+          <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
+          <GenerationProgressCard
+            job={activeJob}
+            isPlanLoading={resolvedState === 'loading_plan'}
+            onCancel={() => setJobPolling(false)}
+          />
+        </section>
+      </main>
+    )
+  }
+
+  if (resolvedState === 'empty' || !plan) {
+    return (
+      <main className="ui-page" data-main-content tabIndex={-1}>
+        <section className="study-plan-page">
+          <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
+          {activeJob?.status === 'failed' && (
+            <GlassPanel style={styles.failedBanner}>
+              <MaterialIcon name="error" size={20} />
+              <div style={{ flex: 1 }}>
+                <p className="ui-body-md">上次计划生成失败</p>
+                {activeJob.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
+              </div>
+              <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={handleRetry}>
+                重试
+              </button>
+            </GlassPanel>
+          )}
+          <EmptyPlan onGenerate={() => setShowCreate(true)} />
+          {showCreate && (
+            <CreatePlanWizard
+              profile={profile}
+              diagnosis={plan?.diagnosis}
+              onGenerate={handleGenerate}
+              onClose={() => setShowCreate(false)}
+            />
+          )}
         </section>
       </main>
     )
@@ -177,74 +249,50 @@ export default function StudyPlanPage() {
 
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
-      <section className="analytics-main" style={{ paddingTop: 40 }}>
-        <header className="page-section-header">
-          <div>
-            <h1 className="ui-title-display">雅思写作学习规划</h1>
-            <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标和真实写作表现，动态调整每日任务。</p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <MaterialIcon name="stars" size={14} />
-              调整点：{adjustmentBalance}
-            </span>
-            {plan && (
-              <button className="ui-secondary-button" type="button" onClick={() => setShowSettings(true)}>
-                <MaterialIcon name="tune" size={18} />
-                调整计划
-              </button>
-            )}
-          </div>
-        </header>
-
-        {isJobActive && plan && (
-          <GenerationProgressCard job={activeJob} onComplete={handleJobComplete} onCancel={() => void mutateJob()} />
-        )}
+      <section className="study-plan-page">
+        <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
 
         {activeJob?.status === 'failed' && (
-          <GlassPanel style={{ padding: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <GlassPanel style={styles.failedBanner}>
             <MaterialIcon name="error" size={20} />
             <div style={{ flex: 1 }}>
               <p className="ui-body-md">上次计划生成失败</p>
               {activeJob.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
             </div>
-            <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={() => handleGenerate()}>
+            <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={handleRetry}>
               重试
             </button>
           </GlassPanel>
         )}
 
-        {!plan && !isJobActive ? (
-          <EmptyPlan
-            quota={quota}
-            onGenerate={() => setShowCreate(true)}
-          />
-        ) : plan ? (
-          <PlanContent
-            plan={plan}
-            profile={profile}
-            quota={quota}
-            onRegenerate={() => handleGenerate()}
-            onSelectTask={setSelectedTask}
-            adjustmentBalance={adjustmentBalance}
-          />
-        ) : null}
+        <PlanOverview plan={plan} profile={profile} />
 
-        {showCreate && (
-          <CreatePlanWizard
-            profile={profile}
-            diagnosis={plan?.diagnosis}
-            onGenerate={handleGenerate}
-            onClose={() => setShowCreate(false)}
-          />
-        )}
+        <MonthCalendar
+          plan={plan}
+          profile={profile}
+          currentMonth={calendarMonth}
+          onMonthChange={setCalendarMonth}
+          onSelectTask={setSelectedTask}
+        />
+
+        <TodayTasks
+          tasks={plan.tasks?.filter((t) => t.scheduledDate === getDateKeyInTimeZone() && t.status !== 'rescheduled') ?? []}
+          onSelectTask={setSelectedTask}
+        />
+
+        <BottomActions
+          quota={quota}
+          adjustmentBalance={adjustmentBalance}
+          onRegenerate={() => handleGenerate()}
+          onSettings={() => setShowSettings(true)}
+        />
 
         {showSettings && profile && (
           <SettingsDialog
             profile={profile}
             plan={plan}
             onClose={() => setShowSettings(false)}
-            onMutate={() => void mutate()}
+            onMutate={() => { void mutate() }}
           />
         )}
 
@@ -252,7 +300,7 @@ export default function StudyPlanPage() {
           <TaskDetailDialog
             task={selectedTask}
             onClose={() => setSelectedTask(null)}
-            onMutate={() => void mutate()}
+            onMutate={() => { void mutate() }}
           />
         )}
       </section>
@@ -260,405 +308,387 @@ export default function StudyPlanPage() {
   )
 }
 
-function EmptyPlan({ quota, onGenerate }: {
-  quota?: StudyPlanGenerationQuota
-  onGenerate: () => void
-}) {
+function StudyPlanHeader({ adjustmentBalance }: { adjustmentBalance: number }) {
   return (
-    <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
-      <MaterialIcon name="school" size={48} />
-      <h2 className="ui-title-headline" style={{ marginTop: 16 }}>创建你的雅思写作学习计划</h2>
-      <p className="ui-body-md" style={{ maxWidth: 440, margin: '8px auto' }}>
-        根据你的目标分数、考试日期和真实写作表现，自动生成每日学习任务并动态调整。
-      </p>
-      <button
-        className="ui-primary-button"
-        type="button"
-        onClick={onGenerate}
-        style={{ marginTop: 16 }}
-      >
-        创建学习计划
-      </button>
-      {quota && quota.remainingCount <= 0 && (
-        <p className="ui-label" style={{ marginTop: 8, color: 'var(--error)' }}>
-          本月重新规划次数已用完，下个月将自动恢复。
-        </p>
-      )}
-    </GlassPanel>
-  )
-}
-
-function GenerationProgressCard({ job, onComplete, onCancel }: {
-  job: GenerationJob
-  onComplete: () => void
-  onCancel: () => void
-}) {
-  const isComplete = job.status === 'completed'
-  const isFailed = job.status === 'failed'
-
-  if (isComplete) {
-    setTimeout(onComplete, 1500)
-  }
-
-  return (
-    <GlassPanel style={{ padding: 20, background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-        <MaterialIcon name={isComplete ? 'check_circle' : isFailed ? 'error' : 'hourglass_top'} size={24} />
-        <div style={{ flex: 1 }}>
-          <h2 className="ui-title-md">{isComplete ? '学习计划已生成' : isFailed ? '生成失败' : '正在生成你的雅思写作计划'}</h2>
-          <p className="ui-body-md">{isComplete ? '计划已准备就绪' : isFailed ? (job.errorMessage || '请稍后重试') : (job.currentStep || '正在准备...')}</p>
-        </div>
-        {!isComplete && !isFailed && (
-          <button className="ui-secondary-button" type="button" onClick={onCancel} style={{ fontSize: 13, padding: '6px 12px' }}>
-            取消
-          </button>
-        )}
+    <header className="page-section-header">
+      <div>
+        <h1 className="ui-title-display">雅思写作学习规划</h1>
+        <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标、剩余时间和真实写作表现，动态安排整个备考周期。</p>
       </div>
-      <div style={{ height: 8, borderRadius: 4, background: 'var(--surface-container-low)', overflow: 'hidden' }}>
-        <div
-          style={{
-            height: '100%',
-            borderRadius: 4,
-            background: isFailed ? 'var(--error)' : 'var(--primary)',
-            transition: 'width 0.5s ease',
-            width: `${job.progress}%`
-          }}
-        />
-      </div>
-      <p className="ui-label" style={{ marginTop: 8 }}>
-        {isComplete ? '完成' : isFailed ? '失败' : `进度：${job.progress}%`}
-      </p>
-    </GlassPanel>
-  )
-}
-
-function ExamSprintBanner({ examDays, profile, tasks, today }: {
-  examDays: number
-  profile: StudyPlanProfile | null
-  tasks: StudyPlanTask[]
-  today: string
-}) {
-  const sprintTasks = tasks.filter((t) => t.scheduledDate === today && t.status !== 'rescheduled')
-  const topErrors = profile?.currentLevel ? `当前预测 ${profile.currentLevel.toFixed(1)}` : ''
-
-  return (
-    <GlassPanel style={{ padding: 20, background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-        <MaterialIcon name="local_fire_department" size={28} filled />
-        <div>
-          <h2 className="ui-title-md">考前冲刺模式</h2>
-          <p className="ui-body-md" style={{ color: 'var(--error)', fontWeight: 600 }}>
-            距离考试仅剩 {examDays} 天
-          </p>
-        </div>
-      </div>
-
-      {examDays === 0 && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
-          <p className="ui-body-md" style={{ fontWeight: 600 }}>
-            今天是考试日！保持节奏，检查时间分配和个人高频错误。加油！
-          </p>
-        </div>
-      )}
-
-      {examDays === 1 && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
-          <p className="ui-body-md">
-            明天考试！今天以轻量复习为主：回顾个人错误清单、检查模板与结构，不安排高强度写作。
-          </p>
-        </div>
-      )}
-
-      {examDays >= 2 && examDays <= 4 && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
-          <p className="ui-body-md">
-            冲刺阶段：重点进行 60 分钟完整模考、时间分配训练和高频错误复习。
-          </p>
-        </div>
-      )}
-
-      {examDays >= 5 && examDays <= 7 && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
-          <p className="ui-body-md">
-            冲刺阶段：完成完整 Task 2 和 Task 1 训练，重点复习弱项和个人错误。
-          </p>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
-        {topErrors && <span>{topErrors}</span>}
-        <span>今日任务：{sprintTasks.length} 个</span>
-        <span>Task 2 建议用时：40 分钟</span>
-        <span>Task 1 建议用时：20 分钟</span>
-      </div>
-    </GlassPanel>
-  )
-}
-
-function PlanContent({ plan, profile, quota, onRegenerate, onSelectTask, adjustmentBalance }: {
-  plan: StudyPlan
-  profile: StudyPlanProfile | null
-  quota?: StudyPlanGenerationQuota
-  onRegenerate: () => void
-  onSelectTask: (task: StudyPlanTask) => void
-  adjustmentBalance: number
-}) {
-  const today = getDateKeyInTimeZone()
-  const todayTasks = plan.tasks?.filter((t) => t.scheduledDate === today && t.status !== 'rescheduled') ?? []
-  const weekTasks = plan.tasks?.filter((t) => {
-    const weekEnd = addDaysToDateKey(today, 6)
-    return t.scheduledDate >= today && t.scheduledDate <= weekEnd && t.status !== 'rescheduled'
-  }) ?? []
-  const completedThisWeek = weekTasks.filter((t) => t.status === 'completed').length
-  const examDays = computeExamDays(profile?.examDate ?? null)
-
-  const diagnosis = plan.diagnosis
-  const suggestions = useMemo(() => buildCoachingSuggestions(diagnosis), [diagnosis])
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {examDays !== null && examDays <= 7 && (
-        <ExamSprintBanner examDays={examDays} profile={profile} tasks={plan.tasks ?? []} today={today} />
-      )}
-
-      <OverviewCards plan={plan} examDays={examDays} completedThisWeek={completedThisWeek} weekTaskCount={weekTasks.length} />
-
-      {diagnosis.profileConfidence === 'low' && (
-        <div style={{ padding: '10px 16px', borderRadius: 10, background: 'var(--surface-container)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <MaterialIcon name="info" size={18} />
-          <span className="ui-body-md">当前能力画像基于有限数据，完成更多作文后会自动更新。</span>
-        </div>
-      )}
-
-      <TodayTasks tasks={todayTasks} onSelectTask={onSelectTask} />
-
-      <WeeklyView tasks={plan.tasks ?? []} today={today} onSelectTask={onSelectTask} />
-
-      <AbilityProfile diagnosis={diagnosis} />
-
-      {suggestions.length > 0 && <AICoaching suggestions={suggestions} />}
-
-      <WeeklyReviewSection />
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button
-          className="ui-primary-button"
-          type="button"
-          disabled={(quota?.remainingCount ?? 0) <= 0}
-          onClick={onRegenerate}
-        >
-          重新规划
-        </button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <MaterialIcon name="stars" size={14} />
           调整点：{adjustmentBalance}
         </span>
-        {quota && (
-          <span className="ui-label" style={{ alignSelf: 'center' }}>
-            本月已规划 {quota.usedCount} / {quota.limit} 次
-          </span>
-        )}
       </div>
-    </div>
+    </header>
   )
 }
 
-function OverviewCards({ plan, examDays, completedThisWeek, weekTaskCount }: {
-  plan: StudyPlan
-  examDays: number | null
-  completedThisWeek: number
-  weekTaskCount: number
-}) {
-  const goalBand = plan.goalsSnapshot?.overallTarget ?? '—'
-  const currentBand = plan.diagnosis?.currentAverage?.toFixed(1) ?? '—'
-  const completionRate = weekTaskCount > 0 ? Math.round((completedThisWeek / weekTaskCount) * 100) : 0
-  const phase = plan.currentPhase ? PlanPhaseLabels[plan.currentPhase] ?? plan.currentPhase : null
-
+function EmptyPlan({ onGenerate }: { onGenerate: () => void }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
-      <MetricCard icon="flag" label="目标分数" value={String(goalBand)} />
-      <MetricCard icon="trending_up" label="当前预测" value={currentBand} />
-      <MetricCard icon="event" label="距离考试" value={examDays !== null ? `${examDays} 天` : '—'} />
-      <MetricCard icon="check_circle" label="本周完成" value={`${completedThisWeek}/${weekTaskCount} (${completionRate}%)`} />
-      {phase && <MetricCard icon="route" label="当前阶段" value={phase} />}
-    </div>
-  )
-}
-
-function MetricCard({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <GlassPanel className="ui-hover-glow" style={{ padding: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <MaterialIcon name={icon} size={18} className="text-primary" />
-        <span className="ui-label">{label}</span>
+    <GlassPanel style={styles.emptyCard}>
+      <div style={{ width: 64, height: 64, borderRadius: 20, background: 'var(--surface-container-low)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+        <MaterialIcon name="school" size={36} />
       </div>
-      <strong style={{ fontSize: 18 }}>{value}</strong>
+      <h2 className="ui-title-headline">准备开始你的雅思写作计划</h2>
+      <p className="ui-body-md" style={{ maxWidth: 440, margin: '8px auto', color: 'var(--text-secondary)' }}>
+        系统会根据你的目标分数、备考时间和真实写作表现，为整个备考周期安排训练、休息和模考。
+      </p>
+      <button className="ui-primary-button" type="button" onClick={onGenerate} style={{ marginTop: 16, padding: '12px 32px', fontSize: 15 }}>
+        创建学习计划
+      </button>
+      <p className="ui-label" style={{ marginTop: 8, color: 'var(--text-secondary)' }}>预计用时 2 分钟</p>
     </GlassPanel>
   )
 }
 
-function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectTask: (t: StudyPlanTask) => void }) {
-  if (tasks.length === 0) {
+function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
+  job: GenerationJob | null
+  isPlanLoading: boolean
+  onCancel: () => void
+}) {
+  const progress = job?.progress ?? 0
+  const step = job?.currentStep ?? '正在准备...'
+  const isFailed = job?.status === 'failed'
+
+  if (isPlanLoading) {
     return (
-      <GlassPanel className="ui-hover-glow">
-        <h2 className="ui-title-md" style={{ marginBottom: 12 }}>今日任务</h2>
-        <div style={{ textAlign: 'center', padding: 24 }}>
-          <MaterialIcon name="free_cancellation" size={40} />
-          <p className="ui-body-md" style={{ marginTop: 8 }}>今天没有安排任务，可以休息或开始额外练习。</p>
-          <Link className="ui-secondary-button" href="/practice" style={{ marginTop: 12, display: 'inline-flex' }}>
-            开始额外练习
-          </Link>
+      <GlassPanel style={styles.progressCard}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <MaterialIcon name="check_circle" size={24} />
+          <div style={{ flex: 1 }}>
+            <h2 className="ui-title-md">学习计划已生成</h2>
+            <p className="ui-body-md">正在加载完整学习安排...</p>
+          </div>
+        </div>
+        <div style={styles.progressBar}>
+          <div style={{ ...styles.progressFill, width: '100%', background: 'var(--success)' }} />
         </div>
       </GlassPanel>
     )
   }
 
   return (
-    <GlassPanel className="ui-hover-glow">
-      <h2 className="ui-title-md" style={{ marginBottom: 16 }}>今日任务</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {tasks.map((task) => (
-          <TaskCard key={task.id} task={task} onSelect={() => onSelectTask(task)} />
-        ))}
+    <GlassPanel style={styles.progressCard}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <MaterialIcon name={isFailed ? 'error' : 'hourglass_top'} size={24} />
+        <div style={{ flex: 1 }}>
+          <h2 className="ui-title-md">{isFailed ? '生成失败' : '正在生成你的雅思写作计划'}</h2>
+          <p className="ui-body-md">{isFailed ? (job?.errorMessage || '请稍后重试') : step}</p>
+        </div>
+        {!isFailed && (
+          <button className="ui-secondary-button" type="button" onClick={onCancel} style={{ fontSize: 13, padding: '6px 12px' }}>
+            取消
+          </button>
+        )}
+      </div>
+      <div style={styles.progressBar}>
+        <div style={{ ...styles.progressFill, width: `${progress}%`, background: isFailed ? 'var(--error)' : 'var(--primary)' }} />
+      </div>
+      <p className="ui-label" style={{ marginTop: 8 }}>{isFailed ? '失败' : `进度：${progress}%`}</p>
+      <p className="ui-label" style={{ marginTop: 4, color: 'var(--text-secondary)' }}>你可以离开此页面，完成后会自动通知。</p>
+    </GlassPanel>
+  )
+}
+
+function PlanOverview({ plan, profile }: { plan: StudyPlan; profile: StudyPlanProfile | null }) {
+  const today = getDateKeyInTimeZone()
+  const examDays = computeExamDays(profile?.examDate ?? null)
+  const tasks = plan.tasks ?? []
+  const weekTasks = tasks.filter((t) => {
+    const weekEnd = addDaysToDateKey(today, 6)
+    return t.scheduledDate >= today && t.scheduledDate <= weekEnd && t.status !== 'rescheduled'
+  })
+  const completedThisWeek = weekTasks.filter((t) => t.status === 'completed').length
+  const completionRate = weekTasks.length > 0 ? Math.round((completedThisWeek / weekTasks.length) * 100) : 0
+  const phase = plan.currentPhase ? PlanPhaseLabels[plan.currentPhase] ?? plan.currentPhase : null
+
+  const totalDays = plan.periodStart && plan.periodEnd
+    ? Math.ceil((new Date(plan.periodEnd).getTime() - new Date(plan.periodStart).getTime()) / 86400000)
+    : null
+  const totalWeeks = totalDays ? Math.ceil(totalDays / 7) : null
+
+  return (
+    <GlassPanel style={styles.overviewCard}>
+      <div style={styles.overviewGrid}>
+        <OverviewItem icon="flag" label="目标分数" value={String(plan.goalsSnapshot?.overallTarget ?? '—')} />
+        <OverviewItem icon="trending_up" label="当前预测" value={plan.diagnosis?.currentAverage?.toFixed(1) ?? '—'} />
+        <OverviewItem icon="event" label="考试日期" value={profile?.examDate ? new Date(profile.examDate).toLocaleDateString('zh-CN') : '未设置'} />
+        <OverviewItem icon="schedule" label="剩余天数" value={examDays !== null ? `${examDays} 天` : '—'} />
+        {totalWeeks && <OverviewItem icon="date_range" label="计划周期" value={`${totalWeeks} 周`} />}
+        {phase && <OverviewItem icon="route" label="当前阶段" value={phase} />}
+        <OverviewItem icon="check_circle" label="本周完成" value={`${completedThisWeek}/${weekTasks.length} (${completionRate}%)`} />
       </div>
     </GlassPanel>
   )
 }
 
-function TaskCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () => void }) {
+function OverviewItem({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <div style={styles.overviewItem}>
+      <MaterialIcon name={icon} size={18} />
+      <span className="ui-label">{label}</span>
+      <strong style={{ fontSize: 16 }}>{value}</strong>
+    </div>
+  )
+}
+
+function MonthCalendar({ plan, profile, currentMonth, onMonthChange, onSelectTask }: {
+  plan: StudyPlan
+  profile: StudyPlanProfile | null
+  currentMonth: string
+  onMonthChange: (m: string) => void
+  onSelectTask: (task: StudyPlanTask) => void
+}) {
+  const today = getDateKeyInTimeZone()
+  const tasks = plan.tasks ?? []
+  const [year, month] = currentMonth.split('-').map(Number)
+  const firstDay = new Date(year, month - 1, 1)
+  const lastDay = new Date(year, month, 0)
+  const startPad = firstDay.getDay()
+  const daysInMonth = lastDay.getDate()
+
+  const prevMonth = () => {
+    const d = new Date(year, month - 2, 1)
+    onMonthChange(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  const nextMonth = () => {
+    const d = new Date(year, month, 1)
+    onMonthChange(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  const goToday = () => {
+    const now = new Date()
+    onMonthChange(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  const tasksByDate = useMemo(() => {
+    const map = new Map<string, StudyPlanTask[]>()
+    for (const t of tasks) {
+      const arr = map.get(t.scheduledDate) ?? []
+      arr.push(t)
+      map.set(t.scheduledDate, arr)
+    }
+    return map
+  }, [tasks])
+
+  const monthLabel = `${year}年${month}月`
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
+
+  return (
+    <GlassPanel style={styles.calendarCard}>
+      <div style={styles.calendarHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="ui-icon-button" type="button" onClick={prevMonth}>
+            <MaterialIcon name="chevron_left" size={20} />
+          </button>
+          <h2 className="ui-title-md" style={{ minWidth: 120, textAlign: 'center' }}>{monthLabel}</h2>
+          <button className="ui-icon-button" type="button" onClick={nextMonth}>
+            <MaterialIcon name="chevron_right" size={20} />
+          </button>
+        </div>
+        <button className="ui-secondary-button" type="button" onClick={goToday} style={{ fontSize: 12, padding: '4px 10px' }}>
+          今天
+        </button>
+      </div>
+
+      <div style={styles.calendarWeekDays}>
+        {weekDays.map((d) => (
+          <div key={d} style={styles.calendarWeekDay}>{d}</div>
+        ))}
+      </div>
+
+      <div style={styles.calendarGrid}>
+        {Array.from({ length: startPad }).map((_, i) => (
+          <div key={`pad-${i}`} style={styles.calendarCellEmpty} />
+        ))}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1
+          const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const dayTasks = tasksByDate.get(dateKey) ?? []
+          const isToday = dateKey === today
+          const isPast = dateKey < today
+          const completedCount = dayTasks.filter((t) => t.status === 'completed').length
+          const totalCount = dayTasks.length
+
+          return (
+            <CalendarDay
+              key={dateKey}
+              day={day}
+              dateKey={dateKey}
+              tasks={dayTasks}
+              isToday={isToday}
+              isPast={isPast}
+              completedCount={completedCount}
+              totalCount={totalCount}
+              onSelectTask={onSelectTask}
+            />
+          )
+        })}
+      </div>
+
+      <CalendarLegend />
+    </GlassPanel>
+  )
+}
+
+function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, totalCount, onSelectTask }: {
+  day: number
+  dateKey: string
+  tasks: StudyPlanTask[]
+  isToday: boolean
+  isPast: boolean
+  completedCount: number
+  totalCount: number
+  onSelectTask: (task: StudyPlanTask) => void
+}) {
+  const [showDetail, setShowDetail] = useState(false)
+  const totalMinutes = tasks.reduce((s, t) => s + t.estimatedMinutes, 0)
+
+  const borderColor = isToday ? 'var(--primary)' : 'transparent'
+  const bg = isToday ? 'var(--surface-container-low)' : 'transparent'
+  const opacity = isPast && completedCount === 0 && totalCount > 0 ? 0.6 : 1
+
+  return (
+    <>
+      <div
+        style={{ ...styles.calendarCell, borderColor, background: bg, opacity, cursor: totalCount > 0 ? 'pointer' : 'default' }}
+        onClick={() => { if (totalCount > 0) setShowDetail(true) }}
+        role={totalCount > 0 ? 'button' : undefined}
+        tabIndex={totalCount > 0 ? 0 : undefined}
+        onKeyDown={(e) => { if (e.key === 'Enter' && totalCount > 0) setShowDetail(true) }}
+      >
+        <span style={{ ...styles.calendarDayNum, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--primary)' : undefined }}>
+          {day}
+        </span>
+        {totalCount > 0 && (
+          <div style={styles.calendarTaskDots}>
+            {tasks.slice(0, 3).map((t, i) => (
+              <span key={i} style={{ ...styles.taskDot, background: getTaskColor(t.taskType, t.status === 'completed') }} />
+            ))}
+            {totalCount > 3 && <span style={{ fontSize: 9, color: 'var(--text-secondary)' }}>+{totalCount - 3}</span>}
+          </div>
+        )}
+        {totalCount > 0 && (
+          <span style={styles.calendarMinutes}>{totalMinutes}分</span>
+        )}
+        {completedCount === totalCount && totalCount > 0 && (
+          <MaterialIcon name="check_circle" size={12} />
+        )}
+      </div>
+
+      {showDetail && (
+        <CenteredDialog
+          open
+          title={`${dateKey} · ${totalCount} 个任务`}
+          onClose={() => setShowDetail(false)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <p className="ui-label">总时长：{totalMinutes} 分钟</p>
+            {tasks.map((task) => (
+              <TaskMiniCard key={task.id} task={task} onSelect={() => { setShowDetail(false); onSelectTask(task) }} />
+            ))}
+          </div>
+        </CenteredDialog>
+      )}
+    </>
+  )
+}
+
+function TaskMiniCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () => void }) {
   const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
   const statusLabel = StudyPlanTaskStatusLabels[task.status] ?? task.status
-  const writable = isWritableTaskType(task.taskType)
-  const writeMode = taskTypeToWriteMode(task.taskType)
   const title = task.title || typeLabel
 
   return (
     <div
-      style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: 16, borderRadius: 12, background: 'var(--surface-container-low)',
-        cursor: 'pointer', gap: 12, flexWrap: 'wrap'
-      }}
+      style={styles.taskMiniCard}
       onClick={onSelect}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onSelect() }}
     >
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-          <span className="task-badge">{typeLabel}</span>
-          {task.difficulty && (
-            <span className={`task-badge ${task.difficulty === 'hard' ? 'is-custom' : ''}`}>
-              {task.difficulty === 'easy' ? '简单' : task.difficulty === 'hard' ? '困难' : '中等'}
-            </span>
-          )}
-          <span className="ui-label">{task.estimatedMinutes} 分钟</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+          <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), width: 8, height: 8 }} />
+          <strong style={{ fontSize: 13 }}>{title}</strong>
+          <span className="task-badge" style={{ fontSize: 10 }}>{typeLabel}</span>
         </div>
-        <p className="ui-body-md" style={{ fontWeight: 500 }}>{title}</p>
-        {task.description && <p className="ui-body-md" style={{ fontSize: 13, opacity: 0.8, marginTop: 2 }}>{task.description}</p>}
-        {task.generatedReason && <p className="ui-label" style={{ marginTop: 4 }}>{task.generatedReason}</p>}
+        <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
+          <span>{task.estimatedMinutes}分钟</span>
+          <span>{statusLabel}</span>
+        </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span className={`task-badge ${task.status === 'completed' ? 'is-custom' : task.status === 'skipped' ? '' : ''}`}>{statusLabel}</span>
-        {task.status === 'pending' && writable && writeMode && (
-          <Link
-            className="ui-primary-button"
-            href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}
-            style={{ fontSize: 13, padding: '6px 12px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            开始任务
-          </Link>
-        )}
-        {task.status === 'in_progress' && writable && writeMode && (
-          <Link
-            className="ui-primary-button"
-            href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}
-            style={{ fontSize: 13, padding: '6px 12px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            继续任务
-          </Link>
-        )}
-        {task.status === 'completed' && task.writingRecordId && (
-          <Link
-            className="ui-secondary-button"
-            href={`/result?id=${task.writingRecordId}`}
-            style={{ fontSize: 13, padding: '6px 12px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            查看结果
-          </Link>
-        )}
-      </div>
+      {task.status === 'completed' && <MaterialIcon name="check_circle" size={16} />}
     </div>
   )
 }
 
-function WeeklyView({ tasks, today, onSelectTask }: { tasks: StudyPlanTask[]; today: string; onSelectTask: (t: StudyPlanTask) => void }) {
-  const days = useMemo(() => {
-    const result: Array<{ date: string; label: string; tasks: StudyPlanTask[] }> = []
-    const dayNames = ['日', '一', '二', '三', '四', '五', '六']
-    for (let i = 0; i < 7; i++) {
-      const date = addDaysToDateKey(today, i)
-      const d = new Date(date + 'T00:00:00Z')
-      const dayTasks = tasks.filter((t) => t.scheduledDate === date && t.status !== 'rescheduled')
-      const isToday = i === 0
-      result.push({
-        date,
-        label: isToday ? '今天' : `周${dayNames[d.getUTCDay()]}`,
-        tasks: dayTasks
-      })
-    }
-    return result
-  }, [tasks, today])
+function CalendarLegend() {
+  return (
+    <div style={styles.legend}>
+      {[
+        { label: 'Task 1', color: '#7c6cf0' },
+        { label: 'Task 2', color: '#4a90d9' },
+        { label: '错误复习', color: '#e8913a' },
+        { label: '模考', color: '#3a6eb5' },
+        { label: '已完成', color: '#34a853' }
+      ].map((item) => (
+        <span key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)' }}>
+          <span style={{ width: 8, height: 8, borderRadius: 4, background: item.color }} />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function getTaskColor(taskType: string, completed: boolean): string {
+  if (completed) return '#34a853'
+  switch (taskType) {
+    case 'task1': return '#7c6cf0'
+    case 'task2': return '#4a90d9'
+    case 'full_test': return '#3a6eb5'
+    case 'error_review': return '#e8913a'
+    case 'grammar_drill': case 'vocabulary_drill': return '#9c7cb0'
+    case 'review': return '#6bb59a'
+    default: return '#888'
+  }
+}
+
+function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectTask: (t: StudyPlanTask) => void }) {
+  if (tasks.length === 0) return null
 
   return (
-    <GlassPanel className="ui-hover-glow">
-      <h2 className="ui-title-md" style={{ marginBottom: 16 }}>本周计划</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
-        {days.map((day) => {
-          const completed = day.tasks.filter((t) => t.status === 'completed').length
-          const total = day.tasks.length
-          const totalMinutes = day.tasks.reduce((sum, t) => sum + t.estimatedMinutes, 0)
+    <GlassPanel style={styles.todayCard}>
+      <h2 className="ui-title-md" style={{ marginBottom: 12 }}>今日任务</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {tasks.map((task) => {
+          const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
+          const title = task.title || typeLabel
+          const writable = isWritableTaskType(task.taskType)
+          const writeMode = taskTypeToWriteMode(task.taskType)
 
           return (
-            <div
-              key={day.date}
-              style={{
-                padding: 12, borderRadius: 12,
-                background: day.date === today ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
-                border: day.date === today ? '1.5px solid var(--primary)' : '1px solid transparent',
-                minHeight: 100
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <strong style={{ fontSize: 14 }}>{day.label}</strong>
-                {total > 0 && <span className="ui-label">{completed}/{total}</span>}
-              </div>
-              {total > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {day.tasks.slice(0, 3).map((task) => (
-                    <div
-                      key={task.id}
-                      style={{
-                        fontSize: 12, padding: '3px 6px', borderRadius: 6,
-                        background: task.status === 'completed' ? 'var(--surface-container)' : 'var(--surface-variant)',
-                        cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                      }}
-                      onClick={() => onSelectTask(task)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter') onSelectTask(task) }}
-                    >
-                      {(task.title || StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType]) ?? task.taskType}
-                    </div>
-                  ))}
-                  {day.tasks.length > 3 && <span className="ui-label">+{day.tasks.length - 3} 更多</span>}
-                  <span className="ui-label" style={{ marginTop: 4 }}>{totalMinutes} 分钟</span>
+            <div key={task.id} style={styles.todayTaskRow}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), width: 8, height: 8 }} />
+                  <strong style={{ fontSize: 14 }}>{title}</strong>
+                  <span className="task-badge" style={{ fontSize: 10 }}>{typeLabel}</span>
                 </div>
+                <span className="ui-label">{task.estimatedMinutes}分钟</span>
+              </div>
+              {task.status === 'completed' ? (
+                <MaterialIcon name="check_circle" size={20} />
+              ) : writable && writeMode ? (
+                <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} style={{ fontSize: 12, padding: '4px 10px' }}>
+                  开始
+                </Link>
               ) : (
-                <p className="ui-label" style={{ opacity: 0.6 }}>休息</p>
+                <button className="ui-secondary-button" type="button" onClick={() => onSelectTask(task)} style={{ fontSize: 12, padding: '4px 10px' }}>
+                  查看
+                </button>
               )}
             </div>
           )
@@ -668,445 +698,25 @@ function WeeklyView({ tasks, today, onSelectTask }: { tasks: StudyPlanTask[]; to
   )
 }
 
-function AbilityProfile({ diagnosis }: { diagnosis: StudyPlanDiagnosis }) {
-  const criteria = [
-    { key: 'taTr', label: 'TA/TR', value: diagnosis.taTr },
-    { key: 'cc', label: 'CC', value: diagnosis.cc },
-    { key: 'lr', label: 'LR', value: diagnosis.lr },
-    { key: 'gra', label: 'GRA', value: diagnosis.gra }
-  ]
-
-  return (
-    <GlassPanel className="ui-hover-glow">
-      <h2 className="ui-title-md" style={{ marginBottom: 16 }}>能力画像</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
-        {criteria.map((c) => (
-          <div key={c.key} style={{ padding: 12, borderRadius: 10, background: 'var(--surface-container-low)' }}>
-            <span className="ui-label">{c.label}</span>
-            <div style={{ marginTop: 4 }}>
-              {c.value !== null ? (
-                <div>
-                  <strong style={{ fontSize: 20 }}>{c.value?.toFixed(1)}</strong>
-                  <div style={{ marginTop: 4, height: 4, borderRadius: 2, background: 'var(--surface-variant)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${((c.value ?? 0) / 9) * 100}%`, borderRadius: 2, background: 'var(--primary)', transition: 'width 0.3s' }} />
-                  </div>
-                </div>
-              ) : (
-                <span className="ui-body-md" style={{ opacity: 0.5 }}>—</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {diagnosis.weakestCriteria.length > 0 && (
-          <div>
-            <span className="ui-label">最弱项：</span>
-            <span className="ui-body-md">{diagnosis.weakestCriteria.join('、')}</span>
-          </div>
-        )}
-        {diagnosis.strongestCriteria.length > 0 && (
-          <div>
-            <span className="ui-label">最强项：</span>
-            <span className="ui-body-md">{diagnosis.strongestCriteria.join('、')}</span>
-          </div>
-        )}
-        <div>
-          <span className="ui-label">数据可信度：</span>
-          <span className="ui-body-md">{diagnosis.profileConfidence === 'high' ? '高' : diagnosis.profileConfidence === 'medium' ? '中' : '低'}</span>
-        </div>
-      </div>
-    </GlassPanel>
-  )
-}
-
-function AICoaching({ suggestions }: { suggestions: AICoachingSuggestion[] }) {
-  return (
-    <GlassPanel className="ui-hover-glow">
-      <h2 className="ui-title-md" style={{ marginBottom: 12 }}>AI 教练建议</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {suggestions.map((s, i) => (
-          <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <MaterialIcon name={s.icon} size={18} className="text-primary" />
-            <div>
-              <p className="ui-body-md" style={{ fontWeight: 500 }}>{s.title}</p>
-              <p className="ui-body-md" style={{ fontSize: 13, opacity: 0.8 }}>{s.detail}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </GlassPanel>
-  )
-}
-
-function buildCoachingSuggestions(diagnosis: StudyPlanDiagnosis): AICoachingSuggestion[] {
-  const suggestions: AICoachingSuggestion[] = []
-
-  if (diagnosis.weakestCriteria.length > 0) {
-    const weak = diagnosis.weakestCriteria[0]
-    const label = ShortCriterionLabels[weak] ?? weak
-    suggestions.push({
-      icon: 'priority_high',
-      title: `${label} 是你目前最需要提升的评分项`,
-      detail: `本周已安排针对性训练，帮助你在这项上取得进步。`
-    })
-  }
-
-  const highErrors = diagnosis.priorityErrorTags.filter((t) => t.priority === 'high')
-  if (highErrors.length > 0) {
-    const tagLabel = ErrorTagLabels[highErrors[0].tag] ?? highErrors[0].tag
-    suggestions.push({
-      icon: 'spellcheck',
-      title: `「${tagLabel}」是你最近最常见的问题`,
-      detail: '建议在写作时特别留意这一点，完成后回顾批改标注。'
-    })
-  }
-
-  if (diagnosis.task1Average !== null && diagnosis.task2Average !== null) {
-    const diff = diagnosis.task2Average - diagnosis.task1Average
-    if (diff > 0.5) {
-      suggestions.push({
-        icon: 'bar_chart',
-        title: 'Task 1 分数低于 Task 2',
-        detail: '本周已增加 Task 1 训练比例，重点提升数据描述和概述能力。'
-      })
-    } else if (diff < -0.5) {
-      suggestions.push({
-        icon: 'edit_note',
-        title: 'Task 2 分数低于 Task 1',
-        detail: '本周已增加 Task 2 训练比例，重点提升论证和结构。'
-      })
-    }
-  }
-
-  return suggestions.slice(0, 3)
-}
-
-function TaskDetailDialog({ task, onClose, onMutate }: {
-  task: StudyPlanTask
-  onClose: () => void
-  onMutate: () => void
+function BottomActions({ quota, adjustmentBalance, onRegenerate, onSettings }: {
+  quota?: StudyPlanGenerationQuota
+  adjustmentBalance: number
+  onRegenerate: () => void
+  onSettings: () => void
 }) {
-  const { pushToast } = useToast()
-  const [showSkipConfirm, setShowSkipConfirm] = useState(false)
-  const [showReschedule, setShowReschedule] = useState(false)
-  const [showReplace, setShowReplace] = useState(false)
-  const [actionLoading, setActionLoading] = useState(false)
-
-  const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
-  const writable = isWritableTaskType(task.taskType)
-  const writeMode = taskTypeToWriteMode(task.taskType)
-  const title = task.title || typeLabel
-
-  async function handleAction(action: string, body?: Record<string, unknown>) {
-    setActionLoading(true)
-    try {
-      const res = await fetch(`/api/study-plan/tasks/${task.id}/${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body ?? {})
-      })
-      if (!res.ok) throw new Error('Action failed')
-      pushToast({ kind: 'success', title: '操作成功' })
-      onMutate()
-      onClose()
-    } catch {
-      pushToast({ kind: 'error', title: '操作失败' })
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
   return (
-    <>
-      <CenteredDialog
-        open
-        title={title}
-        onClose={onClose}
-        footer={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {task.status === 'pending' && (
-              <>
-                <button className="ui-secondary-button" type="button" disabled={actionLoading} onClick={() => setShowReplace(true)}>
-                  更换任务
-                </button>
-                <button className="ui-secondary-button" type="button" disabled={actionLoading} onClick={() => setShowReschedule(true)}>
-                  延期
-                </button>
-                <button className="ui-secondary-button" type="button" disabled={actionLoading} onClick={() => setShowSkipConfirm(true)}>
-                  跳过
-                </button>
-              </>
-            )}
-            {(task.status === 'pending' || task.status === 'in_progress') && writable && writeMode && (
-              <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} onClick={onClose}>
-                {task.status === 'pending' ? '开始任务' : '继续任务'}
-              </Link>
-            )}
-            {task.status === 'completed' && task.writingRecordId && (
-              <Link className="ui-primary-button" href={`/result?id=${task.writingRecordId}`} onClick={onClose}>
-                查看结果
-              </Link>
-            )}
-          </div>
-        }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <span className="task-badge">{typeLabel}</span>
-            {task.difficulty && (
-              <span className="task-badge">{task.difficulty === 'easy' ? '简单' : task.difficulty === 'hard' ? '困难' : '中等'}</span>
-            )}
-            <span className="ui-label">{task.estimatedMinutes} 分钟</span>
-            <span className={`task-badge ${task.status === 'completed' ? 'is-custom' : ''}`}>
-              {StudyPlanTaskStatusLabels[task.status]}
-            </span>
-          </div>
-          {task.description && <p className="ui-body-md">{task.description}</p>}
-          {task.generatedReason && (
-            <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
-              <span className="ui-label">安排原因：</span>
-              <p className="ui-body-md">{task.generatedReason}</p>
-            </div>
-          )}
-          {task.focusCriteria.length > 0 && (
-            <div>
-              <span className="ui-label">重点评分项：</span>
-              <span className="ui-body-md">{task.focusCriteria.join('、')}</span>
-            </div>
-          )}
-          {task.focusErrorTags.length > 0 && (
-            <div>
-              <span className="ui-label">关注错误：</span>
-              <span className="ui-body-md">{task.focusErrorTags.map((t) => ErrorTagLabels[t] ?? t).join('、')}</span>
-            </div>
-          )}
-          {task.completedAt && (
-            <div>
-              <span className="ui-label">完成时间：</span>
-              <span className="ui-body-md">{new Date(task.completedAt).toLocaleString('zh-CN')}</span>
-            </div>
-          )}
-          {task.skipReason && (
-            <div>
-              <span className="ui-label">跳过原因：</span>
-              <span className="ui-body-md">{SkipReasonLabels[task.skipReason] ?? task.skipReason}</span>
-            </div>
-          )}
-        </div>
-      </CenteredDialog>
-
-      <ConfirmDialog
-        open={showSkipConfirm}
-        title="跳过这个任务？"
-        message="跳过不会影响你的学习进度。"
-        confirmLabel="确认跳过"
-        cancelLabel="取消"
-        onCancel={() => setShowSkipConfirm(false)}
-        onConfirm={() => { setShowSkipConfirm(false); void handleAction('skip', { reason: 'other' }) }}
-      />
-
-      {showReschedule && (
-        <RescheduleDialog
-          task={task}
-          onClose={() => setShowReschedule(false)}
-          onConfirm={(date) => { setShowReschedule(false); void handleAction('reschedule', { newDate: date }) }}
-        />
+    <div style={styles.bottomActions}>
+      <button className="ui-secondary-button" type="button" onClick={onSettings}>
+        <MaterialIcon name="tune" size={18} />
+        设置
+      </button>
+      <button className="ui-primary-button" type="button" disabled={(quota?.remainingCount ?? 0) <= 0} onClick={onRegenerate}>
+        重新规划
+      </button>
+      {quota && (
+        <span className="ui-label">本月已规划 {quota.usedCount}/{quota.limit}</span>
       )}
-
-      {showReplace && (
-        <ReplaceDialog
-          task={task}
-          onClose={() => setShowReplace(false)}
-          onConfirm={(data) => { setShowReplace(false); void handleAction('replace', data) }}
-        />
-      )}
-    </>
-  )
-}
-
-function RescheduleDialog({ task, onClose, onConfirm }: {
-  task: StudyPlanTask
-  onClose: () => void
-  onConfirm: (date: string) => void
-}) {
-  const today = getDateKeyInTimeZone()
-  const [selectedDate, setSelectedDate] = useState(addDaysToDateKey(today, 1))
-
-  const presets = [
-    { label: '明天', date: addDaysToDateKey(today, 1) },
-    { label: '后天', date: addDaysToDateKey(today, 2) },
-    { label: '本周末', date: addDaysToDateKey(today, (6 - new Date(today + 'T00:00:00Z').getUTCDay() + 7) % 7 || 7) }
-  ]
-
-  return (
-    <CenteredDialog
-      open
-      title="延期任务"
-      onClose={onClose}
-      footer={
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="ui-secondary-button" type="button" onClick={onClose}>取消</button>
-          <button className="ui-primary-button" type="button" onClick={() => onConfirm(selectedDate)}>确认延期</button>
-        </div>
-      }
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <p className="ui-body-md">将「{task.title || StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType]}」延期到：</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {presets.map((p) => (
-            <button
-              key={p.date}
-              className={`task-badge ${selectedDate === p.date ? 'is-custom' : ''}`}
-              type="button"
-              onClick={() => setSelectedDate(p.date)}
-              style={{ cursor: 'pointer' }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <input
-          type="date"
-          value={selectedDate}
-          min={today}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)' }}
-        />
-      </div>
-    </CenteredDialog>
-  )
-}
-
-function ReplaceDialog({ task, onClose, onConfirm }: {
-  task: StudyPlanTask
-  onClose: () => void
-  onConfirm: (data: { newTaskType: string; newTitle: string; newDescription: string }) => void
-}) {
-  const alternatives = useMemo(() => getAlternatives(task.taskType), [task.taskType])
-  const [selected, setSelected] = useState(0)
-
-  return (
-    <CenteredDialog
-      open
-      title="更换任务"
-      onClose={onClose}
-      footer={
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="ui-secondary-button" type="button" onClick={onClose}>取消</button>
-          <button className="ui-primary-button" type="button" onClick={() => onConfirm(alternatives[selected])}>确认更换</button>
-        </div>
-      }
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <p className="ui-body-md">选择一个替代任务：</p>
-        {alternatives.map((alt, i) => (
-          <div
-            key={i}
-            style={{
-              padding: 12, borderRadius: 10, cursor: 'pointer',
-              background: selected === i ? 'var(--surface-container-high)' : 'var(--surface-container-low)',
-              border: selected === i ? '1.5px solid var(--primary)' : '1px solid transparent'
-            }}
-            onClick={() => setSelected(i)}
-            role="radio"
-            aria-checked={selected === i}
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter') setSelected(i) }}
-          >
-            <strong>{alt.newTitle}</strong>
-            <p className="ui-body-md" style={{ fontSize: 13, marginTop: 2 }}>{alt.newDescription}</p>
-          </div>
-        ))}
-      </div>
-    </CenteredDialog>
-  )
-}
-
-function getAlternatives(taskType: StudyPlanTaskType) {
-  const map: Record<string, Array<{ newTaskType: string; newTitle: string; newDescription: string }>> = {
-    task2: [
-      { newTaskType: 'task2', newTitle: 'Task 2 提纲训练', newDescription: '只写提纲和论点，不写全文，训练审题和结构规划。' },
-      { newTaskType: 'task2', newTitle: 'Task 2 主体段训练', newDescription: '只写两个主体段，专注论证展开和衔接。' },
-      { newTaskType: 'error_review', newTitle: '错误复盘', newDescription: '回顾最近作文中的重复错误，总结改进方法。' }
-    ],
-    task1: [
-      { newTaskType: 'task1', newTitle: 'Task 1 数据选择训练', newDescription: '只练习选取关键数据和写 Overview。' },
-      { newTaskType: 'task1', newTitle: 'Task 1 比较训练', newDescription: '只练习数据比较和对比句型。' },
-      { newTaskType: 'error_review', newTitle: '错误复盘', newDescription: '回顾 Task 1 常见错误。' }
-    ],
-    full_test: [
-      { newTaskType: 'task2', newTitle: 'Task 2 完整写作', newDescription: '只完成一篇 Task 2，不进行完整模考。' },
-      { newTaskType: 'timed_practice', newTitle: '限时训练', newDescription: '在限定时间内完成一篇写作。' }
-    ]
-  }
-  return map[taskType] ?? [
-    { newTaskType: 'error_review', newTitle: '错误复盘', newDescription: '回顾最近作文中的重复错误。' },
-    { newTaskType: 'review', newTitle: '复习回顾', newDescription: '复习之前的学习内容。' }
-  ]
-}
-
-type WeeklyReviewData = {
-  weekStart: string
-  weekEnd: string
-  completionRate: number
-  totalTasks: number
-  completedTasks: number
-  skippedTasks: number
-  averageBand: number | null
-  task1Band: number | null
-  task2Band: number | null
-  summary: string
-}
-
-function WeeklyReviewSection() {
-  const { data, isLoading } = useSWR<{ review: WeeklyReviewData | null }>(
-    'study-plan-review',
-    async () => {
-      const res = await fetch('/api/study-plan/review')
-      if (!res.ok) return { review: null }
-      return res.json()
-    },
-    { revalidateOnFocus: false, dedupingInterval: 60000 }
-  )
-
-  if (isLoading || !data?.review) return null
-
-  const review = data.review
-
-  return (
-    <GlassPanel className="ui-hover-glow">
-      <h2 className="ui-title-md" style={{ marginBottom: 12 }}>本周复盘</h2>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
-        <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
-          <span className="ui-label">完成率</span>
-          <strong style={{ display: 'block', fontSize: 18 }}>{review.completionRate}%</strong>
-        </div>
-        <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
-          <span className="ui-label">完成任务</span>
-          <strong style={{ display: 'block', fontSize: 18 }}>{review.completedTasks}/{review.totalTasks}</strong>
-        </div>
-        {review.averageBand !== null && (
-          <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
-            <span className="ui-label">平均分</span>
-            <strong style={{ display: 'block', fontSize: 18 }}>{review.averageBand.toFixed(1)}</strong>
-          </div>
-        )}
-        {review.task1Band !== null && (
-          <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
-            <span className="ui-label">Task 1</span>
-            <strong style={{ display: 'block', fontSize: 18 }}>{review.task1Band.toFixed(1)}</strong>
-          </div>
-        )}
-        {review.task2Band !== null && (
-          <div style={{ padding: 10, borderRadius: 8, background: 'var(--surface-container-low)' }}>
-            <span className="ui-label">Task 2</span>
-            <strong style={{ display: 'block', fontSize: 18 }}>{review.task2Band.toFixed(1)}</strong>
-          </div>
-        )}
-      </div>
-      <p className="ui-body-md">{review.summary}</p>
-    </GlassPanel>
+    </div>
   )
 }
 
@@ -1118,126 +728,61 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
 }) {
   const [form, setForm] = useState({
     overallTarget: profile?.overallTarget ?? 6.5,
-    task1Target: profile?.task1Target ?? 6.0,
-    task2Target: profile?.task2Target ?? 6.5,
     examDate: profile?.examDate ?? '',
     sessionsPerWeek: profile?.sessionsPerWeek ?? 4,
     minutesPerSession: profile?.minutesPerSession ?? 45,
     intensity: profile?.intensity ?? 'standard' as string,
     allowTimedPractice: profile?.allowTimedPractice ?? true,
-    includeFullTests: profile?.includeFullTests ?? true,
-    currentLevel: diagnosis?.currentAverage ?? profile?.currentLevel ?? null
+    includeFullTests: profile?.includeFullTests ?? true
   })
-
-  const examDays = computeExamDays(form.examDate || null)
 
   return (
     <CenteredDialog
       open
-      title="创建你的雅思写作学习计划"
+      title="创建学习计划"
       onClose={onClose}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button className="ui-secondary-button" type="button" onClick={onClose}>取消</button>
-          <button
-            className="ui-primary-button"
-            type="button"
-            onClick={() => onGenerate(form)}
-          >
-            后台生成学习计划
+          <button className="ui-primary-button" type="button" onClick={() => onGenerate(form)}>
+            后台生成
           </button>
         </div>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {diagnosis?.currentAverage && (
-          <div style={{ padding: 12, borderRadius: 10, background: 'var(--surface-container-low)' }}>
-            <span className="ui-label">根据你最近的作文记录，你当前预测写作分数为 </span>
-            <strong>{diagnosis.currentAverage.toFixed(1)}</strong>
+          <div style={{ padding: 10, borderRadius: 10, background: 'var(--surface-container-low)', fontSize: 13 }}>
+            根据最近作文，当前预测分数为 <strong>{diagnosis.currentAverage.toFixed(1)}</strong>
           </div>
         )}
-
-        <FieldGroup label="目标写作分数">
-          <OptionGrid
-            options={[5.5, 6, 6.5, 7, 7.5, 8].map((v) => ({ value: v, label: String(v) }))}
-            value={form.overallTarget}
-            onChange={(v) => setForm({ ...form, overallTarget: v as number })}
-          />
+        <FieldGroup label="目标分数">
+          <OptionGrid options={[5.5, 6, 6.5, 7, 7.5, 8].map((v) => ({ value: v, label: String(v) }))} value={form.overallTarget} onChange={(v) => setForm({ ...form, overallTarget: v as number })} />
         </FieldGroup>
-
-        <FieldGroup label="当前写作水平">
-          {diagnosis?.currentAverage ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span className="ui-body-md">预测 {diagnosis.currentAverage.toFixed(1)}</span>
-              <button
-                className="ui-secondary-button"
-                type="button"
-                style={{ fontSize: 12, padding: '4px 8px' }}
-                onClick={() => setForm({ ...form, currentLevel: diagnosis.currentAverage })}
-              >
-                使用预测值
-              </button>
-            </div>
-          ) : null}
-          <OptionGrid
-            options={[null, 5, 5.5, 6, 6.5, 7].map((v) => ({ value: v, label: v === null ? '不确定' : String(v) }))}
-            value={form.currentLevel}
-            onChange={(v) => setForm({ ...form, currentLevel: v as number | null })}
-          />
-        </FieldGroup>
-
         <FieldGroup label="考试日期">
-          <input
-            type="date"
-            value={form.examDate}
-            min={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setForm({ ...form, examDate: e.target.value })}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)', maxWidth: 200 }}
-          />
-          {examDays !== null && examDays <= 7 && (
-            <p className="ui-label" style={{ color: 'var(--error)' }}>冲刺计划：距离考试仅 {examDays} 天</p>
-          )}
-          {examDays !== null && examDays > 180 && (
-            <p className="ui-label">长期计划：距离考试 {examDays} 天</p>
-          )}
+          <input type="date" value={form.examDate} min={getDateKeyInTimeZone()} onChange={(e) => setForm({ ...form, examDate: e.target.value })} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)', maxWidth: 200 }} />
         </FieldGroup>
-
         <FieldGroup label="每周学习天数">
-          <OptionGrid
-            options={[3, 4, 5, 6, 7].map((v) => ({ value: v, label: `${v} 天` }))}
-            value={form.sessionsPerWeek}
-            onChange={(v) => setForm({ ...form, sessionsPerWeek: v as number })}
-          />
+          <OptionGrid options={[3, 4, 5, 6, 7].map((v) => ({ value: v, label: `${v} 天` }))} value={form.sessionsPerWeek} onChange={(v) => setForm({ ...form, sessionsPerWeek: v as number })} />
         </FieldGroup>
-
         <FieldGroup label="每天学习时间">
-          <OptionGrid
-            options={[20, 30, 45, 60, 90].map((v) => ({ value: v, label: `${v} 分钟` }))}
-            value={form.minutesPerSession}
-            onChange={(v) => setForm({ ...form, minutesPerSession: v as number })}
-          />
+          <OptionGrid options={[20, 30, 45, 60, 90].map((v) => ({ value: v, label: `${v} 分钟` }))} value={form.minutesPerSession} onChange={(v) => setForm({ ...form, minutesPerSession: v as number })} />
         </FieldGroup>
-
-        <FieldGroup label="训练偏好">
-          <OptionGrid
-            options={[
-              { value: 'relaxed', label: '轻松计划', desc: '每天 1 个主要任务' },
-              { value: 'standard', label: '标准计划', desc: '每天 1–2 个任务' },
-              { value: 'intensive', label: '强化计划', desc: '每天 2–3 个任务' }
-            ]}
-            value={form.intensity}
-            onChange={(v) => setForm({ ...form, intensity: v as string })}
-          />
+        <FieldGroup label="训练强度">
+          <OptionGrid options={[
+            { value: 'relaxed', label: '轻松', desc: '每天 1 个任务' },
+            { value: 'standard', label: '标准', desc: '每天 1–2 个任务' },
+            { value: 'intensive', label: '强化', desc: '每天 2–3 个任务' }
+          ]} value={form.intensity} onChange={(v) => setForm({ ...form, intensity: v as string })} />
         </FieldGroup>
-
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.allowTimedPractice} onChange={(e) => setForm({ ...form, allowTimedPractice: e.target.checked })} />
-            <span className="ui-body-md">接受限时写作</span>
+            <span className="ui-body-md">接受限时训练</span>
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.includeFullTests} onChange={(e) => setForm({ ...form, includeFullTests: e.target.checked })} />
-            <span className="ui-body-md">每周安排完整模考</span>
+            <span className="ui-body-md">安排完整模考</span>
           </label>
         </div>
       </div>
@@ -1253,12 +798,8 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
 }) {
   const { pushToast } = useToast()
   const [saving, setSaving] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const [affectedCount, setAffectedCount] = useState(0)
   const [form, setForm] = useState({
     overallTarget: profile.overallTarget,
-    task1Target: profile.task1Target,
-    task2Target: profile.task2Target,
     examDate: profile.examDate ?? '',
     sessionsPerWeek: profile.sessionsPerWeek,
     minutesPerSession: profile.minutesPerSession,
@@ -1267,28 +808,6 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
     includeFullTests: true
   })
 
-  const examDays = computeExamDays(form.examDate || null)
-  const today = getDateKeyInTimeZone()
-  const pendingCount = plan?.tasks?.filter(
-    (t) => (t.status === 'pending' || t.status === 'rescheduled') && t.scheduledDate > today
-  ).length ?? 0
-
-  const hasChanges =
-    form.overallTarget !== profile.overallTarget ||
-    form.task1Target !== profile.task1Target ||
-    form.task2Target !== profile.task2Target ||
-    form.examDate !== (profile.examDate ?? '') ||
-    form.sessionsPerWeek !== profile.sessionsPerWeek ||
-    form.minutesPerSession !== profile.minutesPerSession ||
-    form.intensity !== profile.intensity ||
-    form.allowTimedPractice !== profile.allowTimedPractice
-
-  const handlePreview = async () => {
-    if (!hasChanges) return
-    setAffectedCount(pendingCount)
-    setConfirming(true)
-  }
-
   const handleSave = async () => {
     if (saving) return
     setSaving(true)
@@ -1296,69 +815,21 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
       const res = await fetch('/api/study-plan/update-settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          examDate: form.examDate || null
-        })
+        body: JSON.stringify({ ...form, examDate: form.examDate || null })
       })
-      const data = await res.json() as { success?: boolean; message?: string; affectedTaskCount?: number }
+      const data = await res.json() as { success?: boolean; message?: string }
       if (!res.ok || !data.success) {
         pushToast({ kind: 'error', title: '保存失败', message: data.message || '请稍后重试' })
         return
       }
-      pushToast({
-        kind: 'success',
-        title: '设置已更新',
-        message: data.affectedTaskCount ? `${data.affectedTaskCount} 个未来任务将按新设置调整` : undefined
-      })
+      pushToast({ kind: 'success', title: '设置已更新' })
       onMutate()
       onClose()
     } catch {
-      pushToast({ kind: 'error', title: '保存失败', message: '请稍后重试' })
+      pushToast({ kind: 'error', title: '保存失败' })
     } finally {
       setSaving(false)
     }
-  }
-
-  if (confirming) {
-    return (
-      <CenteredDialog
-        open
-        title="确认修改学习计划"
-        onClose={() => setConfirming(false)}
-        footer={
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button className="ui-secondary-button" type="button" onClick={() => setConfirming(false)}>取消</button>
-            <button className="ui-primary-button" type="button" disabled={saving} onClick={handleSave}>
-              {saving ? '保存中…' : '确认修改'}
-            </button>
-          </div>
-        }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <p className="ui-body-md">修改设置后：</p>
-          <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <li className="ui-body-md">已完成任务不变</li>
-            <li className="ui-body-md">已开始任务不变</li>
-            <li className="ui-body-md">已跳过任务不恢复</li>
-            {affectedCount > 0 && (
-              <li className="ui-body-md" style={{ fontWeight: 600 }}>
-                将重新安排未来 {affectedCount} 个未开始任务
-              </li>
-            )}
-            {form.minutesPerSession !== profile.minutesPerSession && (
-              <li className="ui-body-md">每日学习时长更新为 {form.minutesPerSession} 分钟</li>
-            )}
-            {form.examDate !== (profile.examDate ?? '') && form.examDate && (
-              <li className="ui-body-md">
-                考试日期更新为 {form.examDate}
-                {examDays !== null && examDays <= 7 && '（冲刺模式）'}
-              </li>
-            )}
-          </ul>
-        </div>
-      </CenteredDialog>
-    )
   }
 
   return (
@@ -1369,72 +840,98 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button className="ui-secondary-button" type="button" onClick={onClose}>取消</button>
-          <button className="ui-primary-button" type="button" disabled={!hasChanges || saving} onClick={handlePreview}>
-            {saving ? '保存中…' : '保存修改'}
+          <button className="ui-primary-button" type="button" disabled={saving} onClick={handleSave}>
+            {saving ? '保存中...' : '保存'}
           </button>
         </div>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <FieldGroup label="目标写作分数">
-          <OptionGrid
-            options={[5.5, 6, 6.5, 7, 7.5, 8].map((v) => ({ value: v, label: String(v) }))}
-            value={form.overallTarget}
-            onChange={(v) => setForm({ ...form, overallTarget: v as number })}
-          />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <FieldGroup label="目标分数">
+          <OptionGrid options={[5.5, 6, 6.5, 7, 7.5, 8].map((v) => ({ value: v, label: String(v) }))} value={form.overallTarget} onChange={(v) => setForm({ ...form, overallTarget: v as number })} />
         </FieldGroup>
-
         <FieldGroup label="考试日期">
-          <input
-            type="date"
-            value={form.examDate}
-            min={today}
-            onChange={(e) => setForm({ ...form, examDate: e.target.value })}
-            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)', maxWidth: 200 }}
-          />
-          {examDays !== null && examDays <= 7 && (
-            <p className="ui-label" style={{ color: 'var(--error)', marginTop: 4 }}>冲刺计划：距离考试仅 {examDays} 天</p>
-          )}
+          <input type="date" value={form.examDate} min={getDateKeyInTimeZone()} onChange={(e) => setForm({ ...form, examDate: e.target.value })} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)', maxWidth: 200 }} />
         </FieldGroup>
-
         <FieldGroup label="每周学习天数">
-          <OptionGrid
-            options={[3, 4, 5, 6, 7].map((v) => ({ value: v, label: `${v} 天` }))}
-            value={form.sessionsPerWeek}
-            onChange={(v) => setForm({ ...form, sessionsPerWeek: v as number })}
-          />
+          <OptionGrid options={[3, 4, 5, 6, 7].map((v) => ({ value: v, label: `${v} 天` }))} value={form.sessionsPerWeek} onChange={(v) => setForm({ ...form, sessionsPerWeek: v as number })} />
         </FieldGroup>
-
         <FieldGroup label="每天学习时间">
-          <OptionGrid
-            options={[20, 30, 45, 60, 90].map((v) => ({ value: v, label: `${v} 分钟` }))}
-            value={form.minutesPerSession}
-            onChange={(v) => setForm({ ...form, minutesPerSession: v as number })}
-          />
+          <OptionGrid options={[20, 30, 45, 60, 90].map((v) => ({ value: v, label: `${v} 分钟` }))} value={form.minutesPerSession} onChange={(v) => setForm({ ...form, minutesPerSession: v as number })} />
         </FieldGroup>
-
         <FieldGroup label="训练强度">
-          <OptionGrid
-            options={[
-              { value: 'relaxed', label: '轻松', desc: '每天 1 个主要任务' },
-              { value: 'standard', label: '标准', desc: '每天 1–2 个任务' },
-              { value: 'intensive', label: '强化', desc: '每天 2–3 个任务' }
-            ]}
-            value={form.intensity}
-            onChange={(v) => setForm({ ...form, intensity: v as 'relaxed' | 'standard' | 'intensive' })}
-          />
+          <OptionGrid options={[
+            { value: 'relaxed', label: '轻松' },
+            { value: 'standard', label: '标准' },
+            { value: 'intensive', label: '强化' }
+          ]} value={form.intensity} onChange={(v) => setForm({ ...form, intensity: v as 'relaxed' | 'standard' | 'intensive' })} />
         </FieldGroup>
+      </div>
+    </CenteredDialog>
+  )
+}
 
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={form.allowTimedPractice} onChange={(e) => setForm({ ...form, allowTimedPractice: e.target.checked })} />
-            <span className="ui-body-md">接受限时写作</span>
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={form.includeFullTests} onChange={(e) => setForm({ ...form, includeFullTests: e.target.checked })} />
-            <span className="ui-body-md">每周安排完整模考</span>
-          </label>
+function TaskDetailDialog({ task, onClose, onMutate }: {
+  task: StudyPlanTask
+  onClose: () => void
+  onMutate: () => void
+}) {
+  const { pushToast } = useToast()
+  const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
+  const statusLabel = StudyPlanTaskStatusLabels[task.status] ?? task.status
+  const title = task.title || typeLabel
+  const writable = isWritableTaskType(task.taskType)
+  const writeMode = taskTypeToWriteMode(task.taskType)
+
+  const handleSkip = async () => {
+    try {
+      await fetch(`/api/study-plan/tasks/${task.id}/skip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'other' })
+      })
+      pushToast({ kind: 'info', title: '已跳过' })
+      onMutate()
+      onClose()
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <CenteredDialog
+      open
+      title={title}
+      onClose={onClose}
+      footer={
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {task.status !== 'completed' && (
+            <button className="ui-secondary-button" type="button" onClick={handleSkip}>跳过</button>
+          )}
+          {task.status === 'completed' && task.writingRecordId && (
+            <Link className="ui-primary-button" href={`/result?id=${task.writingRecordId}`}>查看结果</Link>
+          )}
+          {task.status !== 'completed' && writable && writeMode && (
+            <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}>开始写作</Link>
+          )}
         </div>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <span className="task-badge">{typeLabel}</span>
+          <span className="task-badge">{statusLabel}</span>
+          <span className="task-badge">{task.estimatedMinutes}分钟</span>
+          {task.difficulty && <span className="task-badge">{task.difficulty}</span>}
+        </div>
+        {task.description && <p className="ui-body-md">{task.description}</p>}
+        {task.generatedReason && (
+          <p className="ui-label" style={{ color: 'var(--text-secondary)' }}>原因：{task.generatedReason}</p>
+        )}
+        {task.focusCriteria.length > 0 && (
+          <div>
+            <span className="ui-label">重点：</span>
+            <span className="ui-body-md">{task.focusCriteria.map((c) => ShortCriterionLabels[c] ?? c).join('、')}</span>
+          </div>
+        )}
       </div>
     </CenteredDialog>
   )
@@ -1443,7 +940,7 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
 function FieldGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <span className="ui-label" style={{ display: 'block', marginBottom: 8 }}>{label}</span>
+      <span className="ui-label" style={{ display: 'block', marginBottom: 6 }}>{label}</span>
       {children}
     </div>
   )
@@ -1455,7 +952,7 @@ function OptionGrid({ options, value, onChange }: {
   onChange: (value: unknown) => void
 }) {
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       {options.map((opt) => (
         <button
           key={String(opt.value)}
@@ -1470,4 +967,143 @@ function OptionGrid({ options, value, onChange }: {
       ))}
     </div>
   )
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  emptyCard: {
+    textAlign: 'center',
+    padding: '48px 24px',
+    borderRadius: 28
+  },
+  progressCard: {
+    padding: 24,
+    borderRadius: 28,
+    background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))'
+  },
+  failedBanner: {
+    padding: 16,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 20
+  },
+  overviewCard: {
+    padding: 20,
+    borderRadius: 24
+  },
+  overviewGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+    gap: 12
+  },
+  overviewItem: {
+    padding: '10px 12px',
+    borderRadius: 14,
+    background: 'var(--surface-container-low)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2
+  },
+  calendarCard: {
+    padding: 20,
+    borderRadius: 24
+  },
+  calendarHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16
+  },
+  calendarWeekDays: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: 4,
+    marginBottom: 4
+  },
+  calendarWeekDay: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+    padding: '4px 0',
+    fontWeight: 600
+  },
+  calendarGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: 4
+  },
+  calendarCellEmpty: {
+    aspectRatio: '1',
+    borderRadius: 12
+  },
+  calendarCell: {
+    aspectRatio: '1',
+    borderRadius: 12,
+    border: '2px solid transparent',
+    padding: '4px 6px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 2,
+    transition: 'border-color 0.15s, background 0.15s',
+    minHeight: 60
+  },
+  calendarDayNum: {
+    fontSize: 13,
+    lineHeight: 1
+  },
+  calendarTaskDots: {
+    display: 'flex',
+    gap: 2,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'center'
+  },
+  taskDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    display: 'inline-block'
+  },
+  calendarMinutes: {
+    fontSize: 9,
+    color: 'var(--text-secondary)',
+    lineHeight: 1
+  },
+  legend: {
+    display: 'flex',
+    gap: 12,
+    flexWrap: 'wrap',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTop: '1px solid var(--glass-border-1)'
+  },
+  todayCard: {
+    padding: 20,
+    borderRadius: 24
+  },
+  todayTaskRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 14px',
+    borderRadius: 14,
+    background: 'var(--surface-container-low)',
+    gap: 8
+  },
+  taskMiniCard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 12px',
+    borderRadius: 12,
+    background: 'var(--surface-container-low)',
+    cursor: 'pointer'
+  },
+  bottomActions: {
+    display: 'flex',
+    gap: 12,
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  }
 }
