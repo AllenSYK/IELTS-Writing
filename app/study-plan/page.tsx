@@ -184,12 +184,10 @@ export default function StudyPlanPage() {
             <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标和真实写作表现，动态调整每日任务。</p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {adjustmentBalance > 0 && (
-              <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <MaterialIcon name="stars" size={14} />
-                调整点：{adjustmentBalance}
-              </span>
-            )}
+            <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <MaterialIcon name="stars" size={14} />
+              调整点：{adjustmentBalance}
+            </span>
             {plan && (
               <button className="ui-secondary-button" type="button" onClick={() => setShowSettings(true)}>
                 <MaterialIcon name="tune" size={18} />
@@ -451,12 +449,10 @@ function PlanContent({ plan, profile, quota, onRegenerate, onSelectTask, adjustm
         >
           重新规划
         </button>
-        {adjustmentBalance > 0 && (
-          <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <MaterialIcon name="stars" size={14} />
-            调整点：{adjustmentBalance}
-          </span>
-        )}
+        <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <MaterialIcon name="stars" size={14} />
+          调整点：{adjustmentBalance}
+        </span>
         {quota && (
           <span className="ui-label" style={{ alignSelf: 'center' }}>
             本月已规划 {quota.usedCount} / {quota.limit} 次

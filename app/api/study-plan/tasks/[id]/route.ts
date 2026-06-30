@@ -83,9 +83,26 @@ export async function PATCH(
     }
 
     updateAbilityProfile(service, userId).catch(() => {})
-    awardTaskPoints(service, userId, id, (existingTask.task_type as string) ?? 'review').catch(() => {})
 
-    return json({ success: true, result: data })
+    let rewardResult: { awarded: boolean; amount: number; balance: number } | null = null
+    try {
+      const { data: rewardData } = await service.rpc('award_adjustment_points', {
+        p_user_id: userId,
+        p_task_id: id,
+        p_task_type: (existingTask.task_type as string) ?? 'review',
+        p_idempotency_key: `task_complete_${id}`
+      }).single()
+      if (rewardData && typeof rewardData === 'object') {
+        const rd = rewardData as Record<string, unknown>
+        rewardResult = {
+          awarded: Boolean(rd.awarded),
+          amount: Number(rd.amount) || 0,
+          balance: Number(rd.balance) || 0
+        }
+      }
+    } catch { /* best-effort */ }
+
+    return json({ success: true, result: data, reward: rewardResult })
   }
 
   const updates: Record<string, unknown> = {}
@@ -103,17 +120,6 @@ export async function PATCH(
 
   if (error) return json({ success: false, message: error.message }, { status: 500 })
   return json({ success: true })
-}
-
-async function awardTaskPoints(service: ReturnType<typeof createSupabaseServiceRoleClient>, userId: string, taskId: string, taskType: string) {
-  try {
-    await service.rpc('award_adjustment_points', {
-      p_user_id: userId,
-      p_task_id: taskId,
-      p_task_type: taskType,
-      p_idempotency_key: `task_complete_${taskId}`
-    })
-  } catch { /* best-effort */ }
 }
 
 async function updateAbilityProfile(service: ReturnType<typeof createSupabaseServiceRoleClient>, userId: string) {

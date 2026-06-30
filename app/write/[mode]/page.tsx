@@ -959,11 +959,15 @@ export default function WritePage() {
       if (activeQuestion.generatedSource !== 'user_upload') markGeneratedPromptCompleted(activeQuestion.id, userId)
       if (studyPlanTaskId) {
         try {
-          await fetch(`/api/study-plan/tasks/${studyPlanTaskId}`, {
+          const taskRes = await fetch(`/api/study-plan/tasks/${studyPlanTaskId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ writingRecordId: record.id })
           })
+          const taskData = await taskRes.json() as { success?: boolean; reward?: { awarded?: boolean; amount?: number } | null }
+          if (taskData.reward?.awarded && taskData.reward.amount) {
+            pushToast({ kind: 'success', title: '任务完成', message: `获得 ${taskData.reward.amount} 个计划调整点` })
+          }
         } catch { /* non-critical, task completion is best-effort */ }
       }
       if (draftId) {
@@ -1171,11 +1175,15 @@ export default function WritePage() {
       if (task2Evaluation) markGeneratedPromptCompleted(mockQuestions.task2.id, userId)
       if (studyPlanTaskId) {
         try {
-          await fetch(`/api/study-plan/tasks/${studyPlanTaskId}`, {
+          const taskRes = await fetch(`/api/study-plan/tasks/${studyPlanTaskId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ writingRecordId: record.id })
           })
+          const taskData = await taskRes.json() as { success?: boolean; reward?: { awarded?: boolean; amount?: number } | null }
+          if (taskData.reward?.awarded && taskData.reward.amount) {
+            pushToast({ kind: 'success', title: '任务完成', message: `获得 ${taskData.reward.amount} 个计划调整点` })
+          }
         } catch { /* non-critical */ }
       }
       if (draftId) {
