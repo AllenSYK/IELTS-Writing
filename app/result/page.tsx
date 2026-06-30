@@ -147,6 +147,7 @@ export default function ResultPage() {
   const [generatingDerivative, setGeneratingDerivative] = useState<'revised' | 'model' | null>(null)
   const [revisedSubTab, setRevisedSubTab] = useState<RevisedSubTab>('annotation')
   const [mistakeSaved, setMistakeSaved] = useState(false)
+  const [rewriting, setRewriting] = useState(false)
 
   useEffect(() => {
     if (!userId) return
@@ -238,6 +239,25 @@ export default function ResultPage() {
     } else {
       setMistakeSaved(true)
       pushToast({ kind: 'success', title: '已保存到错题本', message: '可在历史记录中继续复盘。' })
+    }
+  }
+
+  async function handleRewrite() {
+    if (!record || !userId || rewriting) return
+    setRewriting(true)
+    try {
+      const res = await fetch(`/api/writing-records/${record.id}/rewrite`, { method: 'POST' })
+      const data = await res.json() as { success?: boolean; message?: string; record?: WritingRecord; revisionNumber?: number }
+      if (!res.ok || !data.success || !data.record) {
+        pushToast({ kind: 'error', title: '创建重写失败', message: data.message || '请稍后重试' })
+        return
+      }
+      pushToast({ kind: 'success', title: `已创建第${data.revisionNumber ?? 2}版` })
+      window.location.href = `/write/${record.taskType}?revision=${data.record.id}&original=${record.id}`
+    } catch {
+      pushToast({ kind: 'error', title: '创建重写失败', message: '请稍后重试' })
+    } finally {
+      setRewriting(false)
     }
   }
 
@@ -410,6 +430,10 @@ export default function ResultPage() {
             <MaterialIcon name="edit_note" size={18} />
             基于原题重写
           </Link>
+          <button className="ui-secondary-button" type="button" onClick={handleRewrite} disabled={rewriting} title="保留原稿，基于反馈创建新版本">
+            <MaterialIcon name="auto_fix_high" size={18} />
+            {rewriting ? '创建中…' : '根据反馈重写'}
+          </button>
           <Link className="ui-secondary-button" href={`/write/${record.taskType}`}>
             <MaterialIcon name="replay" size={18} />
             重新练习
