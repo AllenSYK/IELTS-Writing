@@ -1,8 +1,8 @@
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getAiConfig, AiProviderError } from '@/lib/ai-provider'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadWritingRecordsFromServer } from '@/lib/writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
+import { selectQuestionsForPlan, buildQuestionSnapshot } from '@/lib/question-selection'
 
 type JobStatus = 'queued' | 'analyzing_history' | 'building_profile' | 'generating_tasks' | 'saving' | 'completed' | 'failed' | 'cancelled'
 
@@ -62,28 +62,35 @@ export async function processGenerationJob(jobId: string, userId: string) {
       overallTarget: profile?.overall_target ?? (input.overallTarget as number) ?? 6.5,
       task1Target: profile?.task1_target ?? (input.task1Target as number) ?? 6.0,
       task2Target: profile?.task2_target ?? (input.task2Target as number) ?? 6.5,
-      examDate: profile?.exam_date ?? (input.examDate as string) ?? undefined
+      examDate: profile?.exam_date ?? (input.examDate as string) ?? undefined,
+      prepWeeks: (input.prepWeeks as number) ?? undefined
     }
 
-    await updateJob(service, jobId, { status: 'generating_tasks', progress: 45, current_step: '正在安排未来 7 天任务' })
-
-    let tasks: Array<Record<string, unknown>> = []
-
-    try {
-      const aiConfig = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen3.5-plus' })
-      tasks = await generatePlanWithAI(aiConfig, { diagnosis, preferences, goals, records: records.slice(0, 10) })
-    } catch {
-      tasks = buildFallbackTasks(preferences, goals, diagnosis)
-    }
-
-    if (tasks.length === 0) {
-      tasks = buildFallbackTasks(preferences, goals, diagnosis)
-    }
-
-    await updateJob(service, jobId, { status: 'generating_tasks', progress: 75, current_step: '正在生成任务说明' })
+    await updateJob(service, jobId, { status: 'generating_tasks', progress: 40, current_step: '正在从题库中选题' })
 
     const today = getDateKeyInTimeZone()
-    const periodEnd = addDaysToDateKey(today, 7)
+    const totalWeeks = goals.examDate
+      ? Math.max(1, Math.ceil(Math.max(0, (new Date(goals.examDate).getTime() - Date.now()) / 86400000) / 7))
+      : (goals.prepWeeks ?? 4)
+    const periodEnd = addDaysToDateKey(today, totalWeeks * 7)
+
+    const totalStudyDays = totalWeeks * preferences.sessionsPerWeek
+    const task1Count = Math.max(2, Math.ceil(totalStudyDays * 0.35))
+    const task2Count = Math.max(3, Math.ceil(totalStudyDays * 0.45))
+    const mockCount = preferences.includeFullTests ? Math.max(1, Math.floor(totalWeeks / 2)) : 0
+
+    const questions = await selectQuestionsForPlan(userId, {
+      task1Count,
+      task2Count,
+      mockCount,
+      weaknesses: preferences.weaknesses
+    })
+
+    await updateJob(service, jobId, { status: 'generating_tasks', progress: 55, current_step: '正在安排学习日与休息日' })
+
+    const tasks = buildFullPeriodTasks(today, periodEnd, totalWeeks, preferences, goals, diagnosis, questions)
+
+    await updateJob(service, jobId, { status: 'generating_tasks', progress: 75, current_step: '正在生成任务说明' })
 
     await updateJob(service, jobId, { status: 'saving', progress: 90, current_step: '正在保存学习计划' })
 
@@ -96,7 +103,7 @@ export async function processGenerationJob(jobId: string, userId: string) {
         p_diagnosis: diagnosis as unknown as Record<string, unknown>,
         p_preferences: preferences as unknown as Record<string, unknown>,
         p_goals: goals as unknown as Record<string, unknown>,
-        p_ai_model: 'background_job',
+        p_ai_model: 'full_period_v1',
         p_tasks: tasks
       })
       .single()
@@ -148,7 +155,6 @@ export async function processGenerationJob(jobId: string, userId: string) {
     const errorCode = errorMsg.includes('JOB_NOT_FOUND') ? 'JOB_NOT_FOUND'
       : errorMsg.includes('JOB_INVALID_STATE') ? 'JOB_INVALID_STATE'
       : errorMsg.includes('PLAN_SAVE_FAILED') ? 'PLAN_SAVE_FAILED'
-      : errorMsg.includes('AiProviderError') ? 'AI_ERROR'
       : 'DATABASE_ERROR'
 
     console.error(`[study-plan] Job ${jobId} failed at step:`, errorMsg)
@@ -182,116 +188,210 @@ async function ensureWallet(service: ReturnType<typeof createSupabaseServiceRole
   return { balance: 0 }
 }
 
-async function generatePlanWithAI(
-  config: { apiKey: string; baseUrl: string; model: string },
-  input: { diagnosis: ReturnType<typeof buildStudyPlanDiagnosis>; preferences: Record<string, unknown>; goals: Record<string, unknown>; records: unknown[] }
-): Promise<Array<Record<string, unknown>>> {
-  const summary = input.records.slice(0, 10).map((r: unknown) => {
-    const rec = r as Record<string, unknown>
-    const ev = (rec.evaluation ?? {}) as Record<string, unknown>
-    return {
-      taskType: rec.taskType,
-      overallBand: ev.overallBand ?? ev.bandEstimate,
-      criteria: ev.criteria,
-      submittedAt: rec.submittedAt
-    }
-  })
-
-  const systemPrompt = `You are an IELTS study plan generator. Return a JSON object with a "tasks" array of 5-10 study tasks for one week.
-Each task: scheduledDate (YYYY-MM-DD), taskType (task1|task2|full_test|grammar_drill|vocabulary_drill|review|error_review|timed_practice), source (built_in|weakness_drill|review), title (Chinese max 30), description (Chinese max 100), focusCriteria (string[]), focusErrorTags (string[]), estimatedMinutes (10-90), difficulty (easy|medium|hard), priority (1-3), generatedReason (Chinese max 50), writingMode (task1|task2|null). Dates within 7 days. ONLY valid JSON.`
-
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify({ today: getDateKeyInTimeZone(), diagnosis: input.diagnosis, preferences: input.preferences, goals: input.goals, recentSummary: summary }) }
-      ],
-      temperature: 0.3,
-      max_tokens: 3000,
-      response_format: { type: 'json_object' }
-    }),
-    signal: AbortSignal.timeout(25000)
-  })
-
-  if (!response.ok) throw new AiProviderError('AI request failed', response.status)
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> }
-  const content = data.choices?.[0]?.message?.content ?? '{"tasks":[]}'
-  const parsed = JSON.parse(content)
-  const taskArray = Array.isArray(parsed) ? parsed : parsed.tasks ?? []
-  return Array.isArray(taskArray) ? taskArray.slice(0, 14) : []
+type QuestionPick = {
+  id: string
+  title: string
+  questionText: string
+  taskType: string
+  visualTypes: string[] | null
+  visualData: Record<string, unknown> | null
+  questionType: string | null
+  difficulty: string | null
+  sourceName: string | null
+  sourceReference: string | null
 }
 
-function buildFallbackTasks(
-  preferences: Record<string, unknown>,
-  goals: Record<string, unknown>,
-  diagnosis: ReturnType<typeof buildStudyPlanDiagnosis>
-): Array<Record<string, unknown>> {
-  const today = getDateKeyInTimeZone()
-  const sessions = Math.min(7, Math.max(1, (preferences.sessionsPerWeek as number) ?? 4))
-  const minutes = (preferences.minutesPerSession as number) ?? 45
-  const tasks: Array<Record<string, unknown>> = []
-  const examDate = goals.examDate as string | undefined
-  const examDays = examDate ? Math.max(0, Math.ceil((new Date(examDate).getTime() - Date.now()) / 86400000)) : null
-  const weaknesses = (preferences.weaknesses as string[]) ?? []
+function selectLearningDays(sessionsPerWeek: number, preferredDays: number[]): number[] {
+  if (preferredDays.length >= sessionsPerWeek) return preferredDays.slice(0, sessionsPerWeek)
 
-  const t1Weak = diagnosis.weakestCriteria.some((c) => c === 'Task Achievement') || weaknesses.includes('task1_overview')
-  const graWeak = diagnosis.weakestCriteria.some((c) => c === 'Grammatical Range and Accuracy') || weaknesses.includes('grammar')
+  const allDays = [0, 1, 2, 3, 4, 5, 6]
+  if (sessionsPerWeek >= 7) return allDays
+  if (sessionsPerWeek >= 6) return allDays.filter((d) => d !== 0)
 
-  for (let i = 0; i < sessions; i++) {
-    const date = addDaysToDateKey(today, i)
-    const isTask1 = i % 3 === 0
+  const spacing = Math.floor(7 / sessionsPerWeek)
+  const result: number[] = []
+  const start = preferredDays.length > 0 ? preferredDays[0] : 1
 
-    if (isTask1) {
-      tasks.push({
-        scheduledDate: date,
-        taskType: 'task1',
-        source: 'weakness_drill',
-        title: 'Task 1 写作训练',
-        description: '完成一篇 Task 1，重点练习数据选择与概述。',
-        focusCriteria: ['Task Achievement'],
-        focusErrorTags: diagnosis.priorityErrorTags.slice(0, 2).map((t) => t.tag),
-        estimatedMinutes: Math.min(minutes, 25),
-        difficulty: 'medium',
-        priority: 2,
-        generatedReason: t1Weak ? 'Task 1 分数偏低，需要加强' : '保持 Task 1 训练频率',
-        writingMode: 'task1'
-      })
-    } else {
-      tasks.push({
-        scheduledDate: date,
-        taskType: 'task2',
-        source: 'weakness_drill',
-        title: 'Task 2 写作训练',
-        description: '完成一篇 Task 2，重点练习论证展开。',
-        focusCriteria: ['Task Response', 'Coherence and Cohesion'],
-        focusErrorTags: diagnosis.priorityErrorTags.slice(0, 2).map((t) => t.tag),
-        estimatedMinutes: minutes,
-        difficulty: examDays !== null && examDays <= 14 ? 'hard' : 'medium',
-        priority: 1,
-        generatedReason: graWeak ? '语法准确性需要提升' : '保持 Task 2 训练强度',
-        writingMode: 'task2'
-      })
-    }
+  for (let i = 0; i < sessionsPerWeek; i++) {
+    const day = (start + i * spacing) % 7
+    if (!result.includes(day)) result.push(day)
   }
 
-  if (diagnosis.priorityErrorTags.length > 0) {
-    tasks.push({
-      scheduledDate: addDaysToDateKey(today, Math.min(sessions, 5)),
-      taskType: 'error_review',
-      source: 'review',
-      title: '错误复盘',
-      description: '回顾最近作文中的重复错误，总结改进方法。',
-      focusCriteria: ['Coherence and Cohesion'],
-      focusErrorTags: diagnosis.priorityErrorTags.slice(0, 3).map((t) => t.tag),
-      estimatedMinutes: 20,
-      difficulty: 'easy',
-      priority: 3,
-      generatedReason: '复盘错误有助于避免重复犯错',
-      writingMode: null
-    })
+  return result.sort((a, b) => a - b)
+}
+
+function buildFullPeriodTasks(
+  startDate: string,
+  endDate: string,
+  totalWeeks: number,
+  preferences: Record<string, unknown>,
+  goals: Record<string, unknown>,
+  diagnosis: ReturnType<typeof buildStudyPlanDiagnosis>,
+  questions: { task1Questions: QuestionPick[]; task2Questions: QuestionPick[]; mockPairs: Array<{ task1: QuestionPick; task2: QuestionPick }> }
+): Array<Record<string, unknown>> {
+  const tasks: Array<Record<string, unknown>> = []
+  const sessionsPerWeek = Math.min(7, Math.max(1, (preferences.sessionsPerWeek as number) ?? 4))
+  const minutesPerSession = (preferences.minutesPerSession as number) ?? 45
+  const preferredDays = (preferences.preferredDays as number[]) ?? []
+  const weaknesses = (preferences.weaknesses as string[]) ?? []
+  const includeFullTests = (preferences.includeFullTests as boolean) ?? true
+  const intensity = (preferences.intensity as string) ?? 'standard'
+
+  const learningDays = selectLearningDays(sessionsPerWeek, preferredDays)
+
+  const examDate = goals.examDate as string | undefined
+  const examDays = examDate ? Math.max(0, Math.ceil((new Date(examDate).getTime() - Date.now()) / 86400000)) : null
+
+  let t1Idx = 0
+  let t2Idx = 0
+  let mockIdx = 0
+
+  const t1Weak = diagnosis.weakestCriteria.some((c) => c === 'Task Achievement') || weaknesses.includes('task1_overview') || weaknesses.includes('task1_data')
+  const graWeak = diagnosis.weakestCriteria.some((c) => c === 'Grammatical Range and Accuracy') || weaknesses.includes('grammar')
+  const ccWeak = diagnosis.weakestCriteria.some((c) => c === 'Coherence and Cohesion')
+
+  const tasksPerDay = intensity === 'intensive' ? 2 : 1
+
+  let currentDate = startDate
+  let weekNum = 0
+  let consecutiveStudyDays = 0
+
+  while (currentDate <= endDate) {
+    const dayOfWeek = new Date(currentDate + 'T00:00:00+08:00').getDay()
+    const isLearningDay = learningDays.includes(dayOfWeek)
+    const daysFromStart = Math.floor((new Date(currentDate).getTime() - new Date(startDate).getTime()) / 86400000)
+    weekNum = Math.floor(daysFromStart / 7)
+
+    if (!isLearningDay) {
+      consecutiveStudyDays = 0
+      currentDate = addDaysToDateKey(currentDate, 1)
+      continue
+    }
+
+    consecutiveStudyDays++
+
+    if (consecutiveStudyDays > 3) {
+      tasks.push({
+        scheduledDate: currentDate,
+        taskType: 'review',
+        source: 'review',
+        title: '轻量复习',
+        description: '回顾最近学习内容，保持手感。',
+        focusCriteria: [],
+        focusErrorTags: [],
+        estimatedMinutes: 15,
+        difficulty: 'easy',
+        priority: 3,
+        generatedReason: '连续学习后安排轻量日',
+        writingMode: null,
+        questionId: null,
+        questionSnapshot: null
+      })
+      consecutiveStudyDays = 0
+      currentDate = addDaysToDateKey(currentDate, 1)
+      continue
+    }
+
+    for (let t = 0; t < tasksPerDay; t++) {
+      const remainingMinutes = minutesPerSession - (t > 0 ? Math.round(minutesPerSession * 0.6) : 0)
+      const taskMinutes = t === 0 ? Math.round(minutesPerSession * 0.6) : remainingMinutes
+
+      const isSprintWeek = examDays !== null && examDays <= 7 * (totalWeeks - weekNum)
+      const isLastWeek = weekNum >= totalWeeks - 1
+
+      if (includeFullTests && dayOfWeek === (learningDays[learningDays.length - 1] ?? 6) && weekNum % 2 === 0 && t === 0) {
+        const pair = questions.mockPairs[mockIdx % Math.max(1, questions.mockPairs.length)]
+        if (pair) {
+          mockIdx++
+          tasks.push({
+            scheduledDate: currentDate,
+            taskType: 'full_test',
+            source: 'past_paper',
+            title: '完整模考',
+            description: `${pair.task1.title || 'Task 1'} + ${pair.task2.title || 'Task 2'}`,
+            focusCriteria: ['Task Achievement', 'Task Response'],
+            focusErrorTags: [],
+            estimatedMinutes: 60,
+            difficulty: 'hard',
+            priority: 1,
+            generatedReason: '定期模考检验学习效果',
+            writingMode: null,
+            questionId: pair.task1.id,
+            questionSnapshot: buildQuestionSnapshot(pair.task1),
+            taskMetadata: {
+              task1QuestionId: pair.task1.id,
+              task2QuestionId: pair.task2.id,
+              task1Snapshot: buildQuestionSnapshot(pair.task1),
+              task2Snapshot: buildQuestionSnapshot(pair.task2)
+            }
+          })
+          continue
+        }
+      }
+
+      const isTask1Turn = (t1Idx + t2Idx) % 3 === 0 || (t1Weak && t1Idx < t2Idx + 2)
+
+      if (isTask1Turn && t1Idx < questions.task1Questions.length) {
+        const q = questions.task1Questions[t1Idx % questions.task1Questions.length]
+        t1Idx++
+        const visualLabel = q.visualTypes?.includes('map') ? '地图题' : q.visualTypes?.includes('process') ? '流程图' : '图表题'
+        tasks.push({
+          scheduledDate: currentDate,
+          taskType: 'task1',
+          source: 'past_paper',
+          title: `Task 1 · ${visualLabel}`,
+          description: q.title || `完成一篇 Task 1 ${visualLabel}。`,
+          focusCriteria: ['Task Achievement'],
+          focusErrorTags: diagnosis.priorityErrorTags.slice(0, 2).map((tag) => tag.tag),
+          estimatedMinutes: Math.min(taskMinutes, 25),
+          difficulty: isSprintWeek ? 'hard' : 'medium',
+          priority: 2,
+          generatedReason: t1Weak ? 'Task 1 分数偏低，需要加强' : '保持 Task 1 训练频率',
+          writingMode: 'task1',
+          questionId: q.id,
+          questionSnapshot: buildQuestionSnapshot(q)
+        })
+      } else if (t2Idx < questions.task2Questions.length) {
+        const q = questions.task2Questions[t2Idx % questions.task2Questions.length]
+        t2Idx++
+        const typeLabel = q.questionType === 'opinion' ? 'Opinion' : q.questionType === 'discussion' ? 'Discussion' : q.questionType === 'problem_solution' ? '问题解决' : q.questionType === 'advantages_disadvantages' ? '优缺点' : '综合'
+        tasks.push({
+          scheduledDate: currentDate,
+          taskType: 'task2',
+          source: 'past_paper',
+          title: `Task 2 · ${typeLabel}`,
+          description: q.title || '完成一篇 Task 2 写作。',
+          focusCriteria: graWeak ? ['Grammatical Range and Accuracy', 'Task Response'] : ['Task Response', 'Coherence and Cohesion'],
+          focusErrorTags: diagnosis.priorityErrorTags.slice(0, 2).map((tag) => tag.tag),
+          estimatedMinutes: taskMinutes,
+          difficulty: isSprintWeek || isLastWeek ? 'hard' : 'medium',
+          priority: 1,
+          generatedReason: graWeak ? '语法准确性需要提升' : '保持 Task 2 训练强度',
+          writingMode: 'task2',
+          questionId: q.id,
+          questionSnapshot: buildQuestionSnapshot(q)
+        })
+      } else {
+        tasks.push({
+          scheduledDate: currentDate,
+          taskType: 'error_review',
+          source: 'review',
+          title: '错误复盘',
+          description: '回顾最近作文中的重复错误，总结改进方法。',
+          focusCriteria: ccWeak ? ['Coherence and Cohesion'] : ['Grammatical Range and Accuracy'],
+          focusErrorTags: diagnosis.priorityErrorTags.slice(0, 3).map((tag) => tag.tag),
+          estimatedMinutes: 20,
+          difficulty: 'easy',
+          priority: 3,
+          generatedReason: '复盘错误有助于避免重复犯错',
+          writingMode: null,
+          questionId: null,
+          questionSnapshot: null
+        })
+      }
+    }
+
+    currentDate = addDaysToDateKey(currentDate, 1)
   }
 
   return tasks

@@ -544,6 +544,7 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
 }) {
   const [showDetail, setShowDetail] = useState(false)
   const totalMinutes = tasks.reduce((s, t) => s + t.estimatedMinutes, 0)
+  const isRestDay = totalCount === 0 && !isPast
 
   const borderColor = isToday ? 'var(--primary)' : 'transparent'
   const bg = isToday ? 'var(--surface-container-low)' : 'transparent'
@@ -561,14 +562,28 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
         <span style={{ ...styles.calendarDayNum, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--primary)' : undefined }}>
           {day}
         </span>
-        {totalCount > 0 && (
-          <div style={styles.calendarTaskDots}>
-            {tasks.slice(0, 3).map((t, i) => (
-              <span key={i} style={{ ...styles.taskDot, background: getTaskColor(t.taskType, t.status === 'completed') }} />
-            ))}
-            {totalCount > 3 && <span style={{ fontSize: 9, color: 'var(--text-secondary)' }}>+{totalCount - 3}</span>}
-          </div>
-        )}
+
+        <div style={styles.calendarTaskList}>
+          {tasks.slice(0, 3).map((task) => {
+            const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
+            const shortTitle = task.title || typeLabel
+            return (
+              <div key={task.id} style={styles.calendarTaskLine}>
+                <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), flexShrink: 0 }} />
+                <span style={{ fontSize: 11, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: task.status === 'completed' ? 'var(--text-secondary)' : undefined, textDecoration: task.status === 'completed' ? 'line-through' : undefined }}>
+                  {shortTitle}
+                </span>
+              </div>
+            )
+          })}
+          {totalCount > 3 && (
+            <span style={{ fontSize: 10, color: 'var(--text-secondary)', paddingLeft: 10 }}>+{totalCount - 3} 个任务</span>
+          )}
+          {isRestDay && (
+            <span style={{ fontSize: 10, color: 'var(--text-secondary)', opacity: 0.6 }}>休息日</span>
+          )}
+        </div>
+
         {totalCount > 0 && (
           <span style={styles.calendarMinutes}>{totalMinutes}分</span>
         )}
@@ -1033,42 +1048,50 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 4
   },
   calendarCellEmpty: {
-    aspectRatio: '1',
-    borderRadius: 12
+    borderRadius: 16,
+    minHeight: 130
   },
   calendarCell: {
-    aspectRatio: '1',
-    borderRadius: 12,
+    borderRadius: 16,
     border: '2px solid transparent',
-    padding: '4px 6px',
+    padding: '6px 8px',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    gap: 2,
+    gap: 4,
     transition: 'border-color 0.15s, background 0.15s',
-    minHeight: 60
+    minHeight: 130,
+    overflow: 'hidden'
   },
   calendarDayNum: {
     fontSize: 13,
-    lineHeight: 1
+    lineHeight: 1,
+    fontWeight: 400
   },
-  calendarTaskDots: {
+  calendarTaskList: {
     display: 'flex',
-    gap: 2,
+    flexDirection: 'column',
+    gap: 3,
+    flex: 1,
+    overflow: 'hidden'
+  },
+  calendarTaskLine: {
+    display: 'flex',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'center'
+    gap: 4,
+    minWidth: 0
   },
   taskDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    display: 'inline-block'
+    display: 'inline-block',
+    flexShrink: 0
   },
   calendarMinutes: {
-    fontSize: 9,
+    fontSize: 10,
     color: 'var(--text-secondary)',
-    lineHeight: 1
+    lineHeight: 1,
+    marginTop: 'auto'
   },
   legend: {
     display: 'flex',
