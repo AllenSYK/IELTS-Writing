@@ -21,6 +21,11 @@ const DashboardLearningTasks = dynamic(
   { loading: () => null }
 )
 
+const DashboardErrorReview = dynamic(
+  () => import('@/components/dashboard/DashboardErrorReview').then((m) => ({ default: m.DashboardErrorReview })),
+  { loading: () => null }
+)
+
 function formatDate(value?: string | null) {
   if (!value) return '暂无'
   return new Date(value).toLocaleString('zh-CN')
@@ -74,6 +79,8 @@ export default async function DashboardPage() {
         </section>
 
         <DashboardLearningTasks />
+
+        <DashboardErrorReview />
 
         <WritingActivityHeatmap userId={user.id} />
       </section>
