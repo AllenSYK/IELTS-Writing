@@ -68,6 +68,7 @@ export default function StudyPlanPage() {
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
   const [generating, setGenerating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
 
   const handleGenerate = useCallback(async (formData?: Record<string, unknown>) => {
@@ -131,7 +132,7 @@ export default function StudyPlanPage() {
             <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标和真实写作表现，动态调整每日任务。</p>
           </div>
           {plan && (
-            <button className="ui-secondary-button" type="button" onClick={() => setShowCreate(true)}>
+            <button className="ui-secondary-button" type="button" onClick={() => setShowSettings(true)}>
               <MaterialIcon name="tune" size={18} />
               调整计划
             </button>
@@ -162,6 +163,15 @@ export default function StudyPlanPage() {
             generating={generating}
             onGenerate={handleGenerate}
             onClose={() => setShowCreate(false)}
+          />
+        )}
+
+        {showSettings && profile && (
+          <SettingsDialog
+            profile={profile}
+            plan={plan}
+            onClose={() => setShowSettings(false)}
+            onMutate={() => void mutate()}
           />
         )}
 
@@ -207,6 +217,69 @@ function EmptyPlan({ quota, generating, onGenerate }: {
   )
 }
 
+function ExamSprintBanner({ examDays, profile, tasks, today }: {
+  examDays: number
+  profile: StudyPlanProfile | null
+  tasks: StudyPlanTask[]
+  today: string
+}) {
+  const sprintTasks = tasks.filter((t) => t.scheduledDate === today && t.status !== 'rescheduled')
+  const topErrors = profile?.currentLevel ? `当前预测 ${profile.currentLevel.toFixed(1)}` : ''
+
+  return (
+    <GlassPanel style={{ padding: 20, background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <MaterialIcon name="local_fire_department" size={28} filled />
+        <div>
+          <h2 className="ui-title-md">考前冲刺模式</h2>
+          <p className="ui-body-md" style={{ color: 'var(--error)', fontWeight: 600 }}>
+            距离考试仅剩 {examDays} 天
+          </p>
+        </div>
+      </div>
+
+      {examDays === 0 && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
+          <p className="ui-body-md" style={{ fontWeight: 600 }}>
+            今天是考试日！保持节奏，检查时间分配和个人高频错误。加油！
+          </p>
+        </div>
+      )}
+
+      {examDays === 1 && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
+          <p className="ui-body-md">
+            明天考试！今天以轻量复习为主：回顾个人错误清单、检查模板与结构，不安排高强度写作。
+          </p>
+        </div>
+      )}
+
+      {examDays >= 2 && examDays <= 4 && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
+          <p className="ui-body-md">
+            冲刺阶段：重点进行 60 分钟完整模考、时间分配训练和高频错误复习。
+          </p>
+        </div>
+      )}
+
+      {examDays >= 5 && examDays <= 7 && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--surface-container-low)', marginBottom: 12 }}>
+          <p className="ui-body-md">
+            冲刺阶段：完成完整 Task 2 和 Task 1 训练，重点复习弱项和个人错误。
+          </p>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13 }}>
+        {topErrors && <span>{topErrors}</span>}
+        <span>今日任务：{sprintTasks.length} 个</span>
+        <span>Task 2 建议用时：40 分钟</span>
+        <span>Task 1 建议用时：20 分钟</span>
+      </div>
+    </GlassPanel>
+  )
+}
+
 function PlanContent({ plan, profile, quota, onRegenerate, generating, onSelectTask }: {
   plan: StudyPlan
   profile: StudyPlanProfile | null
@@ -229,6 +302,10 @@ function PlanContent({ plan, profile, quota, onRegenerate, generating, onSelectT
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {examDays !== null && examDays <= 7 && (
+        <ExamSprintBanner examDays={examDays} profile={profile} tasks={plan.tasks ?? []} today={today} />
+      )}
+
       <OverviewCards plan={plan} examDays={examDays} completedThisWeek={completedThisWeek} weekTaskCount={weekTasks.length} />
 
       {diagnosis.profileConfidence === 'low' && (
@@ -1033,6 +1110,201 @@ function CreatePlanWizard({ profile, diagnosis, generating, onGenerate, onClose 
             ]}
             value={form.intensity}
             onChange={(v) => setForm({ ...form, intensity: v as string })}
+          />
+        </FieldGroup>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.allowTimedPractice} onChange={(e) => setForm({ ...form, allowTimedPractice: e.target.checked })} />
+            <span className="ui-body-md">接受限时写作</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.includeFullTests} onChange={(e) => setForm({ ...form, includeFullTests: e.target.checked })} />
+            <span className="ui-body-md">每周安排完整模考</span>
+          </label>
+        </div>
+      </div>
+    </CenteredDialog>
+  )
+}
+
+function SettingsDialog({ profile, plan, onClose, onMutate }: {
+  profile: StudyPlanProfile
+  plan: StudyPlan | null
+  onClose: () => void
+  onMutate: () => void
+}) {
+  const { pushToast } = useToast()
+  const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [affectedCount, setAffectedCount] = useState(0)
+  const [form, setForm] = useState({
+    overallTarget: profile.overallTarget,
+    task1Target: profile.task1Target,
+    task2Target: profile.task2Target,
+    examDate: profile.examDate ?? '',
+    sessionsPerWeek: profile.sessionsPerWeek,
+    minutesPerSession: profile.minutesPerSession,
+    intensity: profile.intensity,
+    allowTimedPractice: profile.allowTimedPractice,
+    includeFullTests: true
+  })
+
+  const examDays = computeExamDays(form.examDate || null)
+  const today = getDateKeyInTimeZone()
+  const pendingCount = plan?.tasks?.filter(
+    (t) => (t.status === 'pending' || t.status === 'rescheduled') && t.scheduledDate > today
+  ).length ?? 0
+
+  const hasChanges =
+    form.overallTarget !== profile.overallTarget ||
+    form.task1Target !== profile.task1Target ||
+    form.task2Target !== profile.task2Target ||
+    form.examDate !== (profile.examDate ?? '') ||
+    form.sessionsPerWeek !== profile.sessionsPerWeek ||
+    form.minutesPerSession !== profile.minutesPerSession ||
+    form.intensity !== profile.intensity ||
+    form.allowTimedPractice !== profile.allowTimedPractice
+
+  const handlePreview = async () => {
+    if (!hasChanges) return
+    setAffectedCount(pendingCount)
+    setConfirming(true)
+  }
+
+  const handleSave = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/study-plan/update-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          examDate: form.examDate || null
+        })
+      })
+      const data = await res.json() as { success?: boolean; message?: string; affectedTaskCount?: number }
+      if (!res.ok || !data.success) {
+        pushToast({ kind: 'error', title: '保存失败', message: data.message || '请稍后重试' })
+        return
+      }
+      pushToast({
+        kind: 'success',
+        title: '设置已更新',
+        message: data.affectedTaskCount ? `${data.affectedTaskCount} 个未来任务将按新设置调整` : undefined
+      })
+      onMutate()
+      onClose()
+    } catch {
+      pushToast({ kind: 'error', title: '保存失败', message: '请稍后重试' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (confirming) {
+    return (
+      <CenteredDialog
+        open
+        title="确认修改学习计划"
+        onClose={() => setConfirming(false)}
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="ui-secondary-button" type="button" onClick={() => setConfirming(false)}>取消</button>
+            <button className="ui-primary-button" type="button" disabled={saving} onClick={handleSave}>
+              {saving ? '保存中…' : '确认修改'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p className="ui-body-md">修改设置后：</p>
+          <ul style={{ paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <li className="ui-body-md">已完成任务不变</li>
+            <li className="ui-body-md">已开始任务不变</li>
+            <li className="ui-body-md">已跳过任务不恢复</li>
+            {affectedCount > 0 && (
+              <li className="ui-body-md" style={{ fontWeight: 600 }}>
+                将重新安排未来 {affectedCount} 个未开始任务
+              </li>
+            )}
+            {form.minutesPerSession !== profile.minutesPerSession && (
+              <li className="ui-body-md">每日学习时长更新为 {form.minutesPerSession} 分钟</li>
+            )}
+            {form.examDate !== (profile.examDate ?? '') && form.examDate && (
+              <li className="ui-body-md">
+                考试日期更新为 {form.examDate}
+                {examDays !== null && examDays <= 7 && '（冲刺模式）'}
+              </li>
+            )}
+          </ul>
+        </div>
+      </CenteredDialog>
+    )
+  }
+
+  return (
+    <CenteredDialog
+      open
+      title="调整学习计划"
+      onClose={onClose}
+      footer={
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="ui-secondary-button" type="button" onClick={onClose}>取消</button>
+          <button className="ui-primary-button" type="button" disabled={!hasChanges || saving} onClick={handlePreview}>
+            {saving ? '保存中…' : '保存修改'}
+          </button>
+        </div>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <FieldGroup label="目标写作分数">
+          <OptionGrid
+            options={[5.5, 6, 6.5, 7, 7.5, 8].map((v) => ({ value: v, label: String(v) }))}
+            value={form.overallTarget}
+            onChange={(v) => setForm({ ...form, overallTarget: v as number })}
+          />
+        </FieldGroup>
+
+        <FieldGroup label="考试日期">
+          <input
+            type="date"
+            value={form.examDate}
+            min={today}
+            onChange={(e) => setForm({ ...form, examDate: e.target.value })}
+            style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)', maxWidth: 200 }}
+          />
+          {examDays !== null && examDays <= 7 && (
+            <p className="ui-label" style={{ color: 'var(--error)', marginTop: 4 }}>冲刺计划：距离考试仅 {examDays} 天</p>
+          )}
+        </FieldGroup>
+
+        <FieldGroup label="每周学习天数">
+          <OptionGrid
+            options={[3, 4, 5, 6, 7].map((v) => ({ value: v, label: `${v} 天` }))}
+            value={form.sessionsPerWeek}
+            onChange={(v) => setForm({ ...form, sessionsPerWeek: v as number })}
+          />
+        </FieldGroup>
+
+        <FieldGroup label="每天学习时间">
+          <OptionGrid
+            options={[20, 30, 45, 60, 90].map((v) => ({ value: v, label: `${v} 分钟` }))}
+            value={form.minutesPerSession}
+            onChange={(v) => setForm({ ...form, minutesPerSession: v as number })}
+          />
+        </FieldGroup>
+
+        <FieldGroup label="训练强度">
+          <OptionGrid
+            options={[
+              { value: 'relaxed', label: '轻松', desc: '每天 1 个主要任务' },
+              { value: 'standard', label: '标准', desc: '每天 1–2 个任务' },
+              { value: 'intensive', label: '强化', desc: '每天 2–3 个任务' }
+            ]}
+            value={form.intensity}
+            onChange={(v) => setForm({ ...form, intensity: v as 'relaxed' | 'standard' | 'intensive' })}
           />
         </FieldGroup>
 
