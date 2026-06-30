@@ -18,28 +18,38 @@ export async function POST() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
 
-  const { count: extractedRecords } = await service
-    .from('writing_records')
-    .select('*', { count: 'exact', head: true })
+  const { data: processedRecords } = await service
+    .from('writing_error_occurrences')
+    .select('writing_record_id')
     .eq('user_id', userId)
-    .not('error_extracted_at', 'is', null)
 
-  const totalEligible = totalRecords ?? 0
-  const alreadyExtracted = extractedRecords ?? 0
+  const processedRecordIds = new Set((processedRecords ?? []).map(r => r.writing_record_id))
 
-  const { data: unextractedRows, error: fetchError } = await service
-    .from('writing_records')
-    .select('id, user_id, task_type, title, prompt, original_essay, corrected_essay, improved_essay, evaluation, annotations, accepted_changes, submitted_at, record_data, error_extracted_at')
-    .eq('user_id', userId)
-    .is('error_extracted_at', null)
-    .order('submitted_at', { ascending: false })
-    .limit(BATCH_SIZE)
-
-  if (fetchError) {
-    return json({ success: false, message: fetchError.message }, { status: 500 })
+  let unextractedRows: Array<{ id: string }> = []
+  try {
+    const { data } = await service
+      .from('writing_records')
+      .select('id')
+      .eq('user_id', userId)
+      .is('error_extracted_at', null)
+      .order('submitted_at', { ascending: false })
+      .limit(BATCH_SIZE)
+    unextractedRows = data ?? []
+  } catch {
+    const { data } = await service
+      .from('writing_records')
+      .select('id')
+      .eq('user_id', userId)
+      .order('submitted_at', { ascending: false })
+      .limit(50)
+    
+    unextractedRows = (data ?? []).filter(r => !processedRecordIds.has(r.id)).slice(0, BATCH_SIZE)
   }
 
-  if (!unextractedRows || unextractedRows.length === 0) {
+  const totalEligible = totalRecords ?? 0
+  const alreadyExtracted = processedRecordIds.size
+
+  if (unextractedRows.length === 0) {
     return json({
       success: true,
       totalEligible,
@@ -54,22 +64,39 @@ export async function POST() {
   let failed = 0
   const errors: string[] = []
 
-  for (const row of unextractedRows) {
+  for (const minimalRow of unextractedRows) {
     try {
-      const record = writingRecordFromRow(row as never)
+      const { data: fullRow, error: fetchError } = await service
+        .from('writing_records')
+        .select('*')
+        .eq('id', minimalRow.id)
+        .eq('user_id', userId)
+        .single()
+
+      if (fetchError || !fullRow) {
+        failed++
+        errors.push(`${minimalRow.id}: Failed to fetch record`)
+        continue
+      }
+
+      const record = writingRecordFromRow(fullRow as never)
       if (!record) {
         failed++
-        errors.push(`${row.id}: Failed to parse record`)
+        errors.push(`${minimalRow.id}: Failed to parse record`)
         continue
       }
 
       const extractedErrors = extractErrorsFromRecord(record)
 
       if (extractedErrors.length === 0) {
-        await service
-          .from('writing_records')
-          .update({ error_extracted_at: new Date().toISOString() })
-          .eq('id', row.id)
+        try {
+          await service
+            .from('writing_records')
+            .update({ error_extracted_at: new Date().toISOString() })
+            .eq('id', minimalRow.id)
+        } catch {
+          // Column might not exist yet
+        }
         processed++
         continue
       }
@@ -93,7 +120,7 @@ export async function POST() {
             .from('writing_error_occurrences')
             .select('id')
             .eq('error_pattern_id', patternId)
-            .eq('writing_record_id', row.id)
+            .eq('writing_record_id', minimalRow.id)
             .maybeSingle()
 
           if (existingOccurrence) {
@@ -128,7 +155,7 @@ export async function POST() {
 
           if (!newPattern) {
             failed++
-            errors.push(`${row.id}: Failed to create pattern`)
+            errors.push(`${minimalRow.id}: Failed to create pattern`)
             continue
           }
           patternId = newPattern.id as string
@@ -139,27 +166,26 @@ export async function POST() {
           .insert({
             error_pattern_id: patternId,
             user_id: userId,
-            writing_record_id: row.id,
+            writing_record_id: minimalRow.id,
             sentence_excerpt: err.sentenceExcerpt,
             correction: err.exampleCorrect,
             explanation: err.explanation
           })
       }
 
-      await service
-        .from('writing_records')
-        .update({ error_extracted_at: new Date().toISOString() })
-        .eq('id', row.id)
+      try {
+        await service
+          .from('writing_records')
+          .update({ error_extracted_at: new Date().toISOString() })
+          .eq('id', minimalRow.id)
+      } catch {
+        // Column might not exist yet
+      }
 
       processed++
     } catch (err) {
       failed++
-      errors.push(`${row.id}: ${err instanceof Error ? err.message : 'Unknown error'}`)
-
-      await service
-        .from('writing_records')
-        .update({ error_extracted_at: new Date().toISOString() })
-        .eq('id', row.id)
+      errors.push(`${minimalRow.id}: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 

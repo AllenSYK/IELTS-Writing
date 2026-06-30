@@ -14,12 +14,6 @@ export async function GET() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
 
-  const { count: extractedRecords } = await service
-    .from('writing_records')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .not('error_extracted_at', 'is', null)
-
   const { count: errorPatterns } = await service
     .from('writing_error_patterns')
     .select('*', { count: 'exact', head: true })
@@ -30,8 +24,24 @@ export async function GET() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
 
+  let extractedRecords = 0
+  try {
+    const { count } = await service
+      .from('writing_records')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .not('error_extracted_at', 'is', null)
+    extractedRecords = count ?? 0
+  } catch {
+    const { count: occurrenceCount } = await service
+      .from('writing_error_occurrences')
+      .select('writing_record_id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+    extractedRecords = occurrenceCount ?? 0
+  }
+
   const total = totalRecords ?? 0
-  const extracted = extractedRecords ?? 0
+  const extracted = extractedRecords
   const remaining = Math.max(0, total - extracted)
 
   return json({
