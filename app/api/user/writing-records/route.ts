@@ -134,8 +134,16 @@ export async function POST(request: Request) {
     return json({ success: false, message: '写作记录保存失败' }, { status: 500 })
   }
 
+  const savedRecord = writingRecordFromRow(data as never) || normalized
+
+  fetch(`${new URL(request.url).origin}/api/study-plan/errors/extract`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writingRecordId: savedRecord.id })
+  }).catch(() => {})
+
   return json({
     success: true,
-    record: writingRecordFromRow(data as never) || normalized
+    record: savedRecord
   })
 }
