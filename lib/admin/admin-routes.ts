@@ -1,3 +1,5 @@
+import { BRAND_NAME } from '@/lib/brand'
+
 export interface AdminRouteMeta {
   /** 匹配函数，使用最长路径优先原则 */
   match: (pathname: string) => boolean
@@ -121,5 +123,5 @@ export const adminPageTitles: Record<string, string> = {
  */
 export function getAdminBrowserTitle(pathname: string): string {
   const meta = getAdminRouteMeta(pathname)
-  return `${meta.title} | IELTS Writing 管理中心`
+  return `${meta.title} | ${BRAND_NAME} 管理中心`
 }

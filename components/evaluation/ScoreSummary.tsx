@@ -34,7 +34,7 @@ export function ScoreSummary({
           <span className="ui-label">Overall Band Score</span>
           <strong>{overall}</strong>
           <p className="ui-body-md">
-            {record.taskType === 'mock' ? 'Task 2 加权综合评分' : 'IELTS Writing 模拟评分'}
+            {record.taskType === 'mock' ? 'Task 2 加权综合评分' : '雅思写作模拟评分'}
           </p>
         </div>
 

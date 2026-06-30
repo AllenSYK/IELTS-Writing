@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { ResetPasswordClient } from './ResetPasswordClient'
 
 export default function ResetPasswordPage() {
@@ -8,6 +9,7 @@ export default function ResetPasswordPage() {
       <Suspense
         fallback={
           <section className="auth-panel auth-panel-modern">
+            <AuthBrandHeader />
             <p className="auth-success" role="status"><Loader2 className="admin-spin" size={16} />正在打开重置页面</p>
           </section>
         }

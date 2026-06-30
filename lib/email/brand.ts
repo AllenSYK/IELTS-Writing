@@ -1,17 +1,23 @@
+import { BRAND_NAME } from '@/lib/brand'
+
+const ProductionSiteUrl = 'https://www.ieltswriting.online'
+const DefaultSiteUrl = process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : ProductionSiteUrl
+const SiteUrl = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || DefaultSiteUrl).replace(/\/$/, '')
+
 export const emailBrand = {
-  productName: 'IELTS Writing',
-  logoUrl: 'https://www.ieltswriting.online/logo.svg',
-  websiteUrl: 'https://www.ieltswriting.online',
+  productName: BRAND_NAME,
+  logoUrl: `${SiteUrl}/brand/carrie-logo.png`,
+  websiteUrl: SiteUrl,
   supportEmail: 'qgyxzq@gmail.com',
   primaryColor: '#0a66ff',
   accentColor: '#12b981',
-  fromName: process.env.EMAIL_FROM_NAME?.trim() || 'IELTS Writing',
+  fromName: process.env.EMAIL_FROM_NAME?.trim() || BRAND_NAME,
   fromAddress: process.env.EMAIL_FROM_ADDRESS?.trim() || 'noreply@ieltswriting.online',
-  copyrightText: `© ${new Date().getFullYear()} IELTS Writing. All rights reserved.`
+  copyrightText: `© ${new Date().getFullYear()} ${BRAND_NAME}. All rights reserved.`
 }
 
 export function getSiteUrl() {
-  return process.env.NEXT_PUBLIC_SITE_URL?.trim() || emailBrand.websiteUrl
+  return SiteUrl
 }
 
 export function getEmailFrom() {

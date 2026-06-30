@@ -33,25 +33,33 @@
 .admin-sidebar-brand {
   min-height: 56px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 0 4px;
 }
 
-.admin-sidebar-brand strong {
+.admin-sidebar-brand-link {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: inherit;
+}
+
+.admin-sidebar-brand-link .brand-logo {
+  width: 100%;
+}
+
+.admin-sidebar-context {
   display: block;
-  color: var(--on-surface);
-  font-size: 18px;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  font-weight: 800;
   line-height: 1.25;
 }
 
-.admin-sidebar-brand span:not(.sidebar-logo-mark) {
-  display: block;
-  margin-top: 2px;
-  color: var(--on-surface-variant);
-  font-size: 12px;
-  font-weight: 700;
+.admin-sidebar-brand .brand-logo-name {
+  font-size: 16px;
 }
 
 .admin-sidebar-close,

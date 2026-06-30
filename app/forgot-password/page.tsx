@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { FormEvent, useState } from 'react'
 import { ArrowLeft, Mail, Send } from 'lucide-react'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 
 type ForgotResponse = {
@@ -59,7 +60,7 @@ export default function ForgotPasswordPage() {
   return (
     <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
       <section className="auth-panel auth-panel-modern">
-        <div className="auth-brand-mark" aria-hidden="true"><span>W</span></div>
+        <AuthBrandHeader />
         <header className="auth-copy">
           <p className="auth-kicker">找回密码</p>
           <h1>发送重置邮件</h1>

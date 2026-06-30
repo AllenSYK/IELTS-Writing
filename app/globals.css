@@ -3725,19 +3725,30 @@ img {
 
 .admin-sidebar-brand {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 4px 4px 10px;
 }
 
-.admin-sidebar-brand strong,
+.admin-sidebar-brand-link {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: inherit;
+}
+
+.admin-sidebar-brand-link .brand-logo {
+  width: 100%;
+}
+
+.admin-sidebar-context,
 .admin-topbar strong {
   display: block;
   font-size: 15px;
 }
 
-.admin-sidebar-brand span,
+.admin-sidebar-context,
 .admin-topbar span {
   color: var(--on-surface-variant);
   font-size: 12px;
@@ -4636,6 +4647,30 @@ img {
   padding: 24px 26px;
 }
 
+.auth-brand-block {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.auth-brand-block .brand-logo {
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-brand-block .brand-logo-name {
+  max-width: min(330px, calc(100vw - 96px));
+}
+
+.auth-brand-block p {
+  margin: 0;
+  color: #5f6b7a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .auth-method-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5487,6 +5522,95 @@ img {
   clip-path: inset(50%);
 }
 
+.brand-logo {
+  --brand-logo-size: 40px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  line-height: 1;
+}
+
+.brand-logo-sm {
+  --brand-logo-size: 32px;
+}
+
+.brand-logo-md {
+  --brand-logo-size: 40px;
+}
+
+.brand-logo-lg {
+  --brand-logo-size: 76px;
+}
+
+.brand-logo-stacked {
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  text-align: center;
+}
+
+.brand-logo-image-shell {
+  position: relative;
+  width: var(--brand-logo-size);
+  height: var(--brand-logo-size);
+  flex: 0 0 var(--brand-logo-size);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 20px rgba(31, 41, 55, 0.1);
+}
+
+.brand-logo-image-shell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.brand-logo-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #f9d5e4, #dbeafe);
+  color: var(--primary);
+  font-size: calc(var(--brand-logo-size) * 0.44);
+  font-weight: 850;
+}
+
+.brand-logo-text {
+  min-width: 0;
+  display: block;
+}
+
+.brand-logo-name {
+  max-width: 100%;
+  display: block;
+  overflow: hidden;
+  color: currentColor;
+  font-size: 16px;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-logo-sm .brand-logo-name {
+  font-size: 14px;
+}
+
+.brand-logo-lg .brand-logo-name {
+  font-size: 17px;
+}
+
 .app-shell {
   height: 100dvh;
   overflow: hidden;
@@ -5525,11 +5649,20 @@ img {
 }
 
 .sidebar-logo {
+  min-width: 0;
   min-height: 56px;
   display: flex;
   align-items: center;
   gap: 12px;
   color: var(--on-surface);
+}
+
+.sidebar-logo .brand-logo {
+  width: 100%;
+}
+
+.sidebar-logo .brand-logo-name {
+  font-size: 16px;
 }
 
 .sidebar-logo-mark {
@@ -9049,7 +9182,7 @@ body.is-resizing-editor * {
     justify-content: center;
   }
 
-  .sidebar-logo span:last-child,
+  .sidebar-logo .brand-logo-text,
   .sidebar-link span,
   .netwatch-status div,
   .sidebar-copyright {
@@ -9092,6 +9225,14 @@ body.is-resizing-editor * {
   .sidebar-logo-mark {
     width: 38px;
     height: 38px;
+  }
+
+  .sidebar-logo .brand-logo {
+    width: auto;
+  }
+
+  .sidebar-logo .brand-logo-image-shell {
+    --brand-logo-size: 38px;
   }
 
   .sidebar-nav,

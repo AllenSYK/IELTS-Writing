@@ -156,7 +156,7 @@ export function RegisterVerificationEmail({
   return (
     <Html>
       <Head />
-      <Preview>{`您的 IELTS Writing 注册验证码是 ${code}，${expiresInMinutes} 分钟内有效。`}</Preview>
+      <Preview>{`您的 ${emailBrand.productName} 注册验证码是 ${code}，${expiresInMinutes} 分钟内有效。`}</Preview>
       <Body style={styles.body}>
         <Section style={styles.outer}>
           <Container style={styles.container}>

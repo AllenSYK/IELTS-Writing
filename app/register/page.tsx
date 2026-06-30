@@ -5,6 +5,7 @@ import { FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useMemo, useRef, u
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSpinner, AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 
@@ -264,6 +265,8 @@ export default function RegisterPage() {
   return (
     <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
       <section className="auth-panel auth-panel-modern auth-register-panel">
+        <AuthBrandHeader />
+
         {step !== 'success' ? (
           <div className="auth-method-tabs auth-method-tabs-single">
             <p className="auth-method-label">邮箱注册</p>
@@ -282,10 +285,9 @@ export default function RegisterPage() {
 
         {step === 'account' ? (
           <>
-            <div className="auth-brand-mark" aria-hidden="true"><span>W</span></div>
             <header className="auth-copy">
               <p className="auth-kicker">创建账号</p>
-              <h1>注册 IELTS Writing</h1>
+              <h1>注册账号</h1>
               <p>先验证邮箱，再创建账号；注册后需要输入软件激活码开通使用权限。</p>
             </header>
 

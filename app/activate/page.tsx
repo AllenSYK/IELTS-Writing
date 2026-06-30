@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { createSingleFlight } from '@/lib/web-license/single-flight'
 
@@ -68,6 +69,7 @@ export default function ActivatePage() {
   return (
     <main className="auth-page" data-main-content tabIndex={-1}>
       <section className="auth-panel">
+        <AuthBrandHeader />
         <div className="auth-heading">
           <span className="auth-icon"><KeyRound size={22} /></span>
           <div>

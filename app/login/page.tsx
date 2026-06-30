@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 
@@ -53,11 +54,8 @@ export default function LoginPage() {
     return (
       <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
         <section className="auth-panel auth-panel-modern">
-          <div className="auth-brand-mark" aria-hidden="true">
-            <span>W</span>
-          </div>
+          <AuthBrandHeader />
           <header className="auth-copy">
-            <p className="auth-kicker">IELTS Writing</p>
             <h1>加载中…</h1>
           </header>
         </section>
@@ -103,12 +101,9 @@ export default function LoginPage() {
   return (
     <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
       <section className="auth-panel auth-panel-modern">
-        <div className="auth-brand-mark" aria-hidden="true">
-          <span>W</span>
-        </div>
+        <AuthBrandHeader />
 
         <header className="auth-copy">
-          <p className="auth-kicker">IELTS Writing</p>
           <h1>欢迎回来</h1>
           <p>登录后将进入对应的账号页面。</p>
         </header>

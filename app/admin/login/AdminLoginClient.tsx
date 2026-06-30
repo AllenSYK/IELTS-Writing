@@ -12,9 +12,9 @@ import {
   LogIn,
   LogOut,
   Mail,
-  ShieldCheck,
   UserRoundX
 } from 'lucide-react'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 
 type AdminLoginResponse = {
@@ -119,12 +119,10 @@ export function AdminLoginClient({
   return (
     <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
       <section className="auth-panel auth-panel-modern admin-auth-panel">
-        <div className="auth-brand-mark" aria-hidden="true">
-          <ShieldCheck size={26} />
-        </div>
+        <AuthBrandHeader subtitle="管理后台" />
 
         <header className="auth-copy">
-          <p className="auth-kicker">IELTS Writing Admin</p>
+          <p className="auth-kicker">Admin</p>
           <h1>管理员登录</h1>
           <p>请使用管理员账号登录。</p>
         </header>

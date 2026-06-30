@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
+import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 
 export function ResetPasswordClient() {
@@ -95,7 +96,7 @@ export function ResetPasswordClient() {
 
   return (
     <section className="auth-panel auth-panel-modern">
-      <div className="auth-brand-mark" aria-hidden="true"><span>W</span></div>
+      <AuthBrandHeader />
       <header className="auth-copy">
         <p className="auth-kicker">重置密码</p>
         <h1>设置新密码</h1>

@@ -117,7 +117,7 @@ export function WelcomeEmail({ loginUrl = `${emailBrand.websiteUrl}/login` }: We
   return (
     <Html>
       <Head />
-      <Preview>欢迎加入 IELTS Writing，登录后输入激活码即可开始使用。</Preview>
+      <Preview>欢迎加入 {emailBrand.productName}，登录后输入激活码即可开始使用。</Preview>
       <Body style={styles.body}>
         <Section style={styles.outer}>
           <Container style={styles.container}>

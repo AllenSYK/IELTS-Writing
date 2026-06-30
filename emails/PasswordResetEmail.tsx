@@ -126,7 +126,7 @@ export function PasswordResetEmail({ resetUrl, expiresInMinutes = 60 }: Password
   return (
     <Html>
       <Head />
-      <Preview>重设您的 IELTS Writing 密码。</Preview>
+      <Preview>重设您的 {emailBrand.productName} 密码。</Preview>
       <Body style={styles.body}>
         <Section style={styles.outer}>
           <Container style={styles.container}>

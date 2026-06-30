@@ -12,6 +12,8 @@ import {
   UsersRound,
   X
 } from 'lucide-react'
+import { BrandLogo } from '@/components/BrandLogo'
+import { BRAND_NAME } from '@/lib/brand'
 import { AdminLogoutButton } from './AdminLogoutButton'
 
 const navigation = [
@@ -44,11 +46,10 @@ export function AdminSidebar({
       />
       <aside className={`admin-sidebar ${open ? 'is-open' : ''}`} aria-label="管理后台导航">
         <div className="admin-sidebar-brand">
-          <span className="sidebar-logo-mark" aria-hidden="true">空</span>
-          <div>
-            <strong>管理中心</strong>
-            <span>IELTS Writing</span>
-          </div>
+          <Link className="admin-sidebar-brand-link" href="/admin" aria-label={`返回 ${BRAND_NAME} 管理中心`} title={BRAND_NAME} onClick={onClose}>
+            <BrandLogo size="md" showName />
+            <span className="admin-sidebar-context">管理中心</span>
+          </Link>
           <button className="admin-icon-button admin-sidebar-close" type="button" aria-label="关闭导航" onClick={onClose}>
             <X size={18} aria-hidden="true" />
           </button>

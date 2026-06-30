@@ -128,7 +128,7 @@ export default function SupportPage() {
             <h1 className="ui-title-headline">支持中心</h1>
             <p className="ui-body-lg">先查看常见问题，或提交反馈让管理员在后台处理。</p>
           </div>
-          <a className="ui-primary-button" href={`mailto:${supportEmail}?subject=${encodeURIComponent('IELTS Writing 使用反馈')}`}>
+          <a className="ui-primary-button" href={`mailto:${supportEmail}?subject=${encodeURIComponent('Carrie学雅思@空与梦 使用反馈')}`}>
             <MaterialIcon name="mail" size={18} />
             联系开发者
           </a>
