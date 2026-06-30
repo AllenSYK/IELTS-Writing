@@ -60,6 +60,10 @@ export async function POST(request: Request) {
   const extractedErrors = extractErrorsFromRecord(record)
 
   if (extractedErrors.length === 0) {
+    await service
+      .from('writing_records')
+      .update({ error_extracted_at: new Date().toISOString() })
+      .eq('id', body.writingRecordId)
     return json({ success: true, extracted: 0 })
   }
 
@@ -78,6 +82,18 @@ export async function POST(request: Request) {
 
     if (existing) {
       patternId = existing.id as string
+
+      const { data: existingOccurrence } = await service
+        .from('writing_error_occurrences')
+        .select('id')
+        .eq('error_pattern_id', patternId)
+        .eq('writing_record_id', body.writingRecordId)
+        .maybeSingle()
+
+      if (existingOccurrence) {
+        continue
+      }
+
       await service
         .from('writing_error_patterns')
         .update({
@@ -122,6 +138,11 @@ export async function POST(request: Request) {
         explanation: err.explanation
       })
   }
+
+  await service
+    .from('writing_records')
+    .update({ error_extracted_at: new Date().toISOString() })
+    .eq('id', body.writingRecordId)
 
   return json({ success: true, extracted: created, total: extractedErrors.length })
 }

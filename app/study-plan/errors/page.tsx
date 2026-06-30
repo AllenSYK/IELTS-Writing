@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
@@ -28,6 +28,25 @@ type ErrorsData = {
   stats: { total: number; active: number; improving: number; mastered: number }
 }
 
+type BackfillStatus = {
+  success: boolean
+  totalRecords: number
+  extractedRecords: number
+  remainingRecords: number
+  errorPatterns: number
+  errorOccurrences: number
+  isComplete: boolean
+}
+
+type BackfillResult = {
+  success: boolean
+  totalEligible: number
+  processed: number
+  remaining: number
+  failed: number
+  errors?: string[]
+}
+
 type OccurrencesData = {
   success: boolean
   occurrences: ErrorOccurrence[]
@@ -38,12 +57,15 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export default function ErrorNotebookPage() {
   const { userId } = useUserSession()
+  const { pushToast } = useToast()
   const [category, setCategory] = useState<string>('')
   const [status, setStatus] = useState<string>('')
   const [sort, setSort] = useState<string>('recent')
   const [page, setPage] = useState(1)
   const [selectedPattern, setSelectedPattern] = useState<ErrorPattern | null>(null)
   const [reviewingPattern, setReviewingPattern] = useState<ErrorPattern | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillProgress, setBackfillProgress] = useState<BackfillResult | null>(null)
 
   const params = new URLSearchParams()
   if (category) params.set('category', category)
@@ -57,6 +79,38 @@ export default function ErrorNotebookPage() {
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 10000 }
   )
+
+  const { data: backfillStatus, mutate: mutateBackfill } = useSWR<BackfillStatus>(
+    userId ? '/api/study-plan/errors/backfill/status' : null,
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 5000 }
+  )
+
+  const handleBackfill = useCallback(async () => {
+    if (backfilling) return
+    setBackfilling(true)
+    try {
+      const res = await fetch('/api/study-plan/errors/backfill', { method: 'POST' })
+      const result = await res.json() as BackfillResult
+      setBackfillProgress(result)
+      
+      if (result.processed > 0) {
+        pushToast({
+          kind: 'success',
+          title: '分析完成',
+          message: `已分析 ${result.processed} 篇作文${result.failed > 0 ? `，${result.failed} 篇失败` : ''}`
+        })
+        void mutate()
+        void mutateBackfill()
+      } else if (result.remaining === 0) {
+        pushToast({ kind: 'info', title: '全部完成', message: '所有历史作文已分析完毕' })
+      }
+    } catch {
+      pushToast({ kind: 'error', title: '分析失败', message: '请稍后重试' })
+    } finally {
+      setBackfilling(false)
+    }
+  }, [backfilling, pushToast, mutate, mutateBackfill])
 
   if (!userId || isLoading) return <PageSkeleton variant="chart" />
 
@@ -76,6 +130,10 @@ export default function ErrorNotebookPage() {
 
   const patterns = data?.patterns ?? []
   const stats = data?.stats ?? { total: 0, active: 0, improving: 0, mastered: 0 }
+  const hasPatterns = patterns.length > 0
+  const hasRecords = (backfillStatus?.totalRecords ?? 0) > 0
+  const hasRemaining = (backfillStatus?.remainingRecords ?? 0) > 0
+  const isBackfillComplete = backfillStatus?.isComplete ?? false
 
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
@@ -93,30 +151,73 @@ export default function ErrorNotebookPage() {
           </Link>
         </header>
 
-        <ErrorStatsCards stats={stats} />
+        {hasRecords && hasRemaining && (
+          <BackfillBanner
+            totalRecords={backfillStatus?.totalRecords ?? 0}
+            extractedRecords={backfillStatus?.extractedRecords ?? 0}
+            remainingRecords={backfillStatus?.remainingRecords ?? 0}
+            backfilling={backfilling}
+            backfillProgress={backfillProgress}
+            onStartBackfill={handleBackfill}
+          />
+        )}
 
-        <ErrorFilters
-          category={category}
-          status={status}
-          sort={sort}
-          onCategoryChange={(v) => { setCategory(v); setPage(1) }}
-          onStatusChange={(v) => { setStatus(v); setPage(1) }}
-          onSortChange={(v) => { setSort(v); setPage(1) }}
-        />
+        {hasPatterns && <ErrorStatsCards stats={stats} />}
 
-        {patterns.length === 0 ? (
+        {hasPatterns && (
+          <ErrorFilters
+            category={category}
+            status={status}
+            sort={sort}
+            onCategoryChange={(v) => { setCategory(v); setPage(1) }}
+            onStatusChange={(v) => { setStatus(v); setPage(1) }}
+            onSortChange={(v) => { setSort(v); setPage(1) }}
+          />
+        )}
+
+        {!hasPatterns && !hasRecords && (
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
             <MaterialIcon name="check_circle" size={48} />
-            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>
-              {stats.total === 0 ? '还没有记录错误' : '没有匹配的错误'}
-            </h2>
+            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>暂无写作记录</h2>
             <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
-              {stats.total === 0
-                ? '完成更多作文批改后，错误会自动汇总到这里。'
-                : '尝试调整筛选条件查看其他错误。'}
+              完成更多作文批改后，错误会自动汇总到这里。
+            </p>
+            <Link className="ui-primary-button" href="/practice" style={{ marginTop: 16, display: 'inline-flex' }}>
+              开始写作
+            </Link>
+          </GlassPanel>
+        )}
+
+        {!hasPatterns && hasRecords && !hasRemaining && isBackfillComplete && (
+          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+            <MaterialIcon name="check_circle" size={48} />
+            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>暂未发现重复错误</h2>
+            <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
+              已分析 {backfillStatus?.extractedRecords ?? 0} 篇作文，暂未发现可归纳的重复错误。完成更多写作后，错误本会持续更新。
             </p>
           </GlassPanel>
-        ) : (
+        )}
+
+        {!hasPatterns && hasRecords && hasRemaining && !backfilling && (
+          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+            <MaterialIcon name="analytics" size={48} />
+            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>分析历史作文</h2>
+            <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
+              你已有 {backfillStatus?.totalRecords ?? 0} 篇历史写作记录，但尚未生成个人错误本。系统可以分析过去的批改结果，整理你反复出现的问题。
+            </p>
+            <button
+              className="ui-primary-button"
+              type="button"
+              onClick={handleBackfill}
+              disabled={backfilling}
+              style={{ marginTop: 16 }}
+            >
+              {backfilling ? '正在分析…' : '分析历史作文'}
+            </button>
+          </GlassPanel>
+        )}
+
+        {hasPatterns && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {patterns.map((pattern) => (
               <ErrorPatternCard
@@ -176,6 +277,56 @@ export default function ErrorNotebookPage() {
         )}
       </section>
     </main>
+  )
+}
+
+function BackfillBanner({ totalRecords, extractedRecords, remainingRecords, backfilling, backfillProgress, onStartBackfill }: {
+  totalRecords: number
+  extractedRecords: number
+  remainingRecords: number
+  backfilling: boolean
+  backfillProgress: BackfillResult | null
+  onStartBackfill: () => void
+}) {
+  const progress = totalRecords > 0 ? Math.round((extractedRecords / totalRecords) * 100) : 0
+  const currentRemaining = backfillProgress ? backfillProgress.remaining : remainingRecords
+  const justProcessed = backfillProgress?.processed ?? 0
+
+  return (
+    <GlassPanel style={{ padding: 20, background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <MaterialIcon name="analytics" size={24} />
+        <div style={{ flex: 1 }}>
+          <h2 className="ui-title-md">历史作文分析</h2>
+          <p className="ui-body-md">
+            {backfilling
+              ? `正在分析… 已完成 ${extractedRecords + justProcessed} / ${totalRecords} 篇`
+              : `已分析 ${extractedRecords} / ${totalRecords} 篇，还剩 ${currentRemaining} 篇`}
+          </p>
+        </div>
+        {!backfilling && currentRemaining > 0 && (
+          <button className="ui-primary-button" type="button" onClick={onStartBackfill}>
+            继续分析
+          </button>
+        )}
+      </div>
+      <div style={{ height: 8, borderRadius: 4, background: 'var(--surface-container-low)', overflow: 'hidden' }}>
+        <div
+          style={{
+            height: '100%',
+            borderRadius: 4,
+            background: 'var(--primary)',
+            transition: 'width 0.3s ease',
+            width: `${progress}%`
+          }}
+        />
+      </div>
+      {backfillProgress && backfillProgress.failed > 0 && (
+        <p className="ui-label" style={{ marginTop: 8, color: 'var(--warning)' }}>
+          {backfillProgress.failed} 篇分析失败，可稍后重试
+        </p>
+      )}
+    </GlassPanel>
   )
 }
 
