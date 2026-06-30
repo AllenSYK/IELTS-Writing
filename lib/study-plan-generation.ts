@@ -88,7 +88,9 @@ export async function processGenerationJob(jobId: string, userId: string) {
     await updateJob(service, jobId, { status: 'saving', progress: 90, current_step: '正在保存学习计划' })
 
     const { data: rpcResult, error: rpcError } = await service
-      .rpc('generate_study_plan_slot', {
+      .rpc('save_generated_study_plan', {
+        p_job_id: jobId,
+        p_user_id: userId,
         p_period_start: today,
         p_period_end: periodEnd,
         p_diagnosis: diagnosis as unknown as Record<string, unknown>,
@@ -100,7 +102,10 @@ export async function processGenerationJob(jobId: string, userId: string) {
       .single()
 
     if (rpcError) {
-      throw new Error(rpcError.message)
+      const msg = rpcError.message || ''
+      if (msg.includes('JOB_NOT_FOUND')) throw new Error('JOB_NOT_FOUND')
+      if (msg.includes('JOB_INVALID_STATE')) throw new Error('JOB_INVALID_STATE')
+      throw new Error(`PLAN_SAVE_FAILED: ${msg}`)
     }
 
     const planId = (rpcResult as unknown as Record<string, unknown>)?.planId as string
@@ -140,12 +145,20 @@ export async function processGenerationJob(jobId: string, userId: string) {
 
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+    const errorCode = errorMsg.includes('JOB_NOT_FOUND') ? 'JOB_NOT_FOUND'
+      : errorMsg.includes('JOB_INVALID_STATE') ? 'JOB_INVALID_STATE'
+      : errorMsg.includes('PLAN_SAVE_FAILED') ? 'PLAN_SAVE_FAILED'
+      : errorMsg.includes('AiProviderError') ? 'AI_ERROR'
+      : 'DATABASE_ERROR'
+
+    console.error(`[study-plan] Job ${jobId} failed at step:`, errorMsg)
+
     await service
       .from('study_plan_generation_jobs')
       .update({
         status: 'failed',
-        error_message: errorMsg,
-        error_code: err instanceof AiProviderError ? 'AI_ERROR' : 'INTERNAL_ERROR',
+        error_message: errorMsg.slice(0, 500),
+        error_code: errorCode,
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
