@@ -102,7 +102,8 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-  v_count integer;
+  v_count integer := 0;
+  v_delta integer := 0;
 BEGIN
   UPDATE public.study_plan_generation_jobs
   SET status = 'timed_out',
@@ -115,7 +116,8 @@ BEGIN
     AND heartbeat_at IS NOT NULL
     AND heartbeat_at < now() - interval '15 minutes';
 
-  GET DIAGNOSTICS v_count = ROW_COUNT;
+  GET DIAGNOSTICS v_delta = ROW_COUNT;
+  v_count := v_count + v_delta;
 
   -- Also handle jobs stuck in queued for > 5 minutes with no heartbeat
   UPDATE public.study_plan_generation_jobs
@@ -129,7 +131,8 @@ BEGIN
     AND created_at < now() - interval '5 minutes'
     AND heartbeat_at IS NULL;
 
-  GET DIAGNOSTICS v_count = v_count + ROW_COUNT;
+  GET DIAGNOSTICS v_delta = ROW_COUNT;
+  v_count := v_count + v_delta;
 
   RETURN v_count;
 END;
