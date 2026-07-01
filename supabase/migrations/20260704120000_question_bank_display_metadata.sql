@@ -1,6 +1,10 @@
 -- Add display metadata fields to past_paper_questions for randomized browsing
 -- These fields support: randomized sort order, display dates, exam session labels, frequency scores
 
+-- 0. Ensure is_visible column exists (from 20260624150000, may not be deployed)
+ALTER TABLE public.past_paper_questions
+  ADD COLUMN IF NOT EXISTS is_visible boolean NOT NULL DEFAULT true;
+
 -- 1. Add new columns
 ALTER TABLE public.past_paper_questions
   ADD COLUMN IF NOT EXISTS display_published_at timestamptz,

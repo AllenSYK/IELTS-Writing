@@ -3,6 +3,10 @@
 -- Safe to run on production with existing data
 -- ============================================================
 
+-- STEP 0: Ensure is_visible column exists (from 20260624150000, may not be deployed)
+ALTER TABLE public.past_paper_questions
+  ADD COLUMN IF NOT EXISTS is_visible boolean NOT NULL DEFAULT true;
+
 -- STEP 1: Add new columns (IF NOT EXISTS makes this idempotent)
 ALTER TABLE public.past_paper_questions
   ADD COLUMN IF NOT EXISTS display_published_at timestamptz,
