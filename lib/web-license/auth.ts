@@ -11,6 +11,7 @@ export type WebProfile = {
   role: string
   license_status: string
   license_expires_at: string | null
+  display_name: string | null
 }
 
 export type WebLicenseCheck =
@@ -57,7 +58,7 @@ export const getWebProfile = cache(async function getWebProfile(userId: string) 
   const service = createSupabaseServiceRoleClient()
   const { data: profile, error } = await service
     .from('profiles')
-    .select('id, email, phone, role, license_status, license_expires_at')
+    .select('id, email, phone, role, license_status, license_expires_at, display_name')
     .eq('id', userId)
     .maybeSingle()
 

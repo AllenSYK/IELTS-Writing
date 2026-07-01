@@ -71,7 +71,7 @@ export default async function DashboardPage() {
         <section className="dashboard-panel dashboard-license-panel">
           <h2>激活信息</h2>
           <dl className="dashboard-definition-list">
-            <div><dt>激活账号</dt><dd>{check.activation.email || accountDisplayName(user)}</dd></div>
+            <div><dt>激活账号</dt><dd>{profile?.display_name || check.activation.email || accountDisplayName(user)}</dd></div>
             <div><dt>激活时间</dt><dd>{formatDate(check.activation.activated_at)}</dd></div>
             <div><dt>到期时间</dt><dd>{formatDate(check.activation.expires_at)}</dd></div>
             <div><dt>最近使用</dt><dd>{formatDate(check.activation.last_used_at)}</dd></div>

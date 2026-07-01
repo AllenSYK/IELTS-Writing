@@ -177,10 +177,17 @@ export function saveUserProfile(userId: string, profile: UserProfile): UserProfi
 }
 
 export function initialsFromProfile(profile: Pick<UserProfile, 'fullName' | 'englishNickname'>) {
-  const source = profile.englishNickname.trim() || profile.fullName.trim() || DefaultUserProfile.fullName
-  const english = source.match(/[A-Za-z]/)?.[0]
-  if (english) return english.toUpperCase()
-  return Array.from(source)[0] || '雅'
+  return getAvatarInitial(profile.englishNickname.trim() || profile.fullName.trim())
+}
+
+export function getAvatarInitial(displayName: string): string {
+  const trimmed = displayName.trim()
+  if (!trimmed) return '雅'
+  const chars = Array.from(trimmed)
+  const first = chars[0]
+  if (!first) return '雅'
+  if (/[A-Za-z]/.test(first)) return first.toUpperCase()
+  return first
 }
 
 export function formatBandOption(value: IELTSBand | number) {

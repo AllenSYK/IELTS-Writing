@@ -1,600 +1,170 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ProfileAvatar } from '@/components/layout/ProfileAvatar'
-import { AsyncButton, ConfirmDialog, useMotionPreference, useToast } from '@/components/interaction-system'
-import { GlassPanel, MaterialIcon } from '@/components/app-ui'
-import { LogoutButton } from '@/app/dashboard/LogoutButton'
-import {
-  EnglishLevelLabels,
-  IELTS_BAND_OPTIONS,
-  StudyPreferenceLabels,
-  StudyPreferenceOptions,
-  formatBandOption,
-  hasProfileErrors,
-  normalizeUserProfile,
-  validateUserProfile,
-  type StudyPreference,
-  type UserProfile
-} from '@/lib/user-profile'
+import { getAvatarInitial } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { belongsToUserStorageKey, removeStorageValue } from '@/lib/user-storage'
+import { LogoutButton } from '@/app/dashboard/LogoutButton'
 
-type LicenseInfo = {
-  status: 'loading' | 'active' | 'inactive' | 'error'
-  plan?: string
-  expiresAt?: string
-  lastUsedAt?: string
-}
+const NICKNAME_MAX = 20
+const DEFAULT_NICKNAME = '雅思追梦人'
 
-type ProfileSaveStatus = 'clean' | 'dirty' | 'saving' | 'success' | 'error'
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '暂无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '暂无' : date.toLocaleString('zh-CN')
+function validateNickname(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return '昵称不能为空'
+  if (trimmed.length > NICKNAME_MAX) return `昵称不能超过 ${NICKNAME_MAX} 个字符`
+  if (/\n|\r/.test(trimmed)) return '昵称不能包含换行'
+  if (/<[^>]/.test(trimmed)) return '昵称不能包含 HTML'
+  return null
 }
 
 export default function SettingsPage() {
   const { userId, accountLabel } = useUserSession()
-  const { pushToast } = useToast()
-  const motion = useMotionPreference()
-  const { profile, saveProfile } = useUserProfile()
-  const [draftProfile, setDraftProfile] = useState<UserProfile>(() => profile)
-  const [profileSaveStatus, setProfileSaveStatus] = useState<ProfileSaveStatus>('clean')
-  const [attemptedProfileSave, setAttemptedProfileSave] = useState(false)
-  const [license, setLicense] = useState<LicenseInfo>({ status: 'loading' })
-  const [refreshingLicense, setRefreshingLicense] = useState(false)
-  const [confirmResetLayout, setConfirmResetLayout] = useState(false)
-  const [profileSaveTimer, setProfileSaveTimer] = useState<number | null>(null)
+  const { displayName, email, displayNameLoading, updateDisplayName } = useUserProfile()
+  const [editing, setEditing] = useState(false)
+  const [nicknameInput, setNicknameInput] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const profileErrors = useMemo(() => validateUserProfile(draftProfile), [draftProfile])
-  const profileHasErrors = hasProfileErrors(profileErrors)
-  const profileDirty = useMemo(
-    () => JSON.stringify(normalizeUserProfile(draftProfile)) !== JSON.stringify(normalizeUserProfile(profile)),
-    [draftProfile, profile]
-  )
+  const display = displayName || DEFAULT_NICKNAME
+  const avatarInitial = getAvatarInitial(display)
+  const emailDisplay = email || accountLabel || '—'
 
-  useEffect(() => {
-    if (!profileDirty && profileSaveStatus !== 'saving' && profileSaveStatus !== 'success') {
-      window.queueMicrotask(() => {
-        setDraftProfile(profile)
-        setProfileSaveStatus('clean')
-      })
-    }
-  }, [profile, profileDirty, profileSaveStatus])
+  const startEditing = useCallback(() => {
+    setNicknameInput(display)
+    setError(null)
+    setEditing(true)
+  }, [display])
 
   useEffect(() => {
-    if (profileSaveStatus === 'saving') return
-    if (profileDirty) {
-      window.queueMicrotask(() => setProfileSaveStatus((current) => (current === 'error' ? 'error' : 'dirty')))
-    } else if (profileSaveStatus === 'dirty') {
-      window.queueMicrotask(() => setProfileSaveStatus('clean'))
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
     }
-  }, [profileDirty, profileSaveStatus])
+  }, [editing])
 
-  const refreshLicense = useCallback(async (showResult = true) => {
-    setRefreshingLicense(true)
-    try {
-      const response = await fetch('/api/license/status', { cache: 'no-store' })
-      const data = await response.json().catch(() => ({}))
-      setLicense({
-        status: data.licenseActive ? 'active' : 'inactive',
-        plan: data.license?.plan,
-        expiresAt: data.activation?.expires_at,
-        lastUsedAt: data.activation?.last_used_at
-      })
-      if (showResult) pushToast({ kind: 'success', title: '授权状态已刷新' })
-    } catch {
-      setLicense({ status: 'error' })
-      if (showResult) pushToast({ kind: 'error', title: '授权状态读取失败', message: '请稍后重试。' })
-    } finally {
-      setRefreshingLicense(false)
-    }
-  }, [pushToast])
+  const cancelEditing = useCallback(() => {
+    setEditing(false)
+    setNicknameInput('')
+    setError(null)
+  }, [])
 
-  useEffect(() => {
-    window.queueMicrotask(() => void refreshLicense(false))
-    return () => {
-      if (profileSaveTimer) window.clearTimeout(profileSaveTimer)
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  function resetLayout() {
-    if (!userId) return
-    Object.keys(window.localStorage)
-      .filter((key) => belongsToUserStorageKey(key, userId) && (
-        key.startsWith('ielts-writing-editor-position-') ||
-        key.startsWith('ielts-writing-editor-split-') ||
-        key.startsWith('ielts-writing-history-filters-v1')
-      ))
-      .forEach((key) => removeStorageValue(window.localStorage, key))
-    Object.keys(window.sessionStorage)
-      .filter((key) => belongsToUserStorageKey(key, userId) && key.startsWith('ielts-writing-scroll:'))
-      .forEach((key) => removeStorageValue(window.sessionStorage, key))
-    setConfirmResetLayout(false)
-    pushToast({ kind: 'success', title: '布局已重置', message: '作文历史和草稿未被清除。' })
-  }
-
-  function updateProfileField<Key extends keyof UserProfile>(key: Key, value: UserProfile[Key]) {
-    setDraftProfile((current) => ({ ...current, [key]: value }))
-  }
-
-  function togglePreference(preference: StudyPreference) {
-    setDraftProfile((current) => {
-      const selected = new Set(current.studyPreferences)
-      if (selected.has(preference)) selected.delete(preference)
-      else selected.add(preference)
-      return { ...current, studyPreferences: Array.from(selected) }
-    })
-  }
-
-  async function savePersonalProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setAttemptedProfileSave(true)
-    if (profileHasErrors) {
-      setProfileSaveStatus('error')
-      pushToast({ kind: 'error', title: '个人资料未保存', message: '请先修正表单中的提示。' })
+  const handleSave = useCallback(async () => {
+    if (saving) return
+    const trimmed = nicknameInput.trim()
+    const validationError = validateNickname(trimmed)
+    if (validationError) {
+      setError(validationError)
       return
     }
-
-    setProfileSaveStatus('saving')
-    try {
-      const saved = await saveProfile(draftProfile)
-      setDraftProfile(saved)
-      setProfileSaveStatus('success')
-      setAttemptedProfileSave(false)
-      pushToast({ kind: 'success', title: '个人资料已保存', message: '头像、目标分和分析页已同步更新。' })
-      const timer = window.setTimeout(() => setProfileSaveStatus('clean'), 1600)
-      setProfileSaveTimer(timer)
-    } catch (error) {
-      setProfileSaveStatus('error')
-      pushToast({ kind: 'error', title: '保存失败', message: error instanceof Error ? error.message : '请稍后重试。' })
+    if (trimmed === display) {
+      setEditing(false)
+      return
     }
+    setSaving(true)
+    setError(null)
+    try {
+      await updateDisplayName(trimmed)
+      setEditing(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存失败，请重试')
+    } finally {
+      setSaving(false)
+    }
+  }, [nicknameInput, display, updateDisplayName, saving])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') cancelEditing()
+    if (e.key === 'Enter') { e.preventDefault(); void handleSave() }
+  }, [cancelEditing, handleSave])
+
+  if (!userId) {
+    return (
+      <main className="settings-page" data-main-content tabIndex={-1}>
+        <section className="settings-main">
+          <div className="settings-account-card settings-skeleton" />
+        </section>
+      </main>
+    )
   }
 
   return (
     <main className="settings-page" data-main-content tabIndex={-1}>
       <section className="settings-main">
-        <GlassPanel className="settings-profile-card ui-hover-glow">
-          <div className="settings-profile-identity">
-            <ProfileAvatar profile={draftProfile} size="lg" label="个人资料头像" />
-            <div className="settings-profile-copy">
-              <span className="settings-profile-kicker">个人资料</span>
-              <h2 className="ui-title-headline">{draftProfile.fullName}</h2>
-              <p className="settings-account-label" title={accountLabel || undefined}>
-                {accountLabel || '账号信息加载中'}
-              </p>
-              <div className="settings-profile-meta" aria-label="账号摘要">
-                <span>目标 {formatBandOption(draftProfile.targetOverall)}</span>
-                <span>{license.status === 'active' ? '会员已激活' : license.status === 'loading' ? '正在读取会员状态' : '会员未激活'}</span>
-                {userId ? <span title={userId}>ID {userId.slice(0, 8)}</span> : null}
-              </div>
-              {draftProfile.bio ? <p className="settings-profile-bio">{draftProfile.bio}</p> : null}
+        <div className="settings-account-card">
+          <div className="settings-account-row">
+            <span className="settings-avatar" aria-label={`头像：${avatarInitial}`}>
+              <span>{avatarInitial}</span>
+            </span>
+
+            <div className="settings-account-info">
+              {displayNameLoading && !editing ? (
+                <div className="settings-nickname-skeleton" />
+              ) : editing ? (
+                <div className="settings-nickname-edit">
+                  <input
+                    ref={inputRef}
+                    className="settings-nickname-input"
+                    value={nicknameInput}
+                    onChange={(e) => { setNicknameInput(e.target.value); setError(null) }}
+                    onKeyDown={handleKeyDown}
+                    maxLength={NICKNAME_MAX + 5}
+                    placeholder="输入昵称"
+                    aria-invalid={!!error}
+                  />
+                  {error && <span className="settings-nickname-error" role="alert">{error}</span>}
+                  <div className="settings-nickname-actions">
+                    <button
+                      className="settings-nickname-btn settings-nickname-cancel"
+                      type="button"
+                      onClick={cancelEditing}
+                      disabled={saving}
+                    >
+                      取消
+                    </button>
+                    <button
+                      className="settings-nickname-btn settings-nickname-save"
+                      type="button"
+                      onClick={() => void handleSave()}
+                      disabled={saving || nicknameInput.trim() === display}
+                    >
+                      {saving ? '保存中…' : '保存'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="settings-display-name-row">
+                    <span className="settings-display-name">{display}</span>
+                    <button
+                      className="settings-edit-btn"
+                      type="button"
+                      onClick={startEditing}
+                    >
+                      修改
+                    </button>
+                  </div>
+                  <p className="settings-email" title={emailDisplay}>
+                    {emailDisplay}
+                  </p>
+                </>
+              )}
             </div>
           </div>
-          <div className="settings-profile-actions">
-            <p>安全退出当前账号</p>
+
+          <div className="settings-logout-row">
             <LogoutButton />
           </div>
-        </GlassPanel>
-
-        <div className="settings-sections">
-          <GlassPanel className="settings-section">
-            <form className="profile-form" onSubmit={savePersonalProfile}>
-              <div className="settings-section-header">
-              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MaterialIcon name="person" filled className="text-primary" />
-                个人资料
-              </h2>
-                <span className={`profile-save-state is-${profileSaveStatus}`} role="status">
-                  {profileSaveStatus === 'clean'
-                    ? '未修改'
-                    : profileSaveStatus === 'dirty'
-                      ? '有未保存修改'
-                      : profileSaveStatus === 'saving'
-                        ? '保存中'
-                        : profileSaveStatus === 'success'
-                          ? '保存成功'
-                          : '保存失败'}
-                </span>
-              </div>
-
-              <div className="profile-form-grid">
-                <label className="field">
-                  <span>用户姓名</span>
-                  <input
-                    value={draftProfile.fullName}
-                    onChange={(event) => updateProfileField('fullName', event.target.value)}
-                    aria-invalid={Boolean((attemptedProfileSave || profileDirty) && profileErrors.fullName)}
-                  />
-                  {(attemptedProfileSave || profileDirty) && profileErrors.fullName ? <em className="field-error">{profileErrors.fullName}</em> : null}
-                </label>
-
-                <label className="field">
-                  <span>英文昵称（可选）</span>
-                  <input
-                    value={draftProfile.englishNickname}
-                    onChange={(event) => updateProfileField('englishNickname', event.target.value)}
-                    placeholder="例如 Allen"
-                    aria-invalid={Boolean((attemptedProfileSave || profileDirty) && profileErrors.englishNickname)}
-                  />
-                  {(attemptedProfileSave || profileDirty) && profileErrors.englishNickname ? <em className="field-error">{profileErrors.englishNickname}</em> : null}
-                </label>
-
-                <label className="field profile-field-wide">
-                  <span>个人简介</span>
-                  <textarea
-                    value={draftProfile.bio}
-                    rows={3}
-                    onChange={(event) => updateProfileField('bio', event.target.value)}
-                    aria-invalid={Boolean((attemptedProfileSave || profileDirty) && profileErrors.bio)}
-                  />
-                  {(attemptedProfileSave || profileDirty) && profileErrors.bio ? <em className="field-error">{profileErrors.bio}</em> : null}
-                </label>
-
-                <label className="field">
-                  <span>目标总分</span>
-                  <select value={draftProfile.targetOverall} onChange={(event) => updateProfileField('targetOverall', Number(event.target.value) as UserProfile['targetOverall'])}>
-                    {IELTS_BAND_OPTIONS.map((score) => <option key={score} value={score}>{formatBandOption(score)}</option>)}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Task 1目标分</span>
-                  <select value={draftProfile.task1Target} onChange={(event) => updateProfileField('task1Target', Number(event.target.value) as UserProfile['task1Target'])}>
-                    {IELTS_BAND_OPTIONS.map((score) => <option key={score} value={score}>{formatBandOption(score)}</option>)}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>Task 2目标分</span>
-                  <select value={draftProfile.task2Target} onChange={(event) => updateProfileField('task2Target', Number(event.target.value) as UserProfile['task2Target'])}>
-                    {IELTS_BAND_OPTIONS.map((score) => <option key={score} value={score}>{formatBandOption(score)}</option>)}
-                  </select>
-                </label>
-
-                <label className="field">
-                  <span>预计考试日期</span>
-                  <input type="date" value={draftProfile.examDate} onChange={(event) => updateProfileField('examDate', event.target.value)} />
-                  {(attemptedProfileSave || profileDirty) && profileErrors.examDate ? <em className="field-error">{profileErrors.examDate}</em> : null}
-                </label>
-
-                <label className="field">
-                  <span>每周练习目标</span>
-                  <input
-                    min={1}
-                    max={14}
-                    type="number"
-                    value={draftProfile.weeklyPracticeTarget}
-                    onChange={(event) => updateProfileField('weeklyPracticeTarget', Number(event.target.value))}
-                  />
-                  {(attemptedProfileSave || profileDirty) && profileErrors.weeklyPracticeTarget ? <em className="field-error">{profileErrors.weeklyPracticeTarget}</em> : null}
-                </label>
-
-                <label className="field">
-                  <span>当前英语水平</span>
-                  <select value={draftProfile.currentLevel} onChange={(event) => updateProfileField('currentLevel', event.target.value as UserProfile['currentLevel'])}>
-                    {Object.entries(EnglishLevelLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                </label>
-
-                <fieldset className="field profile-field-wide preference-field">
-                  <legend>学习偏好</legend>
-                  <div className="preference-grid">
-                    {StudyPreferenceOptions.map((preference) => (
-                      <label key={preference} className="preference-option">
-                        <input
-                          type="checkbox"
-                          checked={draftProfile.studyPreferences.includes(preference)}
-                          onChange={() => togglePreference(preference)}
-                        />
-                        <span>{StudyPreferenceLabels[preference]}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {(attemptedProfileSave || profileDirty) && profileErrors.studyPreferences ? <em className="field-error">{profileErrors.studyPreferences}</em> : null}
-                </fieldset>
-              </div>
-
-              <div className="settings-save-bar">
-                <p className="settings-message">
-                  {profileSaveStatus === 'error'
-                    ? '保存失败时不会丢失当前填写内容，请修正后重试。'
-                    : '保存后，账号中心、分析页和头像会同步更新。'}
-                </p>
-                <AsyncButton
-                  icon="save"
-                  loading={profileSaveStatus === 'saving'}
-                  success={profileSaveStatus === 'success'}
-                  error={profileSaveStatus === 'error'}
-                  disabled={!profileDirty}
-                  type="submit"
-                >
-                  保存个人资料
-                </AsyncButton>
-              </div>
-            </form>
-          </GlassPanel>
-
-          <GlassPanel className="settings-section">
-            <div className="settings-section-header">
-              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MaterialIcon name="lock" filled className="text-primary" />
-                账号与安全
-              </h2>
-            </div>
-
-            <div style={{ marginTop: 16 }}>
-              <div className="account-row">
-                <div className="account-main">
-                  <span className="account-icon">
-                    <MaterialIcon name="verified_user" />
-                  </span>
-                  <div>
-                    <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>授权状态</p>
-                    <p className="ui-label">
-                      {license.status === 'loading'
-                        ? '正在读取'
-                        : license.status === 'active'
-                          ? '已激活'
-                          : license.status === 'error'
-                            ? '读取失败'
-                            : '未激活'}
-                    </p>
-                  </div>
-                </div>
-                <AsyncButton className="ui-secondary-button" icon="refresh" loading={refreshingLicense} onClick={refreshLicense}>
-                  刷新
-                </AsyncButton>
-              </div>
-
-              <div className="account-row">
-                <div className="account-main">
-                  <span className="account-icon">
-                    <MaterialIcon name="license" />
-                  </span>
-                  <div>
-                    <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>授权详情</p>
-                    <p className="ui-label">套餐：{license.plan || '暂无'} · 到期时间：{formatDateTime(license.expiresAt)}</p>
-                  </div>
-                </div>
-                <span className="ui-label">最近使用：{formatDateTime(license.lastUsedAt)}</span>
-              </div>
-            </div>
-
-          </GlassPanel>
-
-          <GlassPanel className="settings-section">
-            <div className="settings-section-header">
-              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MaterialIcon name="keyboard_command_key" className="text-primary" />
-                交互偏好与快捷键
-              </h2>
-            </div>
-
-            <div style={{ marginTop: 16 }}>
-              <div className="settings-toggle-row">
-                <div>
-                  <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>减弱动效</p>
-                  <p className="ui-label">开启后页面过渡和通知动画会缩短。</p>
-                </div>
-                <button
-                  className={`switch-button ${motion.enabled ? 'is-on' : ''}`}
-                  type="button"
-                  role="switch"
-                  aria-checked={motion.enabled}
-                  aria-label="减弱动效"
-                  onClick={() => {
-                    motion.setPreference(!motion.enabled)
-                    pushToast({ kind: 'success', title: !motion.enabled ? '已减弱动效' : '已恢复标准动效' })
-                  }}
-                >
-                  <span />
-                </button>
-              </div>
-
-              {[
-                ['Cmd/Ctrl + K', '打开快速导航'],
-                ['Cmd/Ctrl + S', '保存当前草稿'],
-                ['Cmd/Ctrl + Enter', '打开提交确认'],
-                ['Cmd/Ctrl + 1', '进入 Task 1'],
-                ['Cmd/Ctrl + 2', '进入 Task 2'],
-                ['Cmd/Ctrl + ,', '打开设置'],
-                ['/', '聚焦历史搜索']
-              ].map(([shortcut, label]) => (
-                <div key={shortcut} className="shortcut-row">
-                  <span className="ui-body-md">{label}</span>
-                  <kbd>{shortcut}</kbd>
-                </div>
-              ))}
-
-              <div className="account-row">
-                <div className="account-main">
-                  <span className="account-icon">
-                    <MaterialIcon name="restart_alt" />
-                  </span>
-                  <div>
-                    <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>重置布局</p>
-                    <p className="ui-label">仅重置分栏、滚动位置和筛选条件，不删除作文历史。</p>
-                  </div>
-                </div>
-                <button className="ui-secondary-button" type="button" onClick={() => setConfirmResetLayout(true)}>
-                  重置
-                </button>
-              </div>
-            </div>
-          </GlassPanel>
-
-          <GlassPanel className="settings-section">
-            <div className="settings-section-header">
-              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MaterialIcon name="privacy_tip" className="text-primary" />
-                隐私与数据
-              </h2>
-            </div>
-            <div style={{ marginTop: 16 }}>
-              <PrivacySettings userId={userId} />
-            </div>
-          </GlassPanel>
         </div>
+
+        <footer className="settings-footer">
+          <Link href="/terms">服务条款</Link>
+          <span className="settings-footer-dot">·</span>
+          <Link href="/privacy">隐私政策</Link>
+        </footer>
       </section>
-      <ConfirmDialog
-        open={confirmResetLayout}
-        title="重置布局偏好？"
-        message="将恢复分栏宽度、滚动位置和历史筛选条件，作文历史与草稿不会删除。"
-        confirmLabel="重置"
-        cancelLabel="取消"
-        tone="danger"
-        onCancel={() => setConfirmResetLayout(false)}
-        onConfirm={resetLayout}
-      />
     </main>
-  )
-}
-
-function PrivacySettings({ userId }: { userId: string | null }) {
-  const { pushToast } = useToast()
-  const [consents, setConsents] = useState<Array<{ consentType: string; consentStatus: string; consentedAt: string | null; policyVersion: string }>>([])
-  const [loading, setLoading] = useState(true)
-  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false)
-  const [currentPolicyVersion, setCurrentPolicyVersion] = useState('')
-
-  useEffect(() => {
-    if (!userId) return
-    fetch('/api/user/privacy-consents')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.success) {
-          setConsents(data.consents ?? [])
-          setCurrentPolicyVersion(data.currentPolicyVersion ?? '')
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [userId])
-
-  const crossBorderConsent = consents.find((c) => c.consentType === 'cross_border_transfer' && c.consentStatus === 'granted')
-  const hasCrossBorder = Boolean(crossBorderConsent)
-
-  const handleGrant = async () => {
-    try {
-      const res = await fetch('/api/user/privacy-consents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ consentType: 'cross_border_transfer' })
-      })
-      const data = await res.json() as { success?: boolean }
-      if (data.success) {
-        pushToast({ kind: 'success', title: '已同意跨境传输' })
-        setConsents((prev) => [...prev.filter((c) => c.consentType !== 'cross_border_transfer'), {
-          consentType: 'cross_border_transfer',
-          consentStatus: 'granted',
-          consentedAt: new Date().toISOString(),
-          policyVersion: currentPolicyVersion
-        }])
-      }
-    } catch {
-      pushToast({ kind: 'error', title: '操作失败' })
-    }
-  }
-
-  const handleWithdraw = async () => {
-    try {
-      const res = await fetch('/api/user/privacy-consents', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ consentType: 'cross_border_transfer' })
-      })
-      const data = await res.json() as { success?: boolean }
-      if (data.success) {
-        pushToast({ kind: 'info', title: '已撤回跨境传输同意' })
-        setConsents((prev) => prev.map((c) =>
-          c.consentType === 'cross_border_transfer' ? { ...c, consentStatus: 'withdrawn' } : c
-        ))
-      }
-    } catch {
-      pushToast({ kind: 'error', title: '操作失败' })
-    } finally {
-      setShowWithdrawConfirm(false)
-    }
-  }
-
-  if (loading) return <p className="ui-body-md" style={{ color: 'var(--text-secondary)' }}>加载中...</p>
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="account-row">
-        <div className="account-main">
-          <span className="account-icon"><MaterialIcon name="policy" /></span>
-          <div>
-            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>隐私政策版本</p>
-            <p className="ui-label">当前版本：{currentPolicyVersion}</p>
-          </div>
-        </div>
-        <Link href="/privacy" className="ui-secondary-button" style={{ fontSize: 12, padding: '4px 10px' }}>
-          查看
-        </Link>
-      </div>
-
-      <div className="account-row">
-        <div className="account-main">
-          <span className="account-icon"><MaterialIcon name="public" /></span>
-          <div>
-            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>个人信息跨境传输</p>
-            <p className="ui-label">
-              {hasCrossBorder && crossBorderConsent
-                ? `已同意 · ${crossBorderConsent.consentedAt ? new Date(crossBorderConsent.consentedAt).toLocaleDateString('zh-CN') : ''}`
-                : '未同意'}
-            </p>
-          </div>
-        </div>
-        {hasCrossBorder ? (
-          <button className="ui-secondary-button" type="button" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setShowWithdrawConfirm(true)}>
-            撤回同意
-          </button>
-        ) : (
-          <button className="ui-primary-button" type="button" style={{ fontSize: 12, padding: '4px 10px' }} onClick={handleGrant}>
-            同意
-          </button>
-        )}
-      </div>
-
-      <div className="account-row">
-        <div className="account-main">
-          <span className="account-icon"><MaterialIcon name="groups" /></span>
-          <div>
-            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>境外接收方</p>
-            <p className="ui-label">Vercel、Supabase、阿里云通义千问、Resend</p>
-          </div>
-        </div>
-        <Link href="/privacy" className="ui-secondary-button" style={{ fontSize: 12, padding: '4px 10px' }}>
-          详情
-        </Link>
-      </div>
-
-      <div className="account-row">
-        <div className="account-main">
-          <span className="account-icon"><MaterialIcon name="contact_mail" /></span>
-          <div>
-            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>隐私联系</p>
-            <p className="ui-label">qgyxzq@gmail.com · 通常 15 个工作日内回复</p>
-          </div>
-        </div>
-      </div>
-
-      <ConfirmDialog
-        open={showWithdrawConfirm}
-        title="撤回跨境传输同意？"
-        message="撤回后，依赖境外服务的部分功能可能无法使用，包括作文保存、AI 批改、学习规划和错误分析。基础页面浏览不受影响。撤回前已处理的数据不受影响。"
-        confirmLabel="确认撤回"
-        cancelLabel="取消"
-        tone="danger"
-        onCancel={() => setShowWithdrawConfirm(false)}
-        onConfirm={handleWithdraw}
-      />
-    </div>
   )
 }

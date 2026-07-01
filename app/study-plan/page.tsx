@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
@@ -61,7 +61,202 @@ type AdjustmentPoints = {
   lifetimeSpent: number
 }
 
-type PageState = 'loading' | 'empty' | 'generating' | 'loading_plan' | 'ready' | 'failed'
+type ViewMode =
+  | 'resolving'
+  | 'empty'
+  | 'plan'
+  | 'replan-setup'
+  | 'generating'
+  | 'replanning'
+  | 'loading-plan'
+  | 'failed'
+
+type PageAction =
+  | { type: 'BOOT_RESOLVED_WITH_PLAN'; plan: StudyPlan; profile: StudyPlanProfile | null }
+  | { type: 'BOOT_RESOLVED_WITHOUT_PLAN' }
+  | { type: 'BOOT_FAILED' }
+  | { type: 'ACTIVE_JOB_RECOVERED'; job: GenerationJob }
+  | { type: 'OPEN_REPLAN_SETUP' }
+  | { type: 'CANCEL_SETUP' }
+  | { type: 'SUBMIT_REPLAN'; job: GenerationJob }
+  | { type: 'SUBMIT_INITIAL'; job: GenerationJob }
+  | { type: 'JOB_PROGRESS'; job: GenerationJob }
+  | { type: 'JOB_COMPLETED'; job: GenerationJob }
+  | { type: 'JOB_FAILED'; job: GenerationJob }
+  | { type: 'PLAN_FETCH_SUCCEEDED'; plan: StudyPlan; profile: StudyPlanProfile | null }
+  | { type: 'PLAN_FETCH_FAILED' }
+  | { type: 'RETURN_TO_PLAN' }
+  | { type: 'CLEAR_ACTIVE_JOB' }
+
+type PageState = {
+  viewMode: ViewMode
+  plan: StudyPlan | null
+  profile: StudyPlanProfile | null
+  activeJob: GenerationJob | null
+  planLoadRetries: number
+  bootDone: boolean
+}
+
+function isJobActive(job: GenerationJob | null): boolean {
+  if (!job) return false
+  return job.status === 'queued' || job.status === 'running'
+}
+
+function isJobDone(job: GenerationJob | null): boolean {
+  return job?.status === 'completed'
+}
+
+function isJobFailed(job: GenerationJob | null): boolean {
+  if (!job) return false
+  return job.status === 'failed' || job.status === 'timed_out' || job.status === 'cancelled'
+}
+
+function studyPlanReducer(state: PageState, action: PageAction): PageState {
+  switch (action.type) {
+    case 'BOOT_RESOLVED_WITH_PLAN':
+      return {
+        ...state,
+        viewMode: 'plan',
+        plan: action.plan,
+        profile: action.profile,
+        bootDone: true
+      }
+
+    case 'BOOT_RESOLVED_WITHOUT_PLAN':
+      return {
+        ...state,
+        viewMode: 'empty',
+        bootDone: true
+      }
+
+    case 'BOOT_FAILED':
+      return {
+        ...state,
+        viewMode: 'failed',
+        bootDone: true
+      }
+
+    case 'ACTIVE_JOB_RECOVERED': {
+      const job = action.job
+      if (isJobActive(job)) {
+        const isReplan = job.jobType === 'replan'
+        return {
+          ...state,
+          activeJob: job,
+          viewMode: isReplan ? 'replanning' : 'generating'
+        }
+      }
+      if (isJobDone(job) && job.resultPlanId) {
+        return {
+          ...state,
+          activeJob: job,
+          viewMode: 'loading-plan',
+          planLoadRetries: 0
+        }
+      }
+      if (isJobFailed(job)) {
+        return {
+          ...state,
+          activeJob: job,
+          viewMode: state.plan ? 'plan' : 'empty'
+        }
+      }
+      return state
+    }
+
+    case 'OPEN_REPLAN_SETUP':
+      if (state.viewMode !== 'plan' && state.viewMode !== 'empty' && state.viewMode !== 'failed') return state
+      return {
+        ...state,
+        viewMode: 'replan-setup'
+      }
+
+    case 'CANCEL_SETUP':
+      return {
+        ...state,
+        viewMode: state.plan ? 'plan' : 'empty'
+      }
+
+    case 'SUBMIT_REPLAN':
+      return {
+        ...state,
+        viewMode: 'replanning',
+        activeJob: action.job
+      }
+
+    case 'SUBMIT_INITIAL':
+      return {
+        ...state,
+        viewMode: 'generating',
+        activeJob: action.job
+      }
+
+    case 'JOB_PROGRESS':
+      if (!state.activeJob || state.activeJob.id !== action.job.id) return state
+      return {
+        ...state,
+        activeJob: action.job
+      }
+
+    case 'JOB_COMPLETED':
+      if (!state.activeJob || state.activeJob.id !== action.job.id) return state
+      return {
+        ...state,
+        activeJob: action.job,
+        viewMode: 'loading-plan',
+        planLoadRetries: 0
+      }
+
+    case 'JOB_FAILED':
+      if (!state.activeJob || state.activeJob.id !== action.job.id) return state
+      return {
+        ...state,
+        activeJob: action.job,
+        viewMode: state.plan ? 'plan' : 'empty'
+      }
+
+    case 'PLAN_FETCH_SUCCEEDED':
+      return {
+        ...state,
+        viewMode: 'plan',
+        plan: action.plan,
+        profile: action.profile,
+        activeJob: null,
+        planLoadRetries: 0
+      }
+
+    case 'PLAN_FETCH_FAILED':
+      return {
+        ...state,
+        planLoadRetries: state.planLoadRetries + 1
+      }
+
+    case 'RETURN_TO_PLAN':
+      return {
+        ...state,
+        viewMode: state.plan ? 'plan' : 'empty',
+        activeJob: null
+      }
+
+    case 'CLEAR_ACTIVE_JOB':
+      return {
+        ...state,
+        activeJob: state.activeJob ? null : state.activeJob
+      }
+
+    default:
+      return state
+  }
+}
+
+const initialState: PageState = {
+  viewMode: 'resolving',
+  plan: null,
+  profile: null,
+  activeJob: null,
+  planLoadRetries: 0,
+  bootDone: false
+}
 
 class ApiResponseError extends Error {
   status: number
@@ -93,7 +288,8 @@ export default function StudyPlanPage() {
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
-  const [activeJob, setActiveJob] = useState<GenerationJob | null>(null)
+
+  const [state, dispatch] = useReducer(studyPlanReducer, initialState)
   const [analysisJob, setAnalysisJob] = useState<GenerationJob | null>(null)
   const [jobRestored, setJobRestored] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -107,10 +303,9 @@ export default function StudyPlanPage() {
 
   const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const planLoadRetriesRef = useRef(0)
   const mountedRef = useRef(true)
+  const bootResolvedRef = useRef(false)
 
-  // Cleanup on unmount
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -119,6 +314,27 @@ export default function StudyPlanPage() {
       if (abortRef.current) abortRef.current.abort()
     }
   }, [])
+
+  // Boot resolution: decide initial viewMode from SWR data + active job
+  useEffect(() => {
+    if (bootResolvedRef.current) return
+    if (!jobRestored) return
+
+    if (isLoading && !data && !error) return
+
+    bootResolvedRef.current = true
+
+    if (error && !data?.plan) {
+      dispatch({ type: 'BOOT_FAILED' })
+      return
+    }
+
+    if (data?.plan) {
+      dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
+    } else if (!state.activeJob) {
+      dispatch({ type: 'BOOT_RESOLVED_WITHOUT_PLAN' })
+    }
+  }, [data, error, isLoading, jobRestored, state.activeJob])
 
   // Restore active job on mount
   useEffect(() => {
@@ -138,25 +354,23 @@ export default function StudyPlanPage() {
           const isFailed = job.status === 'failed' || job.status === 'timed_out'
 
           if (job.jobType === 'analysis_refresh') {
-            // Analysis refresh job
             setAnalysisJob(job)
             if (isActive) {
               try { localStorage.setItem('activeAnalysisRefreshJobId', job.id) } catch {}
             }
           } else {
-            // Generation/replan job
             if (isActive) {
-              setActiveJob(job)
+              dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
               try { localStorage.setItem('activeStudyPlanJobId', job.id) } catch {}
             } else if (isDone && job.resultPlanId) {
-              setActiveJob(job)
+              dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
             } else if (isFailed) {
-              setActiveJob(job)
+              dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
             }
           }
         }
       } catch {
-        // Silent fail - will retry on next render
+        // Silent fail
       } finally {
         if (!cancelled) setJobRestored(true)
       }
@@ -166,21 +380,31 @@ export default function StudyPlanPage() {
     return () => { cancelled = true }
   }, [userId, jobRestored])
 
-  // Adaptive polling for active job
+  // SWR data sync: update plan data without changing viewMode during replan-setup
   useEffect(() => {
-    if (!activeJob) return
-    const isActive = activeJob.status === 'queued' || activeJob.status === 'running'
-    if (!isActive) return
+    if (!data?.plan) return
+    if (state.viewMode === 'replan-setup') return
+    if (state.viewMode === 'resolving') return
+
+    if (state.viewMode === 'plan' || state.viewMode === 'failed') {
+      dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
+    }
+  }, [data, state.viewMode])
+
+  // Adaptive polling for active generation job
+  useEffect(() => {
+    const job = state.activeJob
+    if (!job) return
+    if (!isJobActive(job)) return
 
     let cancelled = false
 
     function getPollInterval(): number {
-      if (!activeJob) return 4000
-      const createdAt = new Date(activeJob.createdAt).getTime()
+      const createdAt = new Date(job!.createdAt).getTime()
       const elapsed = Date.now() - createdAt
-      if (elapsed < 60_000) return 2000    // First minute: every 2s
-      if (elapsed < 300_000) return 4000   // 1-5 min: every 4s
-      return 8000                           // 5+ min: every 8s
+      if (elapsed < 60_000) return 2000
+      if (elapsed < 300_000) return 4000
+      return 8000
     }
 
     async function pollJob() {
@@ -190,7 +414,7 @@ export default function StudyPlanPage() {
         abortRef.current?.abort()
         abortRef.current = controller
 
-        const res = await fetch(`/api/study-plan/generation-jobs/${activeJob!.id}`, {
+        const res = await fetch(`/api/study-plan/generation-jobs/${job!.id}`, {
           signal: controller.signal
         })
         if (cancelled || !mountedRef.current) return
@@ -198,32 +422,23 @@ export default function StudyPlanPage() {
         const data = await res.json() as { success?: boolean; job?: GenerationJob }
         if (cancelled || !mountedRef.current || !data.success || !data.job) return
 
-        const job = data.job
-        setActiveJob((prev) => {
-          if (!prev || prev.id !== job.id) return prev
-          // Only update if something changed
-          if (prev.status === job.status && prev.progress === job.progress && prev.currentStep === job.currentStep) {
-            return prev
-          }
-          return job
-        })
+        const updatedJob = data.job
 
-        // If job completed, trigger plan load
-        if (job.status === 'completed') {
+        if (updatedJob.status === 'completed') {
           try { localStorage.removeItem('activeStudyPlanJobId') } catch {}
-          planLoadRetriesRef.current = 0
-          // Try to load plan with retries
-          await loadPlanAfterCompletion(job)
+          dispatch({ type: 'JOB_COMPLETED', job: updatedJob })
           return
         }
 
-        // If job failed/timed_out/cancelled, stop polling
-        if (job.status === 'failed' || job.status === 'timed_out' || job.status === 'cancelled') {
+        if (updatedJob.status === 'failed' || updatedJob.status === 'timed_out' || updatedJob.status === 'cancelled') {
           try { localStorage.removeItem('activeStudyPlanJobId') } catch {}
+          dispatch({ type: 'JOB_FAILED', job: updatedJob })
+          pushToast({ kind: 'error', title: updatedJob.status === 'timed_out' ? '计划生成超时' : '计划生成失败', message: updatedJob.errorMessage || '请稍后重试' })
           return
         }
 
-        // Schedule next poll
+        dispatch({ type: 'JOB_PROGRESS', job: updatedJob })
+
         if (!cancelled && mountedRef.current) {
           pollingRef.current = setTimeout(pollJob, getPollInterval())
         }
@@ -234,7 +449,22 @@ export default function StudyPlanPage() {
       }
     }
 
-    async function loadPlanAfterCompletion(_job: GenerationJob) {
+    pollingRef.current = setTimeout(pollJob, 500)
+
+    return () => {
+      cancelled = true
+      if (pollingRef.current) clearTimeout(pollingRef.current)
+    }
+  }, [state.activeJob, state.activeJob?.id, state.activeJob?.status, pushToast])
+
+  // Load plan after job completion
+  useEffect(() => {
+    if (state.viewMode !== 'loading-plan') return
+    if (!state.activeJob?.resultPlanId) return
+
+    let cancelled = false
+
+    async function loadNewPlan() {
       const maxRetries = 5
       for (let i = 0; i < maxRetries; i++) {
         if (cancelled || !mountedRef.current) return
@@ -242,32 +472,31 @@ export default function StudyPlanPage() {
           const planData = await fetchPlan()
           if (planData.plan) {
             if (!cancelled && mountedRef.current) {
-              pushToast({ kind: 'success', title: '学习计划已生成' })
-              // Clear the active job after a delay
-              setTimeout(() => {
-                if (mountedRef.current) setActiveJob(null)
-              }, 2000)
+              dispatch({ type: 'PLAN_FETCH_SUCCEEDED', plan: planData.plan, profile: planData.profile ?? null })
+              pushToast({ kind: 'success', title: '学习计划已更新' })
             }
             return
           }
         } catch {}
-        // Wait before retry
         await new Promise(r => setTimeout(r, 1000 * (i + 1)))
       }
-      // If all retries failed, just clear the job and let user refresh
       if (!cancelled && mountedRef.current) {
-        setActiveJob(null)
-        pushToast({ kind: 'info', title: '计划已生成', message: '请刷新页面查看' })
+        if (state.planLoadRetries < 2) {
+          dispatch({ type: 'PLAN_FETCH_FAILED' })
+          pushToast({ kind: 'info', title: '计划加载中', message: '稍后将自动重试' })
+          setTimeout(() => {
+            if (mountedRef.current) dispatch({ type: 'RETURN_TO_PLAN' })
+          }, 3000)
+        } else {
+          dispatch({ type: 'RETURN_TO_PLAN' })
+          pushToast({ kind: 'info', title: '计划已生成', message: '请刷新页面查看' })
+        }
       }
     }
 
-    pollingRef.current = setTimeout(pollJob, 500)
-
-    return () => {
-      cancelled = true
-      if (pollingRef.current) clearTimeout(pollingRef.current)
-    }
-  }, [activeJob, activeJob?.id, activeJob?.status, pushToast])
+    loadNewPlan()
+    return () => { cancelled = true }
+  }, [state.viewMode, state.activeJob?.resultPlanId, state.planLoadRetries, pushToast])
 
   const { data: pointsData } = useSWR<AdjustmentPoints>(
     userId ? 'study-plan-points' : null,
@@ -280,10 +509,9 @@ export default function StudyPlanPage() {
 
   const quota = data?.quota
   const adjustmentBalance = pointsData?.balance ?? 0
-  const plan = data?.plan ?? null
-  const profile = data?.profile ?? null
+  const plan = state.plan ?? data?.plan ?? null
+  const profile = state.profile ?? data?.profile ?? null
 
-  // Check replan suggestion after analysis refresh completes
   const checkReplanSuggestion = useCallback(async () => {
     try {
       const res = await fetch('/api/study-plan')
@@ -318,7 +546,7 @@ export default function StudyPlanPage() {
         setShowReplanSuggestion({ reasons })
       }
     } catch { /* ignore */ }
-  }, [plan?.diagnosis])
+  }, [plan])
 
   // Polling for analysis refresh job
   useEffect(() => {
@@ -345,10 +573,8 @@ export default function StudyPlanPage() {
 
         if (job.status === 'completed') {
           try { localStorage.removeItem('activeAnalysisRefreshJobId') } catch {}
-          // Reload plan data to get updated analysis
           await mutate()
           pushToast({ kind: 'success', title: '学习数据已更新' })
-          // Check if should suggest replan
           void checkReplanSuggestion()
           setTimeout(() => {
             if (mountedRef.current) setAnalysisJob(null)
@@ -374,28 +600,9 @@ export default function StudyPlanPage() {
 
     setTimeout(pollAnalysisJob, 500)
     return () => { cancelled = true }
-  }, [analysisJob, analysisJob?.id, analysisJob?.status, mutate, pushToast])
+  }, [analysisJob, analysisJob?.id, analysisJob?.status, mutate, pushToast, checkReplanSuggestion])
 
-  // Check replan suggestion after analysis refresh completes
-  useEffect(() => {
-    // This effect runs once on mount; actual checks are triggered by setting pendingReplanCheck
-  }, [])
-
-  const isGenerating = activeJob && (activeJob.status === 'queued' || activeJob.status === 'running')
-  const isPlanLoading = activeJob?.status === 'completed' && !plan
-  const isJobFailed = activeJob && (activeJob.status === 'failed' || activeJob.status === 'timed_out')
   const isAnalysisRefreshing = analysisJob && (analysisJob.status === 'queued' || analysisJob.status === 'running')
-  const analysisRefreshDone = analysisJob?.status === 'completed'
-
-  const resolvedState: PageState = useMemo(() => {
-    if (isLoading && !jobRestored) return 'loading'
-    if (error && !plan && !isGenerating) return 'failed'
-    if (isGenerating) return 'generating'
-    if (isPlanLoading) return 'loading_plan'
-    if (isJobFailed && !plan) return 'failed'
-    if (plan) return 'ready'
-    return 'empty'
-  }, [isLoading, jobRestored, error, plan, isGenerating, isPlanLoading, isJobFailed])
 
   const handleGenerate = useCallback(async (formData?: Record<string, unknown>) => {
     try {
@@ -410,8 +617,7 @@ export default function StudyPlanPage() {
         return
       }
       if (json.jobId) {
-        // If server returned an existing job (dedup), restore it
-        setActiveJob({
+        const job: GenerationJob = {
           id: json.jobId,
           status: json.status ?? 'queued',
           progress: json.progress ?? 0,
@@ -419,8 +625,14 @@ export default function StudyPlanPage() {
           resultPlanId: null,
           errorMessage: null,
           createdAt: new Date().toISOString()
-        })
+        }
         try { localStorage.setItem('activeStudyPlanJobId', json.jobId) } catch {}
+
+        if (formData?.sourcePlanId) {
+          dispatch({ type: 'SUBMIT_REPLAN', job })
+        } else {
+          dispatch({ type: 'SUBMIT_INITIAL', job })
+        }
       }
       setShowCreate(false)
       pushToast({ kind: 'success', title: '正在后台生成学习计划', message: '你可以离开此页面，完成后会自动通知。' })
@@ -430,23 +642,29 @@ export default function StudyPlanPage() {
   }, [pushToast])
 
   const handleRetry = useCallback(async () => {
-    if (!activeJob?.id) return
+    if (!state.activeJob?.id) return
     try {
-      await fetch(`/api/study-plan/generation-jobs/${activeJob.id}/retry`, { method: 'POST' })
-      // Refresh job state
-      setActiveJob((prev) => prev ? { ...prev, status: 'queued', progress: 0, errorMessage: null, errorCode: null } : prev)
-      try { localStorage.setItem('activeStudyPlanJobId', activeJob.id) } catch {}
+      await fetch(`/api/study-plan/generation-jobs/${state.activeJob.id}/retry`, { method: 'POST' })
+      const retriedJob: GenerationJob = {
+        ...state.activeJob,
+        status: 'queued',
+        progress: 0,
+        errorMessage: null,
+        errorCode: null
+      }
+      dispatch({ type: 'JOB_PROGRESS', job: retriedJob })
+      try { localStorage.setItem('activeStudyPlanJobId', state.activeJob.id) } catch {}
     } catch {
       pushToast({ kind: 'error', title: '重试失败' })
     }
-  }, [activeJob, pushToast])
+  }, [state.activeJob, pushToast])
 
   const handleRefreshAnalysis = useCallback(async () => {
     if (isAnalysisRefreshing) {
       pushToast({ kind: 'info', title: '学习数据正在更新中' })
       return
     }
-    if (isGenerating) {
+    if (isJobActive(state.activeJob)) {
       pushToast({ kind: 'info', title: '计划生成完成后可更新分析' })
       return
     }
@@ -473,13 +691,13 @@ export default function StudyPlanPage() {
     } catch {
       pushToast({ kind: 'error', title: '更新失败', message: '请稍后重试' })
     }
-  }, [isAnalysisRefreshing, isGenerating, pushToast])
+  }, [isAnalysisRefreshing, state.activeJob, pushToast])
 
   if (!userId) return <PageSkeleton variant="chart" />
 
-  if (resolvedState === 'loading' && !plan) return <PageSkeleton variant="chart" />
+  if (state.viewMode === 'resolving') return <PageSkeleton variant="chart" />
 
-  if (resolvedState === 'failed' && !plan && !isGenerating) {
+  if (state.viewMode === 'failed' && !plan && !isJobActive(state.activeJob)) {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="study-plan-page">
@@ -499,34 +717,19 @@ export default function StudyPlanPage() {
     )
   }
 
-  if (resolvedState === 'generating' || resolvedState === 'loading_plan') {
+  if (state.viewMode === 'empty' || (!plan && !isJobActive(state.activeJob) && state.viewMode !== 'replan-setup')) {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="study-plan-page">
           <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
-          <GenerationProgressCard
-            job={activeJob}
-            isPlanLoading={resolvedState === 'loading_plan'}
-            onCancel={() => setActiveJob(null)}
-          />
-        </section>
-      </main>
-    )
-  }
-
-  if (resolvedState === 'empty' || !plan) {
-    return (
-      <main className="ui-page" data-main-content tabIndex={-1}>
-        <section className="study-plan-page">
-          <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
-          {isJobFailed && (
+          {isJobFailed(state.activeJob) && (
             <GlassPanel style={styles.failedBanner}>
               <MaterialIcon name="error" size={20} />
               <div style={{ flex: 1 }}>
                 <p className="ui-body-md">
-                  {activeJob?.status === 'timed_out' ? '上次计划生成超时' : '上次计划生成失败'}
+                  {state.activeJob?.status === 'timed_out' ? '上次计划生成超时' : '上次计划生成失败'}
                 </p>
-                {activeJob?.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
+                {state.activeJob?.errorMessage && <p className="ui-label">{state.activeJob.errorMessage}</p>}
               </div>
               <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={handleRetry}>
                 重试
@@ -547,19 +750,25 @@ export default function StudyPlanPage() {
     )
   }
 
+  const isGenerating = isJobActive(state.activeJob) && state.viewMode === 'generating'
+  const isReplanning = isJobActive(state.activeJob) && state.viewMode === 'replanning'
+  const isReplanSetup = state.viewMode === 'replan-setup'
+  const isLoadingPlan = state.viewMode === 'loading-plan'
+  const showJobFailedBanner = isJobFailed(state.activeJob) && plan
+
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="study-plan-page">
         <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
 
-        {isJobFailed && (
+        {showJobFailedBanner && (
           <GlassPanel style={styles.failedBanner}>
             <MaterialIcon name="error" size={20} />
             <div style={{ flex: 1 }}>
               <p className="ui-body-md">
-                {activeJob?.status === 'timed_out' ? '上次计划生成超时' : '上次计划生成失败'}
+                {state.activeJob?.status === 'timed_out' ? '上次计划生成超时' : '上次计划生成失败'}
               </p>
-              {activeJob?.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
+              {state.activeJob?.errorMessage && <p className="ui-label">{state.activeJob.errorMessage}</p>}
             </div>
             <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={handleRetry}>
               重试
@@ -567,37 +776,74 @@ export default function StudyPlanPage() {
           </GlassPanel>
         )}
 
-        <PlanOverview
-          plan={plan}
-          profile={profile}
-          onRefreshAnalysis={handleRefreshAnalysis}
-          isAnalysisRefreshing={!!isAnalysisRefreshing}
-          analysisRefreshProgress={analysisJob?.progress ?? 0}
-        />
+        {isReplanning && state.activeJob && (
+          <ReplanProgressBanner job={state.activeJob} />
+        )}
 
-        <MonthCalendar
-          plan={plan}
-          profile={profile}
-          currentMonth={calendarMonth}
-          onMonthChange={setCalendarMonth}
-          onSelectTask={setSelectedTask}
-        />
+        {isLoadingPlan && (
+          <GlassPanel style={styles.progressCard}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <MaterialIcon name="check_circle" size={24} />
+              <div style={{ flex: 1 }}>
+                <h2 className="ui-title-md">学习计划已生成</h2>
+                <p className="ui-body-md">正在加载完整学习安排...</p>
+              </div>
+            </div>
+            <div style={styles.progressBar}>
+              <div style={{ ...styles.progressFill, width: '100%', background: 'var(--success)' }} />
+            </div>
+          </GlassPanel>
+        )}
 
-        <TodayTasks
-          tasks={plan.tasks?.filter((t) => t.scheduledDate === getDateKeyInTimeZone() && t.status !== 'rescheduled') ?? []}
-          onSelectTask={setSelectedTask}
-        />
+        {isGenerating && state.activeJob && (
+          <GenerationProgressCard job={state.activeJob} />
+        )}
 
-        <BottomActions
-          quota={quota}
-          onRegenerate={() => handleGenerate({ sourcePlanId: plan?.id })}
-          onSettings={() => setShowSettings(true)}
-        />
+        {plan && !isGenerating && (
+          <>
+            <PlanOverview
+              plan={plan}
+              profile={profile}
+              onRefreshAnalysis={handleRefreshAnalysis}
+              isAnalysisRefreshing={!!isAnalysisRefreshing}
+              analysisRefreshProgress={analysisJob?.progress ?? 0}
+            />
+
+            <MonthCalendar
+              plan={plan}
+              currentMonth={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              onSelectTask={setSelectedTask}
+            />
+
+            <TodayTasks
+              tasks={plan.tasks?.filter((t) => t.scheduledDate === getDateKeyInTimeZone() && t.status !== 'rescheduled') ?? []}
+              onSelectTask={setSelectedTask}
+            />
+
+            {!isReplanSetup && (
+              <BottomActions
+                quota={quota}
+                onReplan={() => dispatch({ type: 'OPEN_REPLAN_SETUP' })}
+                onSettings={() => setShowSettings(true)}
+              />
+            )}
+          </>
+        )}
+
+        {isReplanSetup && (
+          <ReplanSetupDialog
+            profile={profile}
+            diagnosis={plan?.diagnosis}
+            planId={plan?.id}
+            onGenerate={handleGenerate}
+            onCancel={() => dispatch({ type: 'CANCEL_SETUP' })}
+          />
+        )}
 
         {showSettings && profile && (
           <SettingsDialog
             profile={profile}
-            plan={plan}
             onClose={() => setShowSettings(false)}
             onMutate={() => { void mutate() }}
           />
@@ -626,7 +872,7 @@ export default function StudyPlanPage() {
                   type="button"
                   onClick={() => {
                     setShowReplanSuggestion(null)
-                    handleGenerate({ sourcePlanId: plan?.id })
+                    dispatch({ type: 'OPEN_REPLAN_SETUP' })
                   }}
                 >
                   根据最新数据重新规划
@@ -687,18 +933,49 @@ function EmptyPlan({ onGenerate }: { onGenerate: () => void }) {
   )
 }
 
-function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
-  job: GenerationJob | null
-  isPlanLoading: boolean
-  onCancel: () => void
-}) {
-  const progress = job?.progress ?? 0
-  const step = job?.message ?? job?.currentStep ?? job?.stage ?? '正在准备...'
-  const isFailed = job?.status === 'failed'
-  const isTimedOut = job?.status === 'timed_out'
-  const isRunning = job?.status === 'queued' || job?.status === 'running'
+function ReplanProgressBanner({ job }: { job: GenerationJob }) {
+  const progress = job.progress ?? 0
+  const step = job.message ?? job.currentStep ?? job.stage ?? '正在准备...'
+  const [now, setNow] = useState(() => Date.now())
 
-  // Heartbeat staleness check
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 10000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const heartbeatAge = job.heartbeatAt ? Math.round((now - new Date(job.heartbeatAt).getTime()) / 1000) : null
+  const isStale = heartbeatAge !== null && heartbeatAge > 180
+
+  return (
+    <GlassPanel style={styles.replanBanner}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <MaterialIcon name={isStale ? 'hourglass_empty' : 'sync'} size={20} />
+        <div style={{ flex: 1 }}>
+          <p className="ui-body-md" style={{ fontWeight: 600 }}>
+            正在根据你的最新情况重新规划 · {progress}%
+          </p>
+          <p className="ui-label" style={{ color: 'var(--text-secondary)' }}>
+            {isStale ? '任务仍在后台运行，请耐心等待' : step}
+          </p>
+        </div>
+      </div>
+      <div style={styles.progressBar}>
+        <div style={{ ...styles.progressFill, width: `${progress}%` }} />
+      </div>
+      <p className="ui-label" style={{ marginTop: 8, color: 'var(--text-secondary)' }}>
+        当前计划仍可查看，新计划完成后将自动替换
+      </p>
+    </GlassPanel>
+  )
+}
+
+function GenerationProgressCard({ job }: { job: GenerationJob }) {
+  const progress = job.progress ?? 0
+  const step = job.message ?? job.currentStep ?? job.stage ?? '正在准备...'
+  const isFailed = job.status === 'failed'
+  const isTimedOut = job.status === 'timed_out'
+  const isRunning = job.status === 'queued' || job.status === 'running'
+
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!isRunning) return
@@ -706,31 +983,14 @@ function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
     return () => window.clearInterval(timer)
   }, [isRunning])
 
-  const heartbeatAge = job?.heartbeatAt ? Math.round((now - new Date(job.heartbeatAt).getTime()) / 1000) : null
+  const heartbeatAge = job.heartbeatAt ? Math.round((now - new Date(job.heartbeatAt).getTime()) / 1000) : null
   const isStale = heartbeatAge !== null && heartbeatAge > 180
-
-  if (isPlanLoading) {
-    return (
-      <GlassPanel style={styles.progressCard}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <MaterialIcon name="check_circle" size={24} />
-          <div style={{ flex: 1 }}>
-            <h2 className="ui-title-md">学习计划已生成</h2>
-            <p className="ui-body-md">正在加载完整学习安排...</p>
-          </div>
-        </div>
-        <div style={styles.progressBar}>
-          <div style={{ ...styles.progressFill, width: '100%', background: 'var(--success)' }} />
-        </div>
-      </GlassPanel>
-    )
-  }
 
   const statusLabel = isFailed ? '生成失败'
     : isTimedOut ? '生成超时'
     : isStale ? '仍在处理中（较长任务）'
     : isRunning ? `进度：${progress}%`
-    : `${job?.status ?? '未知'}`
+    : `${job.status ?? '未知'}`
 
   return (
     <GlassPanel style={styles.progressCard}>
@@ -741,14 +1001,9 @@ function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
             {isFailed ? '生成失败' : isTimedOut ? '生成超时' : '正在生成你的雅思写作计划'}
           </h2>
           <p className="ui-body-md">
-            {isFailed || isTimedOut ? (job?.errorMessage || '请稍后重试') : step}
+            {isFailed || isTimedOut ? (job.errorMessage || '请稍后重试') : step}
           </p>
         </div>
-        {!isFailed && !isTimedOut && (
-          <button className="ui-secondary-button" type="button" onClick={onCancel} style={{ fontSize: 13, padding: '6px 12px' }}>
-            取消
-          </button>
-        )}
       </div>
       <div style={styles.progressBar}>
         <div style={{ ...styles.progressFill, width: `${isFailed || isTimedOut ? 100 : progress}%`, background: isFailed || isTimedOut ? 'var(--error)' : 'var(--primary)' }} />
@@ -787,18 +1042,12 @@ function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefreshing, 
     : null
   const totalWeeks = totalDays ? Math.ceil(totalDays / 7) : null
 
-  // Analysis snapshot data
   const snapshot = profile?.analysisSnapshot as Record<string, unknown> | undefined
   const snapshotCounts = snapshot?.counts as Record<string, number> | undefined
   const snapshotScores = snapshot?.scores as Record<string, number | null> | undefined
   const snapshotDiag = snapshot?.diagnosis as Record<string, unknown> | undefined
   const analysisUpdatedAt = profile?.analysisUpdatedAt as string | null | undefined
   const sourceRecordCount = profile?.analysisSourceRecordCount ?? 0
-
-  // Check for new records not yet in analysis
-  const latestRecordAt = profile?.analysisLatestRecordAt as string | null | undefined
-  const planTasks = plan.tasks ?? []
-  const completedTasks = planTasks.filter(t => t.status === 'completed' && t.writingRecordId)
 
   const formatTime = (iso: string | null | undefined) => {
     if (!iso) return null
@@ -871,15 +1120,13 @@ function OverviewItem({ icon, label, value }: { icon: string; label: string; val
   )
 }
 
-function MonthCalendar({ plan, profile: _profile, currentMonth, onMonthChange, onSelectTask }: {
+function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask }: {
   plan: StudyPlan
-  profile: StudyPlanProfile | null
   currentMonth: string
   onMonthChange: (m: string) => void
   onSelectTask: (task: StudyPlanTask) => void
 }) {
   const today = getDateKeyInTimeZone()
-  const tasks = plan.tasks ?? []
   const [year, month] = currentMonth.split('-').map(Number)
   const firstDay = new Date(year, month - 1, 1)
   const lastDay = new Date(year, month, 0)
@@ -900,6 +1147,7 @@ function MonthCalendar({ plan, profile: _profile, currentMonth, onMonthChange, o
   }
 
   const tasksByDate = useMemo(() => {
+    const tasks = plan.tasks ?? []
     const map = new Map<string, StudyPlanTask[]>()
     for (const t of tasks) {
       const arr = map.get(t.scheduledDate) ?? []
@@ -907,7 +1155,7 @@ function MonthCalendar({ plan, profile: _profile, currentMonth, onMonthChange, o
       map.set(t.scheduledDate, arr)
     }
     return map
-  }, [tasks])
+  }, [plan])
 
   const monthLabel = `${year}年${month}月`
   const weekDays = ['日', '一', '二', '三', '四', '五', '六']
@@ -1176,9 +1424,9 @@ function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectT
   )
 }
 
-function BottomActions({ quota, onRegenerate, onSettings }: {
+function BottomActions({ quota, onReplan, onSettings }: {
   quota?: StudyPlanGenerationQuota
-  onRegenerate: () => void
+  onReplan: () => void
   onSettings: () => void
 }) {
   return (
@@ -1187,7 +1435,7 @@ function BottomActions({ quota, onRegenerate, onSettings }: {
         <MaterialIcon name="tune" size={18} />
         设置
       </button>
-      <button className="ui-primary-button" type="button" disabled={(quota?.remainingCount ?? 0) <= 0} onClick={onRegenerate}>
+      <button className="ui-primary-button" type="button" onClick={onReplan}>
         重新规划
       </button>
       {quota && (
@@ -1350,9 +1598,162 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
   )
 }
 
-function SettingsDialog({ profile, plan: _plan, onClose, onMutate }: {
+function ReplanSetupDialog({ profile, diagnosis, planId, onGenerate, onCancel }: {
+  profile: StudyPlanProfile | null
+  diagnosis?: StudyPlanDiagnosis
+  planId?: string
+  onGenerate: (data: Record<string, unknown>) => void
+  onCancel: () => void
+}) {
+  const [form, setForm] = useState({
+    overallTarget: profile?.overallTarget ?? 6.5,
+    examDate: profile?.examDate ?? '',
+    sessionsPerWeek: profile?.sessionsPerWeek ?? 4,
+    minutesPerSession: profile?.minutesPerSession ?? 45,
+    intensity: profile?.intensity ?? 'standard' as string,
+    allowTimedPractice: profile?.allowTimedPractice ?? true,
+    includeFullTests: profile?.includeFullTests ?? true,
+    questionBankRatio: profile?.questionBankRatio ?? 80,
+    aiGeneratedRatio: profile?.aiGeneratedRatio ?? 20
+  })
+
+  const questionSourcePresets = [
+    { key: 'all_bank', label: '全部题库', bank: 100, ai: 0 },
+    { key: 'bank_first', label: '题库优先', bank: 80, ai: 20 },
+    { key: 'balanced', label: '均衡模式', bank: 50, ai: 50 },
+    { key: 'ai_first', label: 'AI 个性化优先', bank: 20, ai: 80 },
+    { key: 'all_ai', label: '全部 AI', bank: 0, ai: 100 }
+  ]
+
+  const activePreset = questionSourcePresets.find((p) => p.bank === form.questionBankRatio && p.ai === form.aiGeneratedRatio)?.key ?? 'custom'
+
+  const handleBankRatioChange = (newBank: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(newBank / 5) * 5))
+    setForm({ ...form, questionBankRatio: clamped, aiGeneratedRatio: 100 - clamped })
+  }
+
+  const handlePreset = (preset: typeof questionSourcePresets[number]) => {
+    setForm({ ...form, questionBankRatio: preset.bank, aiGeneratedRatio: preset.ai })
+  }
+
+  const [currentTime] = useState(() => Date.now())
+  const totalQuestionTasks = useMemo(() => {
+    const sessions = form.sessionsPerWeek
+    const weeks = form.examDate
+      ? Math.max(1, Math.ceil(Math.max(0, (new Date(form.examDate).getTime() - currentTime) / 86400000) / 7))
+      : 4
+    const totalStudyDays = weeks * sessions
+    return Math.max(2, Math.ceil(totalStudyDays * 0.35)) + Math.max(3, Math.ceil(totalStudyDays * 0.45))
+  }, [form.sessionsPerWeek, form.examDate, currentTime])
+
+  const bankEstimate = Math.round(totalQuestionTasks * form.questionBankRatio / 100)
+  const aiEstimate = totalQuestionTasks - bankEstimate
+
+  return (
+    <CenteredDialog
+      open
+      title="重新规划学习计划"
+      onClose={onCancel}
+      footer={
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="ui-secondary-button" type="button" onClick={onCancel}>取消</button>
+          <button className="ui-primary-button" type="button" onClick={() => onGenerate({ ...form, sourcePlanId: planId })}>
+            确认重新规划
+          </button>
+        </div>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {diagnosis?.currentAverage && (
+          <div style={{ padding: 10, borderRadius: 10, background: 'var(--surface-container-low)', fontSize: 13 }}>
+            根据最近作文，当前预测分数为 <strong>{diagnosis.currentAverage.toFixed(1)}</strong>
+          </div>
+        )}
+        <FieldGroup label="目标分数">
+          <OptionGrid options={[5.5, 6, 6.5, 7, 7.5, 8].map((v) => ({ value: v, label: String(v) }))} value={form.overallTarget} onChange={(v) => setForm({ ...form, overallTarget: v as number })} />
+        </FieldGroup>
+        <FieldGroup label="考试日期">
+          <input type="date" value={form.examDate} min={getDateKeyInTimeZone()} onChange={(e) => setForm({ ...form, examDate: e.target.value })} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--glass-border-1)', maxWidth: 200 }} />
+        </FieldGroup>
+        <FieldGroup label="每周学习天数">
+          <OptionGrid options={[3, 4, 5, 6, 7].map((v) => ({ value: v, label: `${v} 天` }))} value={form.sessionsPerWeek} onChange={(v) => setForm({ ...form, sessionsPerWeek: v as number })} />
+        </FieldGroup>
+        <FieldGroup label="每天学习时间">
+          <OptionGrid options={[20, 30, 45, 60, 90].map((v) => ({ value: v, label: `${v} 分钟` }))} value={form.minutesPerSession} onChange={(v) => setForm({ ...form, minutesPerSession: v as number })} />
+        </FieldGroup>
+        <FieldGroup label="训练强度">
+          <OptionGrid options={[
+            { value: 'relaxed', label: '轻松', desc: '每天 1 个任务' },
+            { value: 'standard', label: '标准', desc: '每天 1–2 个任务' },
+            { value: 'intensive', label: '强化', desc: '每天 2–3 个任务' }
+          ]} value={form.intensity} onChange={(v) => setForm({ ...form, intensity: v as string })} />
+        </FieldGroup>
+
+        <FieldGroup label="题目来源">
+          <p className="ui-body-md" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+            选择计划中的题目由现有题库抽取，还是由 AI 根据你的薄弱项生成。
+          </p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {questionSourcePresets.map((preset) => (
+              <button
+                key={preset.key}
+                className={`task-badge ${activePreset === preset.key ? 'is-custom' : ''}`}
+                type="button"
+                onClick={() => handlePreset(preset)}
+                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 12 }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, minWidth: 70, color: 'var(--text-secondary)' }}>题库抽题</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={form.questionBankRatio}
+                onChange={(e) => handleBankRatioChange(Number(e.target.value))}
+                style={{ flex: 1, accentColor: 'var(--primary)' }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{form.questionBankRatio}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, minWidth: 70, color: 'var(--text-secondary)' }}>AI 智能出题</span>
+              <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--surface-container-low)', position: 'relative' }}>
+                <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: `${form.aiGeneratedRatio}%`, borderRadius: 2, background: 'linear-gradient(90deg, #8b5cf6, #6366f1)' }} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{form.aiGeneratedRatio}%</span>
+            </div>
+          </div>
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 12, color: 'var(--text-secondary)' }}>
+            <p style={{ marginBottom: 2 }}><strong>题库抽题：</strong>从平台现有正式题库中选择，题型和图表数据已经过校验。</p>
+            <p><strong>AI 智能出题：</strong>根据你的薄弱项和目标分数生成新题，更个性化但生成时间可能更长。</p>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
+            预计 {totalQuestionTasks} 个写作任务中：{bankEstimate} 个来自题库，{aiEstimate} 个由 AI 生成。
+          </p>
+        </FieldGroup>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.allowTimedPractice} onChange={(e) => setForm({ ...form, allowTimedPractice: e.target.checked })} />
+            <span className="ui-body-md">接受限时训练</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.includeFullTests} onChange={(e) => setForm({ ...form, includeFullTests: e.target.checked })} />
+            <span className="ui-body-md">安排完整模考</span>
+          </label>
+        </div>
+      </div>
+    </CenteredDialog>
+  )
+}
+
+function SettingsDialog({ profile, onClose, onMutate }: {
   profile: StudyPlanProfile
-  plan: StudyPlan | null
   onClose: () => void
   onMutate: () => void
 }) {
@@ -1621,6 +2022,22 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 24,
     borderRadius: 28,
     background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))'
+  },
+  replanBanner: {
+    padding: 16,
+    borderRadius: 20
+  },
+  progressBar: {
+    height: 6,
+    borderRadius: 3,
+    background: 'var(--surface-container-low)',
+    overflow: 'hidden'
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+    background: 'var(--primary)',
+    transition: 'width 0.3s ease'
   },
   failedBanner: {
     padding: 16,
