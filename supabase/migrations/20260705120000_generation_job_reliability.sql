@@ -32,18 +32,21 @@ ALTER TABLE public.study_plan_generation_jobs
   ADD COLUMN IF NOT EXISTS message text;
 
 -- Update status constraint to include timed_out
--- First, migrate old status values to new ones
+DO $$
+BEGIN
+  -- Drop old constraint FIRST so we can update rows
+  ALTER TABLE public.study_plan_generation_jobs
+    DROP CONSTRAINT IF EXISTS study_plan_generation_jobs_status_check;
+END $$;
+
+-- Migrate old status values to new ones (old constraint is gone now)
 UPDATE public.study_plan_generation_jobs
 SET status = 'running'
 WHERE status IN ('analyzing_history', 'building_profile', 'generating_tasks', 'saving');
 
+-- Add new constraint
 DO $$
 BEGIN
-  -- Drop old constraint if exists
-  ALTER TABLE public.study_plan_generation_jobs
-    DROP CONSTRAINT IF EXISTS study_plan_generation_jobs_status_check;
-
-  -- Add new constraint with timed_out
   ALTER TABLE public.study_plan_generation_jobs
     ADD CONSTRAINT study_plan_generation_jobs_status_check
     CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'timed_out'));
