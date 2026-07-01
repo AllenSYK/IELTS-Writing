@@ -410,10 +410,13 @@ function uploadedProcessSpec(result: UploadedTask1Result): Task1ProcessSpec | un
   if (!visual || visual.kind !== 'process') return undefined
   const orders = new Set(visual.steps.map((step) => step.order))
   return {
+    dataVersion: 'process-v2',
     title: visual.title || 'Uploaded Task 1 process',
-    stages: visual.steps.map((step) => ({
+    orientation: 'auto',
+    isCyclic: false,
+    steps: visual.steps.map((step) => ({
       id: `step_${step.order}`,
-      label: step.label,
+      title: step.label,
       description: step.description
     })),
     connections: visual.steps.flatMap((step) => {

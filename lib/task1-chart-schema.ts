@@ -1,4 +1,27 @@
 import { z } from 'zod'
+import {
+  ProcessSchemaV2,
+  normalizeProcessSpec,
+  legacyProcessToV2,
+  prepareProcessSpec,
+  validateProcessSchemaV2,
+  type ProcessV2,
+  type ProcessStep,
+  type ProcessConnection,
+  type ProcessOrientation
+} from '@/lib/process-schema-v2'
+
+export {
+  ProcessSchemaV2,
+  normalizeProcessSpec,
+  legacyProcessToV2,
+  prepareProcessSpec,
+  validateProcessSchemaV2,
+  type ProcessV2,
+  type ProcessStep,
+  type ProcessConnection,
+  type ProcessOrientation
+}
 
 export const Task1ChartKindSchema = z.enum(['line', 'bar', 'pie', 'table', 'mixed'])
 export type Task1ChartKind = z.infer<typeof Task1ChartKindSchema>
@@ -90,21 +113,8 @@ export const Task1ChartSpecSchema = z.object({
 
 export type Task1ChartSpec = z.infer<typeof Task1ChartSpecSchema>
 
-export const Task1ProcessSpecSchema = z.object({
-  title: z.string().min(1),
-  stages: z.array(z.object({
-    id: z.string().min(1),
-    label: z.string().min(1),
-    description: z.string().optional()
-  })).min(2),
-  connections: z.array(z.object({
-    from: z.string().min(1),
-    to: z.string().min(1),
-    label: z.string().optional()
-  })).optional()
-})
-
-export type Task1ProcessSpec = z.infer<typeof Task1ProcessSpecSchema>
+export const Task1ProcessSpecSchema = ProcessSchemaV2
+export type Task1ProcessSpec = ProcessV2
 
 /**
  * 地图数据版本
@@ -808,22 +818,20 @@ export function convertVisualDataToSpecs(
   if (primaryType === 'process_diagram' || primaryType === 'process') {
     const steps = visualData.steps as { step: number; name: string; details?: string }[] | undefined
     if (steps) {
-      const stages = steps.map((s) => ({
+      const processSteps = steps.map((s) => ({
         id: `step-${s.step}`,
-        label: s.name,
+        title: s.name,
         description: s.details
-      }))
-      const connections = steps.slice(0, -1).map((s, i) => ({
-        from: `step-${s.step}`,
-        to: `step-${steps[i + 1].step}`
       }))
       return {
         questionType: 'process',
-        processSpec: {
+        processSpec: normalizeProcessSpec({
+          dataVersion: 'process-v2',
           title,
-          stages,
-          connections
-        }
+          orientation: 'auto',
+          isCyclic: false,
+          steps: processSteps
+        }) || undefined
       }
     }
   }

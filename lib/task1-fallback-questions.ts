@@ -563,14 +563,17 @@ const processQuestions: Task1QuestionData[] = [
     prompt: 'The diagram below illustrates how rainwater is collected and treated for household use in a coastal town.',
     instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     processSpec: {
-      title: 'Rainwater Collection and Treatment Process',
-      stages: [
-        { id: 'collect', label: 'Collection', description: 'Rainwater is collected from rooftops via gutters' },
-        { id: 'filter', label: 'Filtration', description: 'Water passes through sand and gravel filters' },
-        { id: 'store', label: 'Storage', description: 'Filtered water is stored in underground tanks' },
-        { id: 'treat', label: 'Treatment', description: 'UV light and chlorine are used to purify the water' },
-        { id: 'test', label: 'Testing', description: 'Water quality is tested daily' },
-        { id: 'supply', label: 'Supply', description: 'Clean water is pumped to households' }
+      dataVersion: 'process-v2',
+      title: 'Rainwater Collection and Treatment',
+      orientation: 'auto',
+      isCyclic: false,
+      steps: [
+        { id: 'collect', title: 'Collection', description: 'Rainwater is collected from rooftops via gutters' },
+        { id: 'filter', title: 'Filtration', description: 'Water passes through sand and gravel filters' },
+        { id: 'store', title: 'Storage', description: 'Filtered water is stored in underground tanks' },
+        { id: 'treat', title: 'Treatment', description: 'UV light and chlorine are used to purify the water' },
+        { id: 'test', title: 'Testing', description: 'Water quality is tested daily' },
+        { id: 'supply', title: 'Supply', description: 'Clean water is pumped to households' }
       ]
     }
   },
@@ -582,14 +585,17 @@ const processQuestions: Task1QuestionData[] = [
     prompt: 'The diagram below shows the process of recycling plastic bottles.',
     instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     processSpec: {
-      title: 'Plastic Bottle Recycling Process',
-      stages: [
-        { id: 'collect', label: 'Collection', description: 'Used bottles are collected from recycling bins' },
-        { id: 'sort', label: 'Sorting', description: 'Bottles are sorted by plastic type using sensors' },
-        { id: 'clean', label: 'Cleaning', description: 'Labels are removed and bottles are washed' },
-        { id: 'shred', label: 'Shredding', description: 'Bottles are shredded into small flakes' },
-        { id: 'melt', label: 'Melting', description: 'Flakes are melted and formed into pellets' },
-        { id: 'produce', label: 'Production', description: 'Pellets are used to make new products' }
+      dataVersion: 'process-v2',
+      title: 'Plastic Bottle Recycling',
+      orientation: 'auto',
+      isCyclic: false,
+      steps: [
+        { id: 'collect', title: 'Collection', description: 'Used bottles are collected from recycling bins' },
+        { id: 'sort', title: 'Sorting', description: 'Bottles are sorted by plastic type using sensors' },
+        { id: 'clean', title: 'Cleaning', description: 'Labels are removed and bottles are washed' },
+        { id: 'shred', title: 'Shredding', description: 'Bottles are shredded into small flakes' },
+        { id: 'melt', title: 'Melting', description: 'Flakes are melted and formed into pellets' },
+        { id: 'produce', title: 'Production', description: 'Pellets are used to make new products' }
       ]
     }
   },
@@ -601,14 +607,17 @@ const processQuestions: Task1QuestionData[] = [
     prompt: 'The diagram below illustrates the stages in the production of bricks.',
     instructions: 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
     processSpec: {
-      title: 'Brick Manufacturing Process',
-      stages: [
-        { id: 'dig', label: 'Excavation', description: 'Clay is dug from the ground' },
-        { id: 'mix', label: 'Mixing', description: 'Clay is mixed with water and sand' },
-        { id: 'mould', label: 'Moulding', description: 'The mixture is pressed into brick shapes' },
-        { id: 'dry', label: 'Drying', description: 'Bricks are dried in a kiln at 200-1000°C' },
-        { id: 'cool', label: 'Cooling', description: 'Bricks are slowly cooled to prevent cracking' },
-        { id: 'pack', label: 'Packaging', description: 'Finished bricks are stacked and packaged for delivery' }
+      dataVersion: 'process-v2',
+      title: 'Brick Manufacturing',
+      orientation: 'auto',
+      isCyclic: false,
+      steps: [
+        { id: 'dig', title: 'Excavation', description: 'Clay is dug from the ground' },
+        { id: 'mix', title: 'Mixing', description: 'Clay is mixed with water and sand' },
+        { id: 'mould', title: 'Moulding', description: 'The mixture is pressed into brick shapes' },
+        { id: 'dry', title: 'Drying', description: 'Bricks are dried in a kiln at high temperature' },
+        { id: 'cool', title: 'Cooling', description: 'Bricks are slowly cooled to prevent cracking' },
+        { id: 'pack', title: 'Packaging', description: 'Finished bricks are stacked for delivery' }
       ]
     }
   }

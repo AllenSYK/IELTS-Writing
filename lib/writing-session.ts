@@ -7,9 +7,11 @@ import {
 } from '@/lib/ielts-questions'
 import {
   Task1MapSpecSchema,
-  Task1ProcessSpecSchema,
   prepareTask1ChartSpec,
-  type Task1ChartKind
+  prepareProcessSpec,
+  legacyProcessToV2,
+  type Task1ChartKind,
+  type Task1ProcessSpec
 } from '@/lib/task1-chart-schema'
 import { getFallbackQuestionsByType } from '@/lib/task1-fallback-questions'
 import { countWords, type WritingTaskType } from '@/lib/writing-records'
@@ -160,9 +162,17 @@ export function normalizeGeneratedQuestion(value: unknown): WritingQuestion {
     }
     question.chartSpec = prepared.data
   }
-  const processSpec = Task1ProcessSpecSchema.safeParse(parsed.data.processSpec)
+  const processSpecRaw = parsed.data.processSpec
+  if (processSpecRaw) {
+    const prepared = prepareProcessSpec(processSpecRaw)
+    if (prepared.success) {
+      question.processSpec = prepared.data
+    } else {
+      const legacy = legacyProcessToV2(processSpecRaw)
+      if (legacy) question.processSpec = legacy
+    }
+  }
   const mapSpec = Task1MapSpecSchema.safeParse(parsed.data.mapSpec)
-  question.processSpec = processSpec.success ? processSpec.data : undefined
   question.mapSpec = mapSpec.success ? mapSpec.data : undefined
   return question
 }
@@ -319,7 +329,18 @@ export function restoreQuestionFromRecord(source: QuestionSource): WritingQuesti
   const restoredChartSpec = validChartSpec(source.chartSpec, source.questionType)
     // Early mixed-chart records could contain the prompt without renderable visual data.
     || (expectedKind === 'mixed' ? mixedFallbackChartSpec() : undefined)
-  const processSpec = Task1ProcessSpecSchema.safeParse(source.processSpec)
+
+  let processSpec: Task1ProcessSpec | undefined
+  if (source.processSpec) {
+    const prepared = prepareProcessSpec(source.processSpec)
+    if (prepared.success) {
+      processSpec = prepared.data
+    } else {
+      const legacy = legacyProcessToV2(source.processSpec)
+      if (legacy) processSpec = legacy
+    }
+  }
+
   const mapSpec = Task1MapSpecSchema.safeParse(source.mapSpec)
 
   return {
@@ -334,7 +355,7 @@ export function restoreQuestionFromRecord(source: QuestionSource): WritingQuesti
     trainingType: source.trainingType === 'general' ? 'general' : isTask1 ? 'academic' : undefined,
     generatedSource: source.questionSource === 'user_upload' ? 'user_upload' : 'static-bank',
     chartSpec: restoredChartSpec,
-    processSpec: processSpec.success ? processSpec.data : undefined,
+    processSpec,
     mapSpec: mapSpec.success ? mapSpec.data : undefined,
     image: source.imageUrl,
     structuredData: source.uploadedTaskId

@@ -1603,6 +1603,251 @@ img {
   }
 }
 
+/* ============================================
+   Process V2 - IELTS Exam Style
+   ============================================ */
+
+.process-v2 {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.process-v2-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 12px 0;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.process-v2-container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.process-v2-container[data-layout="grid"] {
+  display: grid;
+  grid-template-columns: repeat(var(--process-cols, 3), 1fr);
+  gap: 8px 6px;
+  justify-items: center;
+}
+
+.process-v2-step-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.process-v2-step-group[data-layout="vertical"] {
+  flex-direction: column;
+  width: 100%;
+  max-width: 320px;
+}
+
+.process-v2-step-group[data-layout="grid"] {
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.process-v2-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 120px;
+  max-width: 160px;
+  min-height: 72px;
+  padding: 10px 12px 8px;
+  background: #fafafa;
+  border: 1px solid #c8c8c8;
+  border-radius: 6px;
+  position: relative;
+}
+
+.process-v2-step-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+
+.process-v2-step-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.3;
+  word-break: break-word;
+  hyphens: auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.process-v2-step-desc {
+  font-size: 11px;
+  color: #4a4a4a;
+  line-height: 1.4;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.process-v2-endpoint-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.process-v2-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #666;
+}
+
+.process-v2-arrow[data-direction="right"] {
+  width: 28px;
+  height: 16px;
+  margin: 0 2px;
+}
+
+.process-v2-arrow[data-direction="down"] {
+  width: 16px;
+  height: 28px;
+  margin: 2px 0;
+}
+
+.process-v2-arrow[data-direction="down-left"] {
+  width: 40px;
+  height: 32px;
+  margin: 2px 0;
+}
+
+.process-v2-arrow[data-direction="cycle"] {
+  width: 24px;
+  height: 24px;
+  margin: 4px;
+}
+
+.process-v2-arrow svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.process-v2-cycle-return {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0 4px;
+  width: 100%;
+}
+
+.process-v2-cycle-return svg {
+  width: 200px;
+  height: 30px;
+  color: #666;
+}
+
+.process-v2-cycle-label {
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+}
+
+/* Responsive overrides for process-v2 */
+@media (max-width: 600px) {
+  .process-v2-container {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .process-v2-container[data-layout="grid"] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .process-v2-step-group[data-layout="grid"] {
+    flex-direction: column;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .process-v2-step {
+    width: 100%;
+    max-width: 280px;
+    min-width: 0;
+  }
+
+  .process-v2-arrow[data-direction="right"] {
+    transform: rotate(90deg);
+    width: 16px;
+    height: 28px;
+    margin: 2px 0;
+  }
+
+  .process-v2-arrow[data-direction="down-left"] {
+    width: 16px;
+    height: 28px;
+    margin: 2px 0;
+  }
+
+  .process-v2-arrow[data-direction="down-left"] svg {
+    display: none;
+  }
+
+  .process-v2-arrow[data-direction="down-left"]::after {
+    content: '↓';
+    font-size: 16px;
+    color: #666;
+  }
+}
+
+@media print {
+  .process-v2-step {
+    background: #fff;
+    border-color: #333;
+  }
+
+  .process-v2-arrow {
+    color: #333;
+  }
+
+  .process-v2-step-title {
+    color: #000;
+  }
+
+  .process-v2-step-desc {
+    color: #333;
+  }
+}
+
 .task1-map-container {
   display: flex;
   align-items: center;
