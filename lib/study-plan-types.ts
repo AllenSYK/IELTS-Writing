@@ -42,6 +42,10 @@ export type StudyPlanProfile = {
   currentLevel: number | null
   questionBankRatio: number
   aiGeneratedRatio: number
+  analysisSnapshot?: Record<string, unknown> | null
+  analysisUpdatedAt?: string | null
+  analysisSourceRecordCount?: number
+  analysisLatestRecordAt?: string | null
 }
 
 export type StudyPlanDiagnosis = {

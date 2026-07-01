@@ -131,6 +131,10 @@ function mapProfile(row: Record<string, unknown>) {
     allowTimedPractice: row.allow_timed_practice ?? true,
     currentLevel: row.current_level,
     questionBankRatio: row.question_bank_ratio ?? 80,
-    aiGeneratedRatio: row.ai_generated_ratio ?? 20
+    aiGeneratedRatio: row.ai_generated_ratio ?? 20,
+    analysisSnapshot: row.analysis_snapshot,
+    analysisUpdatedAt: row.analysis_updated_at,
+    analysisSourceRecordCount: row.analysis_source_record_count ?? 0,
+    analysisLatestRecordAt: row.analysis_latest_record_at
   }
 }

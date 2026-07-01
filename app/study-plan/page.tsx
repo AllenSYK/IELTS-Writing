@@ -94,10 +94,12 @@ export default function StudyPlanPage() {
   const { pushToast } = useToast()
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
   const [activeJob, setActiveJob] = useState<GenerationJob | null>(null)
+  const [analysisJob, setAnalysisJob] = useState<GenerationJob | null>(null)
   const [jobRestored, setJobRestored] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
+  const [showReplanSuggestion, setShowReplanSuggestion] = useState<{ reasons: string[] } | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -135,15 +137,22 @@ export default function StudyPlanPage() {
           const isDone = job.status === 'completed'
           const isFailed = job.status === 'failed' || job.status === 'timed_out'
 
-          if (isActive) {
-            setActiveJob(job)
-            // Save to localStorage for faster recovery next time
-            try { localStorage.setItem('activeStudyPlanJobId', job.id) } catch {}
-          } else if (isDone && job.resultPlanId) {
-            // Job completed but plan may not be loaded yet
-            setActiveJob(job)
-          } else if (isFailed) {
-            setActiveJob(job)
+          if (job.jobType === 'analysis_refresh') {
+            // Analysis refresh job
+            setAnalysisJob(job)
+            if (isActive) {
+              try { localStorage.setItem('activeAnalysisRefreshJobId', job.id) } catch {}
+            }
+          } else {
+            // Generation/replan job
+            if (isActive) {
+              setActiveJob(job)
+              try { localStorage.setItem('activeStudyPlanJobId', job.id) } catch {}
+            } else if (isDone && job.resultPlanId) {
+              setActiveJob(job)
+            } else if (isFailed) {
+              setActiveJob(job)
+            }
           }
         }
       } catch {
@@ -260,6 +269,67 @@ export default function StudyPlanPage() {
     }
   }, [activeJob, activeJob?.id, activeJob?.status, pushToast])
 
+  // Polling for analysis refresh job
+  useEffect(() => {
+    if (!analysisJob) return
+    const isActive = analysisJob.status === 'queued' || analysisJob.status === 'running'
+    if (!isActive) return
+
+    let cancelled = false
+
+    async function pollAnalysisJob() {
+      if (cancelled || !mountedRef.current) return
+      try {
+        const res = await fetch(`/api/study-plan/generation-jobs/${analysisJob!.id}`)
+        if (cancelled || !mountedRef.current) return
+        const data = await res.json() as { success?: boolean; job?: GenerationJob }
+        if (!data.success || !data.job) return
+
+        const job = data.job
+        setAnalysisJob((prev) => {
+          if (!prev || prev.id !== job.id) return prev
+          if (prev.status === job.status && prev.progress === job.progress) return prev
+          return job
+        })
+
+        if (job.status === 'completed') {
+          try { localStorage.removeItem('activeAnalysisRefreshJobId') } catch {}
+          // Reload plan data to get updated analysis
+          await mutate()
+          pushToast({ kind: 'success', title: '学习数据已更新' })
+          // Check if should suggest replan
+          void checkReplanSuggestion()
+          setTimeout(() => {
+            if (mountedRef.current) setAnalysisJob(null)
+          }, 3000)
+          return
+        }
+
+        if (job.status === 'failed' || job.status === 'timed_out') {
+          try { localStorage.removeItem('activeAnalysisRefreshJobId') } catch {}
+          pushToast({ kind: 'error', title: '学习数据更新失败', message: job.errorMessage || '请稍后重试' })
+          return
+        }
+
+        if (!cancelled && mountedRef.current) {
+          setTimeout(pollAnalysisJob, 3000)
+        }
+      } catch {
+        if (!cancelled && mountedRef.current) {
+          setTimeout(pollAnalysisJob, 5000)
+        }
+      }
+    }
+
+    setTimeout(pollAnalysisJob, 500)
+    return () => { cancelled = true }
+  }, [analysisJob, analysisJob?.id, analysisJob?.status, mutate, pushToast])
+
+  // Check replan suggestion after analysis refresh completes
+  useEffect(() => {
+    // This effect runs once on mount; actual checks are triggered by setting pendingReplanCheck
+  }, [])
+
   const { data: pointsData } = useSWR<AdjustmentPoints>(
     userId ? 'study-plan-points' : null,
     async () => {
@@ -274,9 +344,48 @@ export default function StudyPlanPage() {
   const profile = data?.profile ?? null
   const quota = data?.quota
 
+  // Check replan suggestion after analysis refresh completes
+  const checkReplanSuggestion = useCallback(async () => {
+    try {
+      const res = await fetch('/api/study-plan')
+      const planData = await res.json() as PlanData
+      const prevSnapshot = plan?.diagnosis as Record<string, unknown> | undefined
+      const newSnapshot = planData.profile?.analysisSnapshot as Record<string, unknown> | undefined
+      if (!prevSnapshot || !newSnapshot) return
+
+      const reasons: string[] = []
+      const prevCounts = prevSnapshot.counts as Record<string, number> | undefined
+      const newCounts = newSnapshot.counts as Record<string, number> | undefined
+      if (prevCounts && newCounts) {
+        const newEssays = (newCounts.total ?? 0) - (prevCounts.total ?? 0)
+        if (newEssays >= 3) reasons.push(`新增了 ${newEssays} 篇已批改作文`)
+      }
+      const prevScores = prevSnapshot.scores as Record<string, number | null> | undefined
+      const newScores = newSnapshot.scores as Record<string, number | null> | undefined
+      if (prevScores && newScores) {
+        const prevAvg = prevScores.overall ?? 0
+        const newAvg = newScores.overall ?? 0
+        if (Math.abs(newAvg - prevAvg) >= 0.5) reasons.push(`总体平均分从 ${prevAvg.toFixed(1)} 变为 ${newAvg.toFixed(1)}`)
+      }
+      const prevDiag = prevSnapshot.diagnosis as Record<string, unknown> | undefined
+      const newDiag = newSnapshot.diagnosis as Record<string, unknown> | undefined
+      if (prevDiag && newDiag) {
+        const prevWeak = (prevDiag.weakestCriteria as string[]) ?? []
+        const newWeak = (newDiag.weakestCriteria as string[]) ?? []
+        if (prevWeak[0] !== newWeak[0]) reasons.push('最薄弱评分维度发生变化')
+      }
+
+      if (reasons.length >= 2 && mountedRef.current) {
+        setShowReplanSuggestion({ reasons })
+      }
+    } catch { /* ignore */ }
+  }, [plan?.diagnosis])
+
   const isGenerating = activeJob && (activeJob.status === 'queued' || activeJob.status === 'running')
   const isPlanLoading = activeJob?.status === 'completed' && !plan
   const isJobFailed = activeJob && (activeJob.status === 'failed' || activeJob.status === 'timed_out')
+  const isAnalysisRefreshing = analysisJob && (analysisJob.status === 'queued' || analysisJob.status === 'running')
+  const analysisRefreshDone = analysisJob?.status === 'completed'
 
   const resolvedState: PageState = useMemo(() => {
     if (isLoading && !jobRestored) return 'loading'
@@ -331,6 +440,40 @@ export default function StudyPlanPage() {
       pushToast({ kind: 'error', title: '重试失败' })
     }
   }, [activeJob, pushToast])
+
+  const handleRefreshAnalysis = useCallback(async () => {
+    if (isAnalysisRefreshing) {
+      pushToast({ kind: 'info', title: '学习数据正在更新中' })
+      return
+    }
+    if (isGenerating) {
+      pushToast({ kind: 'info', title: '计划生成完成后可更新分析' })
+      return
+    }
+    try {
+      const res = await fetch('/api/study-plan/analysis-refresh', { method: 'POST' })
+      const json = await res.json() as { success?: boolean; jobId?: string; status?: string; message?: string }
+      if (!res.ok) {
+        pushToast({ kind: 'error', title: '更新失败', message: json.message || '请稍后重试' })
+        return
+      }
+      if (json.jobId) {
+        setAnalysisJob({
+          id: json.jobId,
+          status: json.status ?? 'queued',
+          progress: 0,
+          currentStep: null,
+          resultPlanId: null,
+          errorMessage: null,
+          createdAt: new Date().toISOString()
+        })
+        try { localStorage.setItem('activeAnalysisRefreshJobId', json.jobId) } catch {}
+      }
+      pushToast({ kind: 'success', title: '正在更新学习数据' })
+    } catch {
+      pushToast({ kind: 'error', title: '更新失败', message: '请稍后重试' })
+    }
+  }, [isAnalysisRefreshing, isGenerating, pushToast])
 
   if (!userId) return <PageSkeleton variant="chart" />
 
@@ -424,7 +567,13 @@ export default function StudyPlanPage() {
           </GlassPanel>
         )}
 
-        <PlanOverview plan={plan} profile={profile} />
+        <PlanOverview
+          plan={plan}
+          profile={profile}
+          onRefreshAnalysis={handleRefreshAnalysis}
+          isAnalysisRefreshing={!!isAnalysisRefreshing}
+          analysisRefreshProgress={analysisJob?.progress ?? 0}
+        />
 
         <MonthCalendar
           plan={plan}
@@ -460,6 +609,43 @@ export default function StudyPlanPage() {
             onClose={() => setSelectedTask(null)}
             onMutate={() => { void mutate() }}
           />
+        )}
+
+        {showReplanSuggestion && (
+          <CenteredDialog
+            open
+            title="检测到学习情况变化"
+            onClose={() => setShowReplanSuggestion(null)}
+            footer={
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="ui-secondary-button" type="button" onClick={() => setShowReplanSuggestion(null)}>
+                  暂不调整
+                </button>
+                <button
+                  className="ui-primary-button"
+                  type="button"
+                  onClick={() => {
+                    setShowReplanSuggestion(null)
+                    handleGenerate({ sourcePlanId: plan?.id })
+                  }}
+                >
+                  根据最新数据重新规划
+                </button>
+              </div>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p className="ui-body-md">本次分析更新发现以下变化：</p>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {showReplanSuggestion.reasons.map((reason, i) => (
+                  <li key={i} style={{ fontSize: 14, marginBottom: 4 }}>{reason}</li>
+                ))}
+              </ul>
+              <p className="ui-body-md" style={{ color: 'var(--text-secondary)' }}>
+                是否根据最新数据调整未来学习计划？当前计划在新计划生成前仍可正常使用。
+              </p>
+            </div>
+          </CenteredDialog>
         )}
       </section>
     </main>
@@ -578,7 +764,13 @@ function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
   )
 }
 
-function PlanOverview({ plan, profile }: { plan: StudyPlan; profile: StudyPlanProfile | null }) {
+function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefreshing, analysisRefreshProgress }: {
+  plan: StudyPlan
+  profile: StudyPlanProfile | null
+  onRefreshAnalysis: () => void
+  isAnalysisRefreshing: boolean
+  analysisRefreshProgress: number
+}) {
   const today = getDateKeyInTimeZone()
   const examDays = computeExamDays(profile?.examDate ?? null)
   const tasks = plan.tasks ?? []
@@ -595,16 +787,75 @@ function PlanOverview({ plan, profile }: { plan: StudyPlan; profile: StudyPlanPr
     : null
   const totalWeeks = totalDays ? Math.ceil(totalDays / 7) : null
 
+  // Analysis snapshot data
+  const snapshot = profile?.analysisSnapshot as Record<string, unknown> | undefined
+  const snapshotCounts = snapshot?.counts as Record<string, number> | undefined
+  const snapshotScores = snapshot?.scores as Record<string, number | null> | undefined
+  const snapshotDiag = snapshot?.diagnosis as Record<string, unknown> | undefined
+  const analysisUpdatedAt = profile?.analysisUpdatedAt as string | null | undefined
+  const sourceRecordCount = profile?.analysisSourceRecordCount ?? 0
+
+  // Check for new records not yet in analysis
+  const latestRecordAt = profile?.analysisLatestRecordAt as string | null | undefined
+  const planTasks = plan.tasks ?? []
+  const completedTasks = planTasks.filter(t => t.status === 'completed' && t.writingRecordId)
+
+  const formatTime = (iso: string | null | undefined) => {
+    if (!iso) return null
+    const d = new Date(iso)
+    const now = new Date()
+    const isToday = d.toDateString() === now.toDateString()
+    if (isToday) return `今天 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+    return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  }
+
   return (
     <GlassPanel style={styles.overviewCard}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div>
+          {sourceRecordCount > 0 && (
+            <p className="ui-label" style={{ color: 'var(--text-secondary)' }}>
+              基于 {sourceRecordCount} 篇已批改作文
+              {analysisUpdatedAt && ` · 上次更新：${formatTime(analysisUpdatedAt)}`}
+            </p>
+          )}
+        </div>
+        <button
+          className="ui-secondary-button"
+          type="button"
+          onClick={onRefreshAnalysis}
+          disabled={isAnalysisRefreshing}
+          style={{ fontSize: 12, padding: '5px 12px', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+        >
+          <MaterialIcon name={isAnalysisRefreshing ? 'sync' : 'refresh'} size={16} />
+          {isAnalysisRefreshing ? `正在更新 ${analysisRefreshProgress}%` : '刷新学习数据'}
+        </button>
+      </div>
+
       <div style={styles.overviewGrid}>
+        {snapshotCounts && (
+          <>
+            <OverviewItem icon="edit_note" label="已完成" value={`${snapshotCounts.total ?? 0} 篇`} />
+            <OverviewItem icon="bar_chart" label="Task 1" value={`${snapshotCounts.task1 ?? 0} 篇`} />
+            <OverviewItem icon="article" label="Task 2" value={`${snapshotCounts.task2 ?? 0} 篇`} />
+            <OverviewItem icon="quiz" label="完整模考" value={`${snapshotCounts.fullTests ?? 0} 次`} />
+          </>
+        )}
         <OverviewItem icon="flag" label="目标分数" value={String(plan.goalsSnapshot?.overallTarget ?? '—')} />
-        <OverviewItem icon="trending_up" label="当前预测" value={plan.diagnosis?.currentAverage?.toFixed(1) ?? '—'} />
+        <OverviewItem icon="trending_up" label="当前预测" value={snapshotScores?.overall?.toFixed(1) ?? plan.diagnosis?.currentAverage?.toFixed(1) ?? '—'} />
         <OverviewItem icon="event" label="考试日期" value={profile?.examDate ? new Date(profile.examDate).toLocaleDateString('zh-CN') : '未设置'} />
         <OverviewItem icon="schedule" label="剩余天数" value={examDays !== null ? `${examDays} 天` : '—'} />
         {totalWeeks && <OverviewItem icon="date_range" label="计划周期" value={`${totalWeeks} 周`} />}
         {phase && <OverviewItem icon="route" label="当前阶段" value={phase} />}
         <OverviewItem icon="check_circle" label="本周完成" value={`${completedThisWeek}/${weekTasks.length} (${completionRate}%)`} />
+        {(() => {
+          const weakArr = snapshotDiag?.weakestCriteria
+          if (Array.isArray(weakArr) && weakArr.length > 0) {
+            const key = String(weakArr[0])
+            return <OverviewItem icon="priority_high" label="最弱项" value={ShortCriterionLabels[key] ?? key} />
+          }
+          return null
+        })()}
       </div>
     </GlassPanel>
   )
