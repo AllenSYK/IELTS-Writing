@@ -53,8 +53,14 @@ END
 WHERE appearance_frequency IS NULL;
 
 -- ============================================================
--- 5. frequency_source: mark as platform_estimate if not set
+-- 5. frequency_source: normalize to platform_estimate
 -- ============================================================
+-- 'admin' was the original default meaning "platform-set reference frequency"
+-- Map it to 'platform_estimate' so the UI can display it properly
+UPDATE public.past_paper_questions
+SET frequency_source = 'platform_estimate'
+WHERE frequency_source = 'admin';
+
 UPDATE public.past_paper_questions
 SET frequency_source = 'platform_estimate'
 WHERE frequency_source = 'unknown'

@@ -125,7 +125,14 @@ SET appearance_frequency = CASE
 END
 WHERE appearance_frequency IS NULL;
 
--- STEP 9: Backfill frequency_source (only for rows still at 'unknown')
+-- STEP 9: Normalize frequency_source
+-- 'admin' was the original default meaning "platform-set reference frequency"
+-- Map it to 'platform_estimate' so the UI can display it properly
+UPDATE public.past_paper_questions
+SET frequency_source = 'platform_estimate'
+WHERE frequency_source = 'admin';
+
+-- Also handle any straggling 'unknown' rows
 UPDATE public.past_paper_questions
 SET frequency_source = 'platform_estimate'
 WHERE frequency_source = 'unknown'
