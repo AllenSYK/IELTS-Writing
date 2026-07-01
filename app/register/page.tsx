@@ -5,6 +5,7 @@ import { FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useMemo, useRef, u
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
+import { CrossBorderConsentCheckbox } from '@/components/auth/CrossBorderConsent'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSpinner, AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
@@ -81,6 +82,7 @@ export default function RegisterPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
+  const [crossBorderAccepted, setCrossBorderAccepted] = useState(false)
 
   const passwordChecks = useMemo(() => [
     { label: '至少 8 位', ok: password.length >= 8 },
@@ -112,6 +114,7 @@ export default function RegisterPage() {
     if (password.length < 8) return '密码至少需要 8 位'
     if (password !== confirmPassword) return '两次输入的密码不一致'
     if (!agreementsAccepted) return '请先阅读并同意《服务条款》和《隐私政策》'
+    if (!crossBorderAccepted) return '请先阅读并同意《个人信息跨境传输说明》'
     return ''
   }
 
@@ -223,6 +226,7 @@ export default function RegisterPage() {
         password,
         registrationToken: verifyData.registrationToken,
         agreementsAccepted,
+        crossBorderAccepted,
         agreementVersions: CurrentAgreementVersions
       })
 
@@ -354,11 +358,17 @@ export default function RegisterPage() {
                 onChange={setAgreementsAccepted}
               />
 
+              <CrossBorderConsentCheckbox
+                checked={crossBorderAccepted}
+                disabled={Boolean(loading)}
+                onChange={setCrossBorderAccepted}
+              />
+
               <AuthSubmitButton
                 type="submit"
                 loading={loading === 'send'}
                 loadingLabel="正在发送"
-                disabled={Boolean(loading) || !agreementsAccepted}
+                disabled={Boolean(loading) || !agreementsAccepted || !crossBorderAccepted}
                 icon={<UserPlus size={18} aria-hidden="true" />}
               >
                 发送邮箱验证码

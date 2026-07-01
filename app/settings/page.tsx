@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import Link from 'next/link'
 import { ProfileAvatar } from '@/components/layout/ProfileAvatar'
 import { AsyncButton, ConfirmDialog, useMotionPreference, useToast } from '@/components/interaction-system'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
@@ -426,6 +427,18 @@ export default function SettingsPage() {
               </div>
             </div>
           </GlassPanel>
+
+          <GlassPanel className="settings-section">
+            <div className="settings-section-header">
+              <h2 className="ui-title-md" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MaterialIcon name="privacy_tip" className="text-primary" />
+                隐私与数据
+              </h2>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <PrivacySettings userId={userId} />
+            </div>
+          </GlassPanel>
         </div>
       </section>
       <ConfirmDialog
@@ -439,5 +452,149 @@ export default function SettingsPage() {
         onConfirm={resetLayout}
       />
     </main>
+  )
+}
+
+function PrivacySettings({ userId }: { userId: string | null }) {
+  const { pushToast } = useToast()
+  const [consents, setConsents] = useState<Array<{ consentType: string; consentStatus: string; consentedAt: string | null; policyVersion: string }>>([])
+  const [loading, setLoading] = useState(true)
+  const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false)
+  const [currentPolicyVersion, setCurrentPolicyVersion] = useState('')
+
+  useEffect(() => {
+    if (!userId) return
+    fetch('/api/user/privacy-consents')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          setConsents(data.consents ?? [])
+          setCurrentPolicyVersion(data.currentPolicyVersion ?? '')
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [userId])
+
+  const crossBorderConsent = consents.find((c) => c.consentType === 'cross_border_transfer' && c.consentStatus === 'granted')
+  const hasCrossBorder = Boolean(crossBorderConsent)
+
+  const handleGrant = async () => {
+    try {
+      const res = await fetch('/api/user/privacy-consents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ consentType: 'cross_border_transfer' })
+      })
+      const data = await res.json() as { success?: boolean }
+      if (data.success) {
+        pushToast({ kind: 'success', title: '已同意跨境传输' })
+        setConsents((prev) => [...prev.filter((c) => c.consentType !== 'cross_border_transfer'), {
+          consentType: 'cross_border_transfer',
+          consentStatus: 'granted',
+          consentedAt: new Date().toISOString(),
+          policyVersion: currentPolicyVersion
+        }])
+      }
+    } catch {
+      pushToast({ kind: 'error', title: '操作失败' })
+    }
+  }
+
+  const handleWithdraw = async () => {
+    try {
+      const res = await fetch('/api/user/privacy-consents', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ consentType: 'cross_border_transfer' })
+      })
+      const data = await res.json() as { success?: boolean }
+      if (data.success) {
+        pushToast({ kind: 'info', title: '已撤回跨境传输同意' })
+        setConsents((prev) => prev.map((c) =>
+          c.consentType === 'cross_border_transfer' ? { ...c, consentStatus: 'withdrawn' } : c
+        ))
+      }
+    } catch {
+      pushToast({ kind: 'error', title: '操作失败' })
+    } finally {
+      setShowWithdrawConfirm(false)
+    }
+  }
+
+  if (loading) return <p className="ui-body-md" style={{ color: 'var(--text-secondary)' }}>加载中...</p>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="account-row">
+        <div className="account-main">
+          <span className="account-icon"><MaterialIcon name="policy" /></span>
+          <div>
+            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>隐私政策版本</p>
+            <p className="ui-label">当前版本：{currentPolicyVersion}</p>
+          </div>
+        </div>
+        <Link href="/privacy" className="ui-secondary-button" style={{ fontSize: 12, padding: '4px 10px' }}>
+          查看
+        </Link>
+      </div>
+
+      <div className="account-row">
+        <div className="account-main">
+          <span className="account-icon"><MaterialIcon name="public" /></span>
+          <div>
+            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>个人信息跨境传输</p>
+            <p className="ui-label">
+              {hasCrossBorder && crossBorderConsent
+                ? `已同意 · ${crossBorderConsent.consentedAt ? new Date(crossBorderConsent.consentedAt).toLocaleDateString('zh-CN') : ''}`
+                : '未同意'}
+            </p>
+          </div>
+        </div>
+        {hasCrossBorder ? (
+          <button className="ui-secondary-button" type="button" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setShowWithdrawConfirm(true)}>
+            撤回同意
+          </button>
+        ) : (
+          <button className="ui-primary-button" type="button" style={{ fontSize: 12, padding: '4px 10px' }} onClick={handleGrant}>
+            同意
+          </button>
+        )}
+      </div>
+
+      <div className="account-row">
+        <div className="account-main">
+          <span className="account-icon"><MaterialIcon name="groups" /></span>
+          <div>
+            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>境外接收方</p>
+            <p className="ui-label">Vercel、Supabase、阿里云通义千问、Resend</p>
+          </div>
+        </div>
+        <Link href="/privacy" className="ui-secondary-button" style={{ fontSize: 12, padding: '4px 10px' }}>
+          详情
+        </Link>
+      </div>
+
+      <div className="account-row">
+        <div className="account-main">
+          <span className="account-icon"><MaterialIcon name="contact_mail" /></span>
+          <div>
+            <p className="ui-body-md" style={{ color: 'var(--on-surface)' }}>隐私联系</p>
+            <p className="ui-label">qgyxzq@gmail.com · 通常 15 个工作日内回复</p>
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={showWithdrawConfirm}
+        title="撤回跨境传输同意？"
+        message="撤回后，依赖境外服务的部分功能可能无法使用，包括作文保存、AI 批改、学习规划和错误分析。基础页面浏览不受影响。撤回前已处理的数据不受影响。"
+        confirmLabel="确认撤回"
+        cancelLabel="取消"
+        tone="danger"
+        onCancel={() => setShowWithdrawConfirm(false)}
+        onConfirm={handleWithdraw}
+      />
+    </div>
   )
 }
