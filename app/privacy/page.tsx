@@ -1,6 +1,6 @@
 import { GlassPanel } from '@/components/app-ui'
 import { LegalSections } from '@/components/legal/LegalSections'
-import { PrivacySections } from '@/lib/legal-content'
+import { PrivacySections, TermsEffectiveDate } from '@/lib/legal-content'
 
 export default function PrivacyPage() {
   return (
@@ -9,7 +9,10 @@ export default function PrivacyPage() {
         <header className="page-section-header">
           <div>
             <h1 className="ui-title-headline">隐私政策</h1>
-            <p className="ui-body-lg">最后更新：2026年6月</p>
+            <p className="ui-body-lg">Carrie学雅思@空与梦</p>
+            <p className="ui-body-md" style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
+              生效日期：{TermsEffectiveDate} · 最近更新：{TermsEffectiveDate}
+            </p>
           </div>
         </header>
         <GlassPanel className="legal-card">

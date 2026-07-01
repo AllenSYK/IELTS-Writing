@@ -312,10 +312,10 @@ test('legal pages share the current contact email, AI notice, and final terms ef
   const legalSections = await readFile(new URL('../components/legal/LegalSections.tsx', import.meta.url), 'utf8')
 
   assert.equal(LegalContactEmail, 'qgyxzq@gmail.com')
-  assert.equal(TermsEffectiveDate, '2026年6月20日')
+  assert.equal(TermsEffectiveDate, '2026年7月1日')
   assert.equal(TermsSections.at(-1)?.[0], '生效日期')
-  assert.equal(TermsSections.at(-1)?.[1], '生效日期：2026年6月20日')
-  assert.ok(TermsSections.some(([title, body]) => title === '人工智能服务说明' && body.includes('阿里云提供的通义千问相关服务')))
+  assert.equal(TermsSections.at(-1)?.[1], '生效日期：2026年7月1日。最近更新日期：2026年7月1日')
+  assert.ok(TermsSections.some(([title, body]) => title === '人工智能服务说明' && body.includes('阿里云通义千问')))
   assert.ok(TermsSections.some(([, body]) => body.includes(LegalContactEmail)))
   assert.ok(PrivacySections.some(([, body]) => body.includes(LegalContactEmail)))
   assert.doesNotMatch(legalSource, /support@ieltswriting\.online/)
