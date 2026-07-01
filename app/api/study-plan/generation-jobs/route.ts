@@ -20,7 +20,9 @@ const CreateJobSchema = z.object({
   rewriteFrequency: z.enum(['none', 'weekly_1', 'weekly_2', 'auto_low']).optional(),
   mockFrequency: z.enum(['none', 'biweekly', 'weekly', 'auto_sprint']).optional(),
   useErrorNotebook: z.boolean().optional(),
-  adjustmentSensitivity: z.enum(['conservative', 'standard', 'active']).optional()
+  adjustmentSensitivity: z.enum(['conservative', 'standard', 'active']).optional(),
+  questionBankRatio: z.number().int().min(0).max(100).optional(),
+  aiGeneratedRatio: z.number().int().min(0).max(100).optional()
 })
 
 export async function POST(request: Request) {
@@ -32,6 +34,15 @@ export async function POST(request: Request) {
     body = CreateJobSchema.parse(await request.json())
   } catch {
     body = {}
+  }
+
+  // Validate ratio sum
+  if (body.questionBankRatio !== undefined || body.aiGeneratedRatio !== undefined) {
+    const bankR = body.questionBankRatio ?? 80
+    const aiR = body.aiGeneratedRatio ?? 20
+    if (bankR + aiR !== 100) {
+      return json({ success: false, message: '题库比例与AI比例之和必须等于100' }, { status: 400 })
+    }
   }
 
   const service = createSupabaseServiceRoleClient()
@@ -60,6 +71,8 @@ export async function POST(request: Request) {
     if (body.allowTimedPractice !== undefined) profileUpdates.allow_timed_practice = body.allowTimedPractice
     if (body.includeFullTests !== undefined) profileUpdates.include_full_tests = body.includeFullTests
     if (body.currentLevel !== undefined) profileUpdates.current_level = body.currentLevel
+    if (body.questionBankRatio !== undefined) profileUpdates.question_bank_ratio = body.questionBankRatio
+    if (body.aiGeneratedRatio !== undefined) profileUpdates.ai_generated_ratio = body.aiGeneratedRatio
 
     await service
       .from('study_plan_profiles')

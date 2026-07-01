@@ -8,6 +8,13 @@ export type StudyPlanTaskType =
 
 export type StudyPlanTaskSource = 'past_paper' | 'built_in' | 'weakness_drill' | 'review' | 'diagnostic'
 
+export type QuestionSource = 'question_bank' | 'ai_generated'
+
+export const QuestionSourceLabels: Record<QuestionSource, string> = {
+  question_bank: '题库',
+  ai_generated: 'AI'
+}
+
 export type StudyPlanTaskStatus = 'pending' | 'in_progress' | 'completed' | 'skipped' | 'rescheduled'
 
 export type DataSufficiency = 'none' | 'limited' | 'sufficient'
@@ -33,6 +40,8 @@ export type StudyPlanProfile = {
   intensity: 'relaxed' | 'standard' | 'intensive'
   allowTimedPractice: boolean
   currentLevel: number | null
+  questionBankRatio: number
+  aiGeneratedRatio: number
 }
 
 export type StudyPlanDiagnosis = {
@@ -96,6 +105,9 @@ export type StudyPlanTask = {
   skipReason: string | null
   generatedReason: string
   writingMode: string | null
+  questionSource: QuestionSource
+  originalQuestionSource?: QuestionSource
+  fallbackReason?: string
   createdAt: string
   updatedAt: string
 }

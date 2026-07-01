@@ -15,12 +15,14 @@ import type {
   StudyPlanGenerationQuota,
   StudyPlanTask,
   StudyPlanTaskType,
-  StudyPlanDiagnosis
+  StudyPlanDiagnosis,
+  QuestionSource
 } from '@/lib/study-plan-types'
 import {
   StudyPlanTaskTypeLabels,
   StudyPlanTaskStatusLabels,
   PlanPhaseLabels,
+  QuestionSourceLabels,
   ShortCriterionLabels,
   isWritableTaskType,
   taskTypeToWriteMode
@@ -85,7 +87,6 @@ export default function StudyPlanPage() {
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobPolling, setJobPolling] = useState(false)
-  const [pageState, setPageState] = useState<PageState>('loading')
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
@@ -156,7 +157,6 @@ export default function StudyPlanPage() {
       if (json.jobId) {
         setJobId(json.jobId)
         setJobPolling(true)
-        setPageState('generating')
       }
       setShowCreate(false)
       pushToast({ kind: 'success', title: '正在后台生成学习计划', message: '你可以离开此页面，完成后会自动通知。' })
@@ -171,7 +171,6 @@ export default function StudyPlanPage() {
       await fetch(`/api/study-plan/generation-jobs/${activeJob.id}/retry`, { method: 'POST' })
       setJobId(activeJob.id)
       setJobPolling(true)
-      setPageState('generating')
     } catch {
       pushToast({ kind: 'error', title: '重试失败' })
     }
@@ -282,7 +281,6 @@ export default function StudyPlanPage() {
 
         <BottomActions
           quota={quota}
-          adjustmentBalance={adjustmentBalance}
           onRegenerate={() => handleGenerate()}
           onSettings={() => setShowSettings(true)}
         />
@@ -434,7 +432,7 @@ function OverviewItem({ icon, label, value }: { icon: string; label: string; val
   )
 }
 
-function MonthCalendar({ plan, profile, currentMonth, onMonthChange, onSelectTask }: {
+function MonthCalendar({ plan, profile: _profile, currentMonth, onMonthChange, onSelectTask }: {
   plan: StudyPlan
   profile: StudyPlanProfile | null
   currentMonth: string
@@ -567,11 +565,25 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
           {tasks.slice(0, 3).map((task) => {
             const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
             const shortTitle = task.title || typeLabel
+            const sourceLabel = QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
+            const isAi = task.questionSource === 'ai_generated'
             return (
               <div key={task.id} style={styles.calendarTaskLine}>
                 <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), flexShrink: 0 }} />
                 <span style={{ fontSize: 11, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: task.status === 'completed' ? 'var(--text-secondary)' : undefined, textDecoration: task.status === 'completed' ? 'line-through' : undefined }}>
                   {shortTitle}
+                </span>
+                <span style={{
+                  fontSize: 8,
+                  padding: '0 3px',
+                  borderRadius: 3,
+                  background: isAi ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'var(--primary-container)',
+                  color: isAi ? '#fff' : 'var(--on-primary-container)',
+                  flexShrink: 0,
+                  lineHeight: '14px',
+                  fontWeight: 600
+                }}>
+                  {sourceLabel}
                 </span>
               </div>
             )
@@ -614,6 +626,8 @@ function TaskMiniCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () =>
   const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
   const statusLabel = StudyPlanTaskStatusLabels[task.status] ?? task.status
   const title = task.title || typeLabel
+  const sourceLabel = QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
+  const isAi = task.questionSource === 'ai_generated'
 
   return (
     <div
@@ -628,6 +642,16 @@ function TaskMiniCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () =>
           <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), width: 8, height: 8 }} />
           <strong style={{ fontSize: 13 }}>{title}</strong>
           <span className="task-badge" style={{ fontSize: 10 }}>{typeLabel}</span>
+          <span style={{
+            fontSize: 9,
+            padding: '1px 5px',
+            borderRadius: 4,
+            background: isAi ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'var(--primary-container)',
+            color: isAi ? '#fff' : 'var(--on-primary-container)',
+            fontWeight: 600
+          }}>
+            {sourceLabel}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
           <span>{task.estimatedMinutes}分钟</span>
@@ -713,9 +737,8 @@ function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectT
   )
 }
 
-function BottomActions({ quota, adjustmentBalance, onRegenerate, onSettings }: {
+function BottomActions({ quota, onRegenerate, onSettings }: {
   quota?: StudyPlanGenerationQuota
-  adjustmentBalance: number
   onRegenerate: () => void
   onSettings: () => void
 }) {
@@ -748,8 +771,42 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
     minutesPerSession: profile?.minutesPerSession ?? 45,
     intensity: profile?.intensity ?? 'standard' as string,
     allowTimedPractice: profile?.allowTimedPractice ?? true,
-    includeFullTests: profile?.includeFullTests ?? true
+    includeFullTests: profile?.includeFullTests ?? true,
+    questionBankRatio: profile?.questionBankRatio ?? 80,
+    aiGeneratedRatio: profile?.aiGeneratedRatio ?? 20
   })
+
+  const questionSourcePresets = [
+    { key: 'all_bank', label: '全部题库', bank: 100, ai: 0 },
+    { key: 'bank_first', label: '题库优先', bank: 80, ai: 20 },
+    { key: 'balanced', label: '均衡模式', bank: 50, ai: 50 },
+    { key: 'ai_first', label: 'AI 个性化优先', bank: 20, ai: 80 },
+    { key: 'all_ai', label: '全部 AI', bank: 0, ai: 100 }
+  ]
+
+  const activePreset = questionSourcePresets.find((p) => p.bank === form.questionBankRatio && p.ai === form.aiGeneratedRatio)?.key ?? 'custom'
+
+  const handleBankRatioChange = (newBank: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(newBank / 5) * 5))
+    setForm({ ...form, questionBankRatio: clamped, aiGeneratedRatio: 100 - clamped })
+  }
+
+  const handlePreset = (preset: typeof questionSourcePresets[number]) => {
+    setForm({ ...form, questionBankRatio: preset.bank, aiGeneratedRatio: preset.ai })
+  }
+
+  const [currentTime] = useState(() => Date.now())
+  const totalQuestionTasks = useMemo(() => {
+    const sessions = form.sessionsPerWeek
+    const weeks = form.examDate
+      ? Math.max(1, Math.ceil(Math.max(0, (new Date(form.examDate).getTime() - currentTime) / 86400000) / 7))
+      : 4
+    const totalStudyDays = weeks * sessions
+    return Math.max(2, Math.ceil(totalStudyDays * 0.35)) + Math.max(3, Math.ceil(totalStudyDays * 0.45))
+  }, [form.sessionsPerWeek, form.examDate, currentTime])
+
+  const bankEstimate = Math.round(totalQuestionTasks * form.questionBankRatio / 100)
+  const aiEstimate = totalQuestionTasks - bankEstimate
 
   return (
     <CenteredDialog
@@ -790,6 +847,55 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
             { value: 'intensive', label: '强化', desc: '每天 2–3 个任务' }
           ]} value={form.intensity} onChange={(v) => setForm({ ...form, intensity: v as string })} />
         </FieldGroup>
+
+        <FieldGroup label="题目来源">
+          <p className="ui-body-md" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+            选择计划中的题目由现有题库抽取，还是由 AI 根据你的薄弱项生成。
+          </p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {questionSourcePresets.map((preset) => (
+              <button
+                key={preset.key}
+                className={`task-badge ${activePreset === preset.key ? 'is-custom' : ''}`}
+                type="button"
+                onClick={() => handlePreset(preset)}
+                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 12 }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, minWidth: 70, color: 'var(--text-secondary)' }}>题库抽题</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={form.questionBankRatio}
+                onChange={(e) => handleBankRatioChange(Number(e.target.value))}
+                style={{ flex: 1, accentColor: 'var(--primary)' }}
+              />
+              <span style={{ fontSize: 13, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{form.questionBankRatio}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, minWidth: 70, color: 'var(--text-secondary)' }}>AI 智能出题</span>
+              <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--surface-container-low)', position: 'relative' }}>
+                <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: `${form.aiGeneratedRatio}%`, borderRadius: 2, background: 'linear-gradient(90deg, #8b5cf6, #6366f1)' }} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{form.aiGeneratedRatio}%</span>
+            </div>
+          </div>
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 12, color: 'var(--text-secondary)' }}>
+            <p style={{ marginBottom: 2 }}><strong>题库抽题：</strong>从平台现有正式题库中选择，题型和图表数据已经过校验。</p>
+            <p><strong>AI 智能出题：</strong>根据你的薄弱项和目标分数生成新题，更个性化但生成时间可能更长。</p>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
+            预计 {totalQuestionTasks} 个写作任务中：{bankEstimate} 个来自题库，{aiEstimate} 个由 AI 生成。
+          </p>
+        </FieldGroup>
+
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={form.allowTimedPractice} onChange={(e) => setForm({ ...form, allowTimedPractice: e.target.checked })} />
@@ -805,7 +911,7 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
   )
 }
 
-function SettingsDialog({ profile, plan, onClose, onMutate }: {
+function SettingsDialog({ profile, plan: _plan, onClose, onMutate }: {
   profile: StudyPlanProfile
   plan: StudyPlan | null
   onClose: () => void
@@ -820,8 +926,25 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
     minutesPerSession: profile.minutesPerSession,
     intensity: profile.intensity,
     allowTimedPractice: profile.allowTimedPractice,
-    includeFullTests: true
+    includeFullTests: true,
+    questionBankRatio: profile.questionBankRatio ?? 80,
+    aiGeneratedRatio: profile.aiGeneratedRatio ?? 20
   })
+
+  const questionSourcePresets = [
+    { key: 'all_bank', label: '全部题库', bank: 100, ai: 0 },
+    { key: 'bank_first', label: '题库优先', bank: 80, ai: 20 },
+    { key: 'balanced', label: '均衡模式', bank: 50, ai: 50 },
+    { key: 'ai_first', label: 'AI 个性化优先', bank: 20, ai: 80 },
+    { key: 'all_ai', label: '全部 AI', bank: 0, ai: 100 }
+  ]
+
+  const activePreset = questionSourcePresets.find((p) => p.bank === form.questionBankRatio && p.ai === form.aiGeneratedRatio)?.key ?? 'custom'
+
+  const handleBankRatioChange = (newBank: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(newBank / 5) * 5))
+    setForm({ ...form, questionBankRatio: clamped, aiGeneratedRatio: 100 - clamped })
+  }
 
   const handleSave = async () => {
     if (saving) return
@@ -830,7 +953,12 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
       const res = await fetch('/api/study-plan/update-settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, examDate: form.examDate || null })
+        body: JSON.stringify({
+          ...form,
+          examDate: form.examDate || null,
+          questionBankRatio: form.questionBankRatio,
+          aiGeneratedRatio: form.aiGeneratedRatio
+        })
       })
       const data = await res.json() as { success?: boolean; message?: string }
       if (!res.ok || !data.success) {
@@ -881,6 +1009,45 @@ function SettingsDialog({ profile, plan, onClose, onMutate }: {
             { value: 'intensive', label: '强化' }
           ]} value={form.intensity} onChange={(v) => setForm({ ...form, intensity: v as 'relaxed' | 'standard' | 'intensive' })} />
         </FieldGroup>
+
+        <FieldGroup label="题目来源比例">
+          <p className="ui-body-md" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+            修改后，仅未来未开始且未锁定的任务会按新比例重新分配题目。
+          </p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {questionSourcePresets.map((preset) => (
+              <button
+                key={preset.key}
+                className={`task-badge ${activePreset === preset.key ? 'is-custom' : ''}`}
+                type="button"
+                onClick={() => setForm({ ...form, questionBankRatio: preset.bank, aiGeneratedRatio: preset.ai })}
+                style={{ cursor: 'pointer', padding: '5px 12px', fontSize: 12 }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 12, minWidth: 50, color: 'var(--text-secondary)' }}>题库</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={form.questionBankRatio}
+              onChange={(e) => handleBankRatioChange(Number(e.target.value))}
+              style={{ flex: 1, accentColor: 'var(--primary)' }}
+            />
+            <span style={{ fontSize: 13, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{form.questionBankRatio}%</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <span style={{ fontSize: 12, minWidth: 50, color: 'var(--text-secondary)' }}>AI</span>
+            <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--surface-container-low)' }}>
+              <div style={{ height: '100%', width: `${form.aiGeneratedRatio}%`, borderRadius: 2, background: 'linear-gradient(90deg, #8b5cf6, #6366f1)' }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 600, minWidth: 36, textAlign: 'right' }}>{form.aiGeneratedRatio}%</span>
+          </div>
+        </FieldGroup>
       </div>
     </CenteredDialog>
   )
@@ -897,6 +1064,8 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
   const title = task.title || typeLabel
   const writable = isWritableTaskType(task.taskType)
   const writeMode = taskTypeToWriteMode(task.taskType)
+  const sourceLabel = task.questionSource === 'ai_generated' ? 'AI 个性化生成' : '平台题库'
+  const isAi = task.questionSource === 'ai_generated'
 
   const handleSkip = async () => {
     try {
@@ -936,6 +1105,20 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
           <span className="task-badge">{statusLabel}</span>
           <span className="task-badge">{task.estimatedMinutes}分钟</span>
           {task.difficulty && <span className="task-badge">{task.difficulty}</span>}
+          <span style={{
+            fontSize: 11,
+            padding: '2px 8px',
+            borderRadius: 6,
+            background: isAi ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'var(--primary-container)',
+            color: isAi ? '#fff' : 'var(--on-primary-container)',
+            fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4
+          }}>
+            <MaterialIcon name={isAi ? 'auto_awesome' : 'menu_book'} size={12} />
+            {sourceLabel}
+          </span>
         </div>
         {task.description && <p className="ui-body-md">{task.description}</p>}
         {task.generatedReason && (
@@ -946,6 +1129,11 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
             <span className="ui-label">重点：</span>
             <span className="ui-body-md">{task.focusCriteria.map((c) => ShortCriterionLabels[c] ?? c).join('、')}</span>
           </div>
+        )}
+        {isAi && task.fallbackReason && (
+          <p className="ui-label" style={{ color: 'var(--text-secondary)' }}>
+            备注：AI 生成失败，已自动切换为题库题目
+          </p>
         )}
       </div>
     </CenteredDialog>

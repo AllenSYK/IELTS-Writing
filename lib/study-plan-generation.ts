@@ -3,6 +3,7 @@ import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadWritingRecordsFromServer } from '@/lib/writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import { selectQuestionsForPlan, buildQuestionSnapshot } from '@/lib/question-selection'
+import type { TaskQuestionResult } from '@/lib/question-selection'
 
 type JobStatus = 'queued' | 'analyzing_history' | 'building_profile' | 'generating_tasks' | 'saving' | 'completed' | 'failed' | 'cancelled'
 
@@ -56,7 +57,9 @@ export async function processGenerationJob(jobId: string, userId: string) {
       rewriteFrequency: (input.rewriteFrequency as string) ?? 'auto_low',
       mockFrequency: (input.mockFrequency as string) ?? 'auto_sprint',
       useErrorNotebook: (input.useErrorNotebook as boolean) ?? true,
-      adjustmentSensitivity: (input.adjustmentSensitivity as string) ?? 'standard'
+      adjustmentSensitivity: (input.adjustmentSensitivity as string) ?? 'standard',
+      questionBankRatio: (input.questionBankRatio as number) ?? profile?.question_bank_ratio ?? 80,
+      aiGeneratedRatio: (input.aiGeneratedRatio as number) ?? profile?.ai_generated_ratio ?? 20
     }
     const goals = {
       overallTarget: profile?.overall_target ?? (input.overallTarget as number) ?? 6.5,
@@ -83,7 +86,8 @@ export async function processGenerationJob(jobId: string, userId: string) {
       task1Count,
       task2Count,
       mockCount,
-      weaknesses: preferences.weaknesses
+      weaknesses: preferences.weaknesses,
+      bankRatio: preferences.questionBankRatio
     })
 
     await updateJob(service, jobId, { status: 'generating_tasks', progress: 55, current_step: '正在安排学习日与休息日' })
@@ -188,19 +192,6 @@ async function ensureWallet(service: ReturnType<typeof createSupabaseServiceRole
   return { balance: 0 }
 }
 
-type QuestionPick = {
-  id: string
-  title: string
-  questionText: string
-  taskType: string
-  visualTypes: string[] | null
-  visualData: Record<string, unknown> | null
-  questionType: string | null
-  difficulty: string | null
-  sourceName: string | null
-  sourceReference: string | null
-}
-
 function selectLearningDays(sessionsPerWeek: number, preferredDays: number[]): number[] {
   if (preferredDays.length >= sessionsPerWeek) return preferredDays.slice(0, sessionsPerWeek)
 
@@ -227,7 +218,7 @@ function buildFullPeriodTasks(
   preferences: Record<string, unknown>,
   goals: Record<string, unknown>,
   diagnosis: ReturnType<typeof buildStudyPlanDiagnosis>,
-  questions: { task1Questions: QuestionPick[]; task2Questions: QuestionPick[]; mockPairs: Array<{ task1: QuestionPick; task2: QuestionPick }> }
+  questions: { task1Questions: TaskQuestionResult[]; task2Questions: TaskQuestionResult[]; mockPairs: Array<{ t1: TaskQuestionResult; t2: TaskQuestionResult }> }
 ): Array<Record<string, unknown>> {
   const tasks: Array<Record<string, unknown>> = []
   const sessionsPerWeek = Math.min(7, Math.max(1, (preferences.sessionsPerWeek as number) ?? 4))
@@ -285,7 +276,8 @@ function buildFullPeriodTasks(
         generatedReason: '连续学习后安排轻量日',
         writingMode: null,
         questionId: null,
-        questionSnapshot: null
+        questionSnapshot: null,
+        questionSource: 'question_bank'
       })
       consecutiveStudyDays = 0
       currentDate = addDaysToDateKey(currentDate, 1)
@@ -299,16 +291,19 @@ function buildFullPeriodTasks(
       const isSprintWeek = examDays !== null && examDays <= 7 * (totalWeeks - weekNum)
       const isLastWeek = weekNum >= totalWeeks - 1
 
+      // Mock test scheduling
       if (includeFullTests && dayOfWeek === (learningDays[learningDays.length - 1] ?? 6) && weekNum % 2 === 0 && t === 0) {
-        const pair = questions.mockPairs[mockIdx % Math.max(1, questions.mockPairs.length)]
-        if (pair) {
+        const mockResult = questions.mockPairs[mockIdx % Math.max(1, questions.mockPairs.length)]
+        if (mockResult) {
           mockIdx++
+          const t1Q = mockResult.t1.question
+          const t2Q = mockResult.t2.question
           tasks.push({
             scheduledDate: currentDate,
             taskType: 'full_test',
             source: 'past_paper',
             title: '完整模考',
-            description: `${pair.task1.title || 'Task 1'} + ${pair.task2.title || 'Task 2'}`,
+            description: t1Q && t2Q ? `${t1Q.title || 'Task 1'} + ${t2Q.title || 'Task 2'}` : '完整模考',
             focusCriteria: ['Task Achievement', 'Task Response'],
             focusErrorTags: [],
             estimatedMinutes: 60,
@@ -316,31 +311,41 @@ function buildFullPeriodTasks(
             priority: 1,
             generatedReason: '定期模考检验学习效果',
             writingMode: null,
-            questionId: pair.task1.id,
-            questionSnapshot: buildQuestionSnapshot(pair.task1),
+            questionId: t1Q?.id ?? null,
+            questionSnapshot: t1Q ? buildQuestionSnapshot(t1Q) : null,
+            questionSource: mockResult.t1.source,
+            originalQuestionSource: mockResult.t1.originalSource,
+            fallbackReason: mockResult.t1.fallbackReason,
             taskMetadata: {
-              task1QuestionId: pair.task1.id,
-              task2QuestionId: pair.task2.id,
-              task1Snapshot: buildQuestionSnapshot(pair.task1),
-              task2Snapshot: buildQuestionSnapshot(pair.task2)
+              task1QuestionId: t1Q?.id ?? null,
+              task2QuestionId: t2Q?.id ?? null,
+              task1Snapshot: t1Q ? buildQuestionSnapshot(t1Q) : null,
+              task2Snapshot: t2Q ? buildQuestionSnapshot(t2Q) : null,
+              task1QuestionSource: mockResult.t1.source,
+              task2QuestionSource: mockResult.t2.source,
+              task1FallbackReason: mockResult.t1.fallbackReason,
+              task2FallbackReason: mockResult.t2.fallbackReason
             }
           })
           continue
         }
       }
 
+      // Task 1 vs Task 2 alternation
       const isTask1Turn = (t1Idx + t2Idx) % 3 === 0 || (t1Weak && t1Idx < t2Idx + 2)
 
       if (isTask1Turn && t1Idx < questions.task1Questions.length) {
-        const q = questions.task1Questions[t1Idx % questions.task1Questions.length]
+        const result = questions.task1Questions[t1Idx]
         t1Idx++
-        const visualLabel = q.visualTypes?.includes('map') ? '地图题' : q.visualTypes?.includes('process') ? '流程图' : '图表题'
+        const q = result.question
+        const visualLabel = q?.visualTypes?.includes('map') ? '地图题' : q?.visualTypes?.includes('process') ? '流程图' : '图表题'
+        const sourceLabel = result.source === 'ai_generated' ? 'AI' : '题库'
         tasks.push({
           scheduledDate: currentDate,
           taskType: 'task1',
           source: 'past_paper',
-          title: `Task 1 · ${visualLabel}`,
-          description: q.title || `完成一篇 Task 1 ${visualLabel}。`,
+          title: q ? `Task 1 · ${visualLabel}` : `Task 1 · ${visualLabel}（${sourceLabel}）`,
+          description: q?.title || `完成一篇 Task 1 ${visualLabel}。`,
           focusCriteria: ['Task Achievement'],
           focusErrorTags: diagnosis.priorityErrorTags.slice(0, 2).map((tag) => tag.tag),
           estimatedMinutes: Math.min(taskMinutes, 25),
@@ -348,19 +353,24 @@ function buildFullPeriodTasks(
           priority: 2,
           generatedReason: t1Weak ? 'Task 1 分数偏低，需要加强' : '保持 Task 1 训练频率',
           writingMode: 'task1',
-          questionId: q.id,
-          questionSnapshot: buildQuestionSnapshot(q)
+          questionId: q?.id ?? null,
+          questionSnapshot: q ? buildQuestionSnapshot(q) : null,
+          questionSource: result.source,
+          originalQuestionSource: result.originalSource,
+          fallbackReason: result.fallbackReason
         })
       } else if (t2Idx < questions.task2Questions.length) {
-        const q = questions.task2Questions[t2Idx % questions.task2Questions.length]
+        const result = questions.task2Questions[t2Idx]
         t2Idx++
-        const typeLabel = q.questionType === 'opinion' ? 'Opinion' : q.questionType === 'discussion' ? 'Discussion' : q.questionType === 'problem_solution' ? '问题解决' : q.questionType === 'advantages_disadvantages' ? '优缺点' : '综合'
+        const q = result.question
+        const typeLabel = q?.questionType === 'opinion' ? 'Opinion' : q?.questionType === 'discussion' ? 'Discussion' : q?.questionType === 'problem_solution' ? '问题解决' : q?.questionType === 'advantages_disadvantages' ? '优缺点' : '综合'
+        const sourceLabel = result.source === 'ai_generated' ? 'AI' : '题库'
         tasks.push({
           scheduledDate: currentDate,
           taskType: 'task2',
           source: 'past_paper',
-          title: `Task 2 · ${typeLabel}`,
-          description: q.title || '完成一篇 Task 2 写作。',
+          title: q ? `Task 2 · ${typeLabel}` : `Task 2 · ${typeLabel}（${sourceLabel}）`,
+          description: q?.title || '完成一篇 Task 2 写作。',
           focusCriteria: graWeak ? ['Grammatical Range and Accuracy', 'Task Response'] : ['Task Response', 'Coherence and Cohesion'],
           focusErrorTags: diagnosis.priorityErrorTags.slice(0, 2).map((tag) => tag.tag),
           estimatedMinutes: taskMinutes,
@@ -368,8 +378,11 @@ function buildFullPeriodTasks(
           priority: 1,
           generatedReason: graWeak ? '语法准确性需要提升' : '保持 Task 2 训练强度',
           writingMode: 'task2',
-          questionId: q.id,
-          questionSnapshot: buildQuestionSnapshot(q)
+          questionId: q?.id ?? null,
+          questionSnapshot: q ? buildQuestionSnapshot(q) : null,
+          questionSource: result.source,
+          originalQuestionSource: result.originalSource,
+          fallbackReason: result.fallbackReason
         })
       } else {
         tasks.push({
@@ -386,7 +399,8 @@ function buildFullPeriodTasks(
           generatedReason: '复盘错误有助于避免重复犯错',
           writingMode: null,
           questionId: null,
-          questionSnapshot: null
+          questionSnapshot: null,
+          questionSource: 'question_bank'
         })
       }
     }

@@ -102,6 +102,9 @@ function mapTask(row: Record<string, unknown>) {
     skipReason: row.skip_reason,
     generatedReason: row.generated_reason ?? '',
     writingMode: row.writing_mode,
+    questionSource: row.question_source ?? 'question_bank',
+    originalQuestionSource: row.original_question_source ?? null,
+    fallbackReason: row.fallback_reason ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }
@@ -126,6 +129,8 @@ function mapProfile(row: Record<string, unknown>) {
     timezone: row.timezone,
     intensity: row.intensity ?? 'standard',
     allowTimedPractice: row.allow_timed_practice ?? true,
-    currentLevel: row.current_level
+    currentLevel: row.current_level,
+    questionBankRatio: row.question_bank_ratio ?? 80,
+    aiGeneratedRatio: row.ai_generated_ratio ?? 20
   }
 }

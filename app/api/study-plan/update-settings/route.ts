@@ -13,7 +13,9 @@ const UpdateSettingsSchema = z.object({
   minutesPerSession: z.number().int().min(10).max(240).optional(),
   intensity: z.enum(['relaxed', 'standard', 'intensive']).optional(),
   allowTimedPractice: z.boolean().optional(),
-  includeFullTests: z.boolean().optional()
+  includeFullTests: z.boolean().optional(),
+  questionBankRatio: z.number().int().min(0).max(100).optional(),
+  aiGeneratedRatio: z.number().int().min(0).max(100).optional()
 })
 
 export async function PATCH(request: Request) {
@@ -31,6 +33,15 @@ export async function PATCH(request: Request) {
     const today = getDateKeyInTimeZone()
     if (body.examDate < today) {
       return json({ success: false, message: '考试日期不能是过去' }, { status: 400 })
+    }
+  }
+
+  // Validate ratio sum
+  if (body.questionBankRatio !== undefined || body.aiGeneratedRatio !== undefined) {
+    const bankR = body.questionBankRatio ?? 80
+    const aiR = body.aiGeneratedRatio ?? 20
+    if (bankR + aiR !== 100) {
+      return json({ success: false, message: '题库比例与AI比例之和必须等于100' }, { status: 400 })
     }
   }
 
@@ -58,6 +69,8 @@ export async function PATCH(request: Request) {
   if (body.intensity !== undefined) profileUpdates.intensity = body.intensity
   if (body.allowTimedPractice !== undefined) profileUpdates.allow_timed_practice = body.allowTimedPractice
   if (body.includeFullTests !== undefined) profileUpdates.include_full_tests = body.includeFullTests
+  if (body.questionBankRatio !== undefined) profileUpdates.question_bank_ratio = body.questionBankRatio
+  if (body.aiGeneratedRatio !== undefined) profileUpdates.ai_generated_ratio = body.aiGeneratedRatio
 
   if (Object.keys(profileUpdates).length === 0) {
     return json({ success: false, message: 'No changes provided' }, { status: 400 })
