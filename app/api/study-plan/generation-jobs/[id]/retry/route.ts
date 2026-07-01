@@ -21,8 +21,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return json({ success: false, message: 'Job not found' }, { status: 404 })
   }
 
-  if (job.status !== 'failed' && job.status !== 'cancelled') {
-    return json({ success: false, message: 'Can only retry failed or cancelled jobs' }, { status: 400 })
+  if (job.status !== 'failed' && job.status !== 'cancelled' && job.status !== 'timed_out') {
+    return json({ success: false, message: 'Can only retry failed, cancelled, or timed out jobs' }, { status: 400 })
   }
 
   if ((job.attempt_count as number) >= 3) {

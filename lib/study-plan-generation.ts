@@ -5,12 +5,74 @@ import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import { selectQuestionsForPlan, buildQuestionSnapshot } from '@/lib/question-selection'
 import type { TaskQuestionResult } from '@/lib/question-selection'
 
-type JobStatus = 'queued' | 'analyzing_history' | 'building_profile' | 'generating_tasks' | 'saving' | 'completed' | 'failed' | 'cancelled'
+type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out'
 
-async function updateJob(service: ReturnType<typeof createSupabaseServiceRoleClient>, jobId: string, updates: { status?: JobStatus; progress?: number; current_step?: string; error_message?: string; error_code?: string; result_plan_id?: string }) {
+const STAGE_PROGRESS: Record<string, { progress: number; stage: string; message: string }> = {
+  queued: { progress: 0, stage: 'queued', message: '任务已创建，等待处理' },
+  loading_profile: { progress: 10, stage: 'loading_profile', message: '正在读取你的学习偏好' },
+  loading_history: { progress: 20, stage: 'loading_history', message: '正在加载历史写作记录' },
+  analyzing_weaknesses: { progress: 30, stage: 'analyzing_weaknesses', message: '正在分析 Task 1 与 Task 2 强弱项' },
+  building_schedule: { progress: 45, stage: 'building_schedule', message: '正在计算适合你的训练比例' },
+  selecting_questions: { progress: 60, stage: 'selecting_questions', message: '正在从题库中选题' },
+  generating_ai_items: { progress: 75, stage: 'generating_ai_items', message: '正在生成个性化任务' },
+  saving_plan: { progress: 90, stage: 'saving_plan', message: '正在保存学习计划' },
+  finalizing: { progress: 97, stage: 'finalizing', message: '即将完成' }
+}
+
+async function updateJob(
+  service: ReturnType<typeof createSupabaseServiceRoleClient>,
+  jobId: string,
+  updates: {
+    status?: JobStatus
+    progress?: number
+    current_step?: string
+    stage?: string
+    message?: string
+    error_message?: string
+    error_code?: string
+    result_plan_id?: string
+    started_at?: string
+    completed_at?: string
+    failed_at?: string
+  }
+) {
+  const now = new Date().toISOString()
   await service
     .from('study_plan_generation_jobs')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: now, heartbeat_at: now })
+    .eq('id', jobId)
+}
+
+async function updateStage(
+  service: ReturnType<typeof createSupabaseServiceRoleClient>,
+  jobId: string,
+  stageKey: string
+) {
+  const config = STAGE_PROGRESS[stageKey]
+  if (!config) return
+  await updateJob(service, jobId, {
+    status: 'running',
+    progress: config.progress,
+    current_step: config.message,
+    stage: config.stage,
+    message: config.message
+  })
+  console.log(JSON.stringify({
+    event: 'STUDY_PLAN_JOB_STAGE_CHANGED',
+    jobId,
+    stage: config.stage,
+    progress: config.progress,
+    timestamp: new Date().toISOString()
+  }))
+}
+
+async function heartbeat(
+  service: ReturnType<typeof createSupabaseServiceRoleClient>,
+  jobId: string
+) {
+  await service
+    .from('study_plan_generation_jobs')
+    .update({ heartbeat_at: new Date().toISOString() })
     .eq('id', jobId)
 }
 
@@ -24,27 +86,47 @@ export async function processGenerationJob(jobId: string, userId: string) {
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!job || job.status === 'cancelled' || job.status === 'completed') return
+  if (!job || job.status === 'cancelled' || job.status === 'completed' || job.status === 'timed_out') return
 
-  await service
-    .from('study_plan_generation_jobs')
-    .update({ started_at: new Date().toISOString(), status: 'analyzing_history', progress: 5, current_step: '正在读取你的历史写作表现' })
-    .eq('id', jobId)
+  console.log(JSON.stringify({
+    event: 'STUDY_PLAN_JOB_STARTED',
+    jobId,
+    jobType: job.job_type,
+    userId: userId.slice(0, 8),
+    timestamp: new Date().toISOString()
+  }))
+
+  const startedAt = Date.now()
 
   try {
-    const records = await loadWritingRecordsFromServer(userId).catch(() => [])
-    await updateJob(service, jobId, { status: 'analyzing_history', progress: 15, current_step: '正在分析 Task 1 与 Task 2 强弱项' })
+    // Start
+    await updateJob(service, jobId, {
+      status: 'running',
+      started_at: new Date().toISOString(),
+      progress: 5,
+      stage: 'loading_profile',
+      message: '正在读取你的学习偏好'
+    })
 
-    const diagnosis = buildStudyPlanDiagnosis(records)
-
-    await updateJob(service, jobId, { status: 'building_profile', progress: 30, current_step: '正在计算适合你的训练比例' })
-
+    // Load profile
+    await updateStage(service, jobId, 'loading_profile')
     const { data: profile } = await service
       .from('study_plan_profiles')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle()
 
+    // Load history
+    await updateStage(service, jobId, 'loading_history')
+    const records = await loadWritingRecordsFromServer(userId).catch(() => [])
+
+    // Analyze weaknesses
+    await updateStage(service, jobId, 'analyzing_weaknesses')
+    const diagnosis = buildStudyPlanDiagnosis(records)
+    await heartbeat(service, jobId)
+
+    // Build schedule
+    await updateStage(service, jobId, 'building_schedule')
     const input = (job.input_data ?? {}) as Record<string, unknown>
     const preferences = {
       sessionsPerWeek: profile?.sessions_per_week ?? (input.sessionsPerWeek as number) ?? 4,
@@ -68,8 +150,7 @@ export async function processGenerationJob(jobId: string, userId: string) {
       examDate: profile?.exam_date ?? (input.examDate as string) ?? undefined,
       prepWeeks: (input.prepWeeks as number) ?? undefined
     }
-
-    await updateJob(service, jobId, { status: 'generating_tasks', progress: 40, current_step: '正在从题库中选题' })
+    await heartbeat(service, jobId)
 
     const today = getDateKeyInTimeZone()
     const totalWeeks = goals.examDate
@@ -82,6 +163,10 @@ export async function processGenerationJob(jobId: string, userId: string) {
     const task2Count = Math.max(3, Math.ceil(totalStudyDays * 0.45))
     const mockCount = preferences.includeFullTests ? Math.max(1, Math.floor(totalWeeks / 2)) : 0
 
+    // Select questions (this can be slow with AI)
+    await updateStage(service, jobId, 'selecting_questions')
+    await heartbeat(service, jobId)
+
     const questions = await selectQuestionsForPlan(userId, {
       task1Count,
       task2Count,
@@ -90,13 +175,15 @@ export async function processGenerationJob(jobId: string, userId: string) {
       bankRatio: preferences.questionBankRatio
     })
 
-    await updateJob(service, jobId, { status: 'generating_tasks', progress: 55, current_step: '正在安排学习日与休息日' })
+    await heartbeat(service, jobId)
 
+    // Build tasks
+    await updateStage(service, jobId, 'generating_ai_items')
     const tasks = buildFullPeriodTasks(today, periodEnd, totalWeeks, preferences, goals, diagnosis, questions)
+    await heartbeat(service, jobId)
 
-    await updateJob(service, jobId, { status: 'generating_tasks', progress: 75, current_step: '正在生成任务说明' })
-
-    await updateJob(service, jobId, { status: 'saving', progress: 90, current_step: '正在保存学习计划' })
+    // Save plan
+    await updateStage(service, jobId, 'saving_plan')
 
     const { data: rpcResult, error: rpcError } = await service
       .rpc('save_generated_study_plan', {
@@ -121,18 +208,35 @@ export async function processGenerationJob(jobId: string, userId: string) {
 
     const planId = (rpcResult as unknown as Record<string, unknown>)?.planId as string
 
+    // Finalize
+    await updateStage(service, jobId, 'finalizing')
+
+    // Mark completed
     await service
       .from('study_plan_generation_jobs')
       .update({
         status: 'completed',
         progress: 100,
         current_step: '完成',
+        stage: 'completed',
+        message: '学习计划已生成',
         result_plan_id: planId,
         completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString()
       })
       .eq('id', jobId)
 
+    const duration = Math.round((Date.now() - startedAt) / 1000)
+    console.log(JSON.stringify({
+      event: 'STUDY_PLAN_JOB_COMPLETED',
+      jobId,
+      duration,
+      planId,
+      timestamp: new Date().toISOString()
+    }))
+
+    // Award bonus points (best-effort)
     try {
       const { balance } = await ensureWallet(service, userId)
       await service
@@ -161,7 +265,14 @@ export async function processGenerationJob(jobId: string, userId: string) {
       : errorMsg.includes('PLAN_SAVE_FAILED') ? 'PLAN_SAVE_FAILED'
       : 'DATABASE_ERROR'
 
-    console.error(`[study-plan] Job ${jobId} failed at step:`, errorMsg)
+    const duration = Math.round((Date.now() - startedAt) / 1000)
+    console.log(JSON.stringify({
+      event: 'STUDY_PLAN_JOB_FAILED',
+      jobId,
+      errorCode,
+      duration,
+      timestamp: new Date().toISOString()
+    }))
 
     await service
       .from('study_plan_generation_jobs')
@@ -169,8 +280,10 @@ export async function processGenerationJob(jobId: string, userId: string) {
         status: 'failed',
         error_message: errorMsg.slice(0, 500),
         error_code: errorCode,
+        failed_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        heartbeat_at: new Date().toISOString()
       })
       .eq('id', jobId)
   }

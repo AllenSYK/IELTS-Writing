@@ -22,7 +22,8 @@ const CreateJobSchema = z.object({
   useErrorNotebook: z.boolean().optional(),
   adjustmentSensitivity: z.enum(['conservative', 'standard', 'active']).optional(),
   questionBankRatio: z.number().int().min(0).max(100).optional(),
-  aiGeneratedRatio: z.number().int().min(0).max(100).optional()
+  aiGeneratedRatio: z.number().int().min(0).max(100).optional(),
+  sourcePlanId: z.string().uuid().optional()
 })
 
 export async function POST(request: Request) {
@@ -47,18 +48,51 @@ export async function POST(request: Request) {
 
   const service = createSupabaseServiceRoleClient()
   const userId = check.user.id
+  const jobType = body.sourcePlanId ? 'replan' : 'initial_generation'
 
+  // Check for existing active job (deduplication)
   const { data: activeJob } = await service
     .from('study_plan_generation_jobs')
-    .select('id, status')
+    .select('id, status, progress, current_step, heartbeat_at, created_at')
     .eq('user_id', userId)
-    .in('status', ['queued', 'analyzing_history', 'building_profile', 'generating_tasks', 'saving'])
+    .in('status', ['queued', 'running'])
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
 
   if (activeJob) {
-    return json({ success: true, jobId: activeJob.id, status: activeJob.status, message: '已有生成任务在进行中' }, { status: 200 })
+    // Check if the active job is actually stale (heartbeat > 15 min)
+    const heartbeat = activeJob.heartbeat_at ? new Date(activeJob.heartbeat_at).getTime() : 0
+    const isStale = activeJob.status === 'running' && heartbeat > 0 && (Date.now() - heartbeat) > 15 * 60 * 1000
+    const isQueuedTooLong = activeJob.status === 'queued' && (Date.now() - new Date(activeJob.created_at).getTime()) > 5 * 60 * 1000
+
+    if (!isStale && !isQueuedTooLong) {
+      // Active job is still valid, return it
+      return json({
+        success: true,
+        jobId: activeJob.id,
+        status: activeJob.status,
+        progress: activeJob.progress,
+        currentStep: activeJob.current_step,
+        message: '已有生成任务在进行中'
+      }, { status: 200 })
+    }
+
+    // Mark stale job as timed_out
+    await service
+      .from('study_plan_generation_jobs')
+      .update({
+        status: 'timed_out',
+        error_code: isStale ? 'GENERATION_HEARTBEAT_TIMEOUT' : 'GENERATION_QUEUE_TIMEOUT',
+        error_message: isStale ? 'Heartbeat timeout' : 'Queue timeout',
+        failed_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', activeJob.id)
   }
 
+  // Update profile if needed
   if (body.overallTarget !== undefined || body.sessionsPerWeek !== undefined || body.examDate !== undefined) {
     const profileUpdates: Record<string, unknown> = { user_id: userId }
     if (body.overallTarget !== undefined) profileUpdates.overall_target = body.overallTarget
@@ -79,13 +113,20 @@ export async function POST(request: Request) {
       .upsert(profileUpdates, { onConflict: 'user_id' })
   }
 
+  // Create new job
+  const now = new Date().toISOString()
   const { data: job, error: jobError } = await service
     .from('study_plan_generation_jobs')
     .insert({
       user_id: userId,
       status: 'queued',
       progress: 0,
-      input_data: body
+      job_type: jobType,
+      source_plan_id: body.sourcePlanId ?? null,
+      input_data: body,
+      heartbeat_at: now,
+      stage: 'queued',
+      message: '任务已创建，等待处理'
     })
     .select('id, status')
     .single()
@@ -94,6 +135,15 @@ export async function POST(request: Request) {
     return json({ success: false, message: jobError?.message || 'Failed to create job' }, { status: 500 })
   }
 
+  console.log(JSON.stringify({
+    event: 'STUDY_PLAN_JOB_CREATED',
+    jobId: job.id,
+    jobType,
+    userId: userId.slice(0, 8),
+    timestamp: now
+  }))
+
+  // Start background processing
   processGenerationJob(job.id, userId).catch((err) => {
     console.error('[study-plan] Background job failed:', err)
   })

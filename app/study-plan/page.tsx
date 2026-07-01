@@ -37,13 +37,21 @@ type PlanData = {
 
 type GenerationJob = {
   id: string
+  jobType?: string
   status: string
   progress: number
+  stage?: string | null
+  message?: string | null
   currentStep: string | null
+  heartbeatAt?: string | null
   resultPlanId: string | null
+  errorCode?: string | null
   errorMessage: string | null
+  attemptCount?: number
   createdAt: string
-  updatedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+  updatedAt?: string
 }
 
 type AdjustmentPoints = {
@@ -85,8 +93,8 @@ export default function StudyPlanPage() {
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [jobPolling, setJobPolling] = useState(false)
+  const [activeJob, setActiveJob] = useState<GenerationJob | null>(null)
+  const [jobRestored, setJobRestored] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [selectedTask, setSelectedTask] = useState<StudyPlanTask | null>(null)
@@ -95,14 +103,162 @@ export default function StudyPlanPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
 
-  const { data: jobData } = useSWR<{ success: boolean; job: GenerationJob | null }>(
-    jobPolling && jobId ? `study-plan-job-${jobId}` : null,
-    async () => {
-      const res = await fetch(`/api/study-plan/generation-jobs/${jobId}`)
-      return res.json()
-    },
-    { refreshInterval: 2000, revalidateOnFocus: false }
-  )
+  const pollingRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const planLoadRetriesRef = useRef(0)
+  const mountedRef = useRef(true)
+
+  // Cleanup on unmount
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (pollingRef.current) clearTimeout(pollingRef.current)
+      if (abortRef.current) abortRef.current.abort()
+    }
+  }, [])
+
+  // Restore active job on mount
+  useEffect(() => {
+    if (!userId || jobRestored) return
+    let cancelled = false
+
+    async function restoreActiveJob() {
+      try {
+        const res = await fetch('/api/study-plan/generation-jobs/current')
+        const data = await res.json() as { success?: boolean; job?: GenerationJob | null }
+        if (cancelled || !mountedRef.current) return
+
+        if (data.success && data.job) {
+          const job = data.job
+          const isActive = job.status === 'queued' || job.status === 'running'
+          const isDone = job.status === 'completed'
+          const isFailed = job.status === 'failed' || job.status === 'timed_out'
+
+          if (isActive) {
+            setActiveJob(job)
+            // Save to localStorage for faster recovery next time
+            try { localStorage.setItem('activeStudyPlanJobId', job.id) } catch {}
+          } else if (isDone && job.resultPlanId) {
+            // Job completed but plan may not be loaded yet
+            setActiveJob(job)
+          } else if (isFailed) {
+            setActiveJob(job)
+          }
+        }
+      } catch {
+        // Silent fail - will retry on next render
+      } finally {
+        if (!cancelled) setJobRestored(true)
+      }
+    }
+
+    restoreActiveJob()
+    return () => { cancelled = true }
+  }, [userId, jobRestored])
+
+  // Adaptive polling for active job
+  useEffect(() => {
+    if (!activeJob) return
+    const isActive = activeJob.status === 'queued' || activeJob.status === 'running'
+    if (!isActive) return
+
+    let cancelled = false
+
+    function getPollInterval(): number {
+      if (!activeJob) return 4000
+      const createdAt = new Date(activeJob.createdAt).getTime()
+      const elapsed = Date.now() - createdAt
+      if (elapsed < 60_000) return 2000    // First minute: every 2s
+      if (elapsed < 300_000) return 4000   // 1-5 min: every 4s
+      return 8000                           // 5+ min: every 8s
+    }
+
+    async function pollJob() {
+      if (cancelled || !mountedRef.current) return
+      try {
+        const controller = new AbortController()
+        abortRef.current?.abort()
+        abortRef.current = controller
+
+        const res = await fetch(`/api/study-plan/generation-jobs/${activeJob!.id}`, {
+          signal: controller.signal
+        })
+        if (cancelled || !mountedRef.current) return
+
+        const data = await res.json() as { success?: boolean; job?: GenerationJob }
+        if (cancelled || !mountedRef.current || !data.success || !data.job) return
+
+        const job = data.job
+        setActiveJob((prev) => {
+          if (!prev || prev.id !== job.id) return prev
+          // Only update if something changed
+          if (prev.status === job.status && prev.progress === job.progress && prev.currentStep === job.currentStep) {
+            return prev
+          }
+          return job
+        })
+
+        // If job completed, trigger plan load
+        if (job.status === 'completed') {
+          try { localStorage.removeItem('activeStudyPlanJobId') } catch {}
+          planLoadRetriesRef.current = 0
+          // Try to load plan with retries
+          await loadPlanAfterCompletion(job)
+          return
+        }
+
+        // If job failed/timed_out/cancelled, stop polling
+        if (job.status === 'failed' || job.status === 'timed_out' || job.status === 'cancelled') {
+          try { localStorage.removeItem('activeStudyPlanJobId') } catch {}
+          return
+        }
+
+        // Schedule next poll
+        if (!cancelled && mountedRef.current) {
+          pollingRef.current = setTimeout(pollJob, getPollInterval())
+        }
+      } catch {
+        if (!cancelled && mountedRef.current) {
+          pollingRef.current = setTimeout(pollJob, getPollInterval())
+        }
+      }
+    }
+
+    async function loadPlanAfterCompletion(_job: GenerationJob) {
+      const maxRetries = 5
+      for (let i = 0; i < maxRetries; i++) {
+        if (cancelled || !mountedRef.current) return
+        try {
+          const planData = await fetchPlan()
+          if (planData.plan) {
+            if (!cancelled && mountedRef.current) {
+              pushToast({ kind: 'success', title: '学习计划已生成' })
+              // Clear the active job after a delay
+              setTimeout(() => {
+                if (mountedRef.current) setActiveJob(null)
+              }, 2000)
+            }
+            return
+          }
+        } catch {}
+        // Wait before retry
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)))
+      }
+      // If all retries failed, just clear the job and let user refresh
+      if (!cancelled && mountedRef.current) {
+        setActiveJob(null)
+        pushToast({ kind: 'info', title: '计划已生成', message: '请刷新页面查看' })
+      }
+    }
+
+    pollingRef.current = setTimeout(pollJob, 500)
+
+    return () => {
+      cancelled = true
+      if (pollingRef.current) clearTimeout(pollingRef.current)
+    }
+  }, [activeJob, activeJob?.id, activeJob?.status, pushToast])
 
   const { data: pointsData } = useSWR<AdjustmentPoints>(
     userId ? 'study-plan-points' : null,
@@ -113,34 +269,24 @@ export default function StudyPlanPage() {
     { revalidateOnFocus: false, dedupingInterval: 30000 }
   )
 
-  const activeJob = jobData?.job ?? null
   const adjustmentBalance = pointsData?.balance ?? 0
   const plan = data?.plan ?? null
   const profile = data?.profile ?? null
   const quota = data?.quota
 
+  const isGenerating = activeJob && (activeJob.status === 'queued' || activeJob.status === 'running')
+  const isPlanLoading = activeJob?.status === 'completed' && !plan
+  const isJobFailed = activeJob && (activeJob.status === 'failed' || activeJob.status === 'timed_out')
+
   const resolvedState: PageState = useMemo(() => {
-    if (isLoading) return 'loading'
-    if (error) return 'failed'
-    if (jobPolling && activeJob) {
-      if (activeJob.status === 'completed') return 'loading_plan'
-      if (activeJob.status === 'failed') return 'failed'
-      return 'generating'
-    }
+    if (isLoading && !jobRestored) return 'loading'
+    if (error && !plan && !isGenerating) return 'failed'
+    if (isGenerating) return 'generating'
+    if (isPlanLoading) return 'loading_plan'
+    if (isJobFailed && !plan) return 'failed'
     if (plan) return 'ready'
     return 'empty'
-  }, [isLoading, error, plan, jobPolling, activeJob])
-
-  const prevResolvedRef = useRef(resolvedState)
-  useEffect(() => {
-    if (resolvedState === 'loading_plan' && prevResolvedRef.current !== 'loading_plan') {
-      setJobPolling(false)
-      mutate().then(() => {
-        pushToast({ kind: 'success', title: '学习计划已生成' })
-      }).catch(() => {})
-    }
-    prevResolvedRef.current = resolvedState
-  }, [resolvedState, mutate, pushToast])
+  }, [isLoading, jobRestored, error, plan, isGenerating, isPlanLoading, isJobFailed])
 
   const handleGenerate = useCallback(async (formData?: Record<string, unknown>) => {
     try {
@@ -149,14 +295,23 @@ export default function StudyPlanPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData ?? {})
       })
-      const json = await res.json() as { success?: boolean; jobId?: string; status?: string; message?: string }
+      const json = await res.json() as { success?: boolean; jobId?: string; status?: string; progress?: number; currentStep?: string; message?: string }
       if (!res.ok && res.status !== 202 && res.status !== 200) {
         pushToast({ kind: 'error', title: '创建失败', message: json.message || '请稍后重试' })
         return
       }
       if (json.jobId) {
-        setJobId(json.jobId)
-        setJobPolling(true)
+        // If server returned an existing job (dedup), restore it
+        setActiveJob({
+          id: json.jobId,
+          status: json.status ?? 'queued',
+          progress: json.progress ?? 0,
+          currentStep: json.currentStep ?? null,
+          resultPlanId: null,
+          errorMessage: null,
+          createdAt: new Date().toISOString()
+        })
+        try { localStorage.setItem('activeStudyPlanJobId', json.jobId) } catch {}
       }
       setShowCreate(false)
       pushToast({ kind: 'success', title: '正在后台生成学习计划', message: '你可以离开此页面，完成后会自动通知。' })
@@ -169,8 +324,9 @@ export default function StudyPlanPage() {
     if (!activeJob?.id) return
     try {
       await fetch(`/api/study-plan/generation-jobs/${activeJob.id}/retry`, { method: 'POST' })
-      setJobId(activeJob.id)
-      setJobPolling(true)
+      // Refresh job state
+      setActiveJob((prev) => prev ? { ...prev, status: 'queued', progress: 0, errorMessage: null, errorCode: null } : prev)
+      try { localStorage.setItem('activeStudyPlanJobId', activeJob.id) } catch {}
     } catch {
       pushToast({ kind: 'error', title: '重试失败' })
     }
@@ -180,7 +336,7 @@ export default function StudyPlanPage() {
 
   if (resolvedState === 'loading' && !plan) return <PageSkeleton variant="chart" />
 
-  if (resolvedState === 'failed' && !plan && !jobPolling) {
+  if (resolvedState === 'failed' && !plan && !isGenerating) {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="study-plan-page">
@@ -208,7 +364,7 @@ export default function StudyPlanPage() {
           <GenerationProgressCard
             job={activeJob}
             isPlanLoading={resolvedState === 'loading_plan'}
-            onCancel={() => setJobPolling(false)}
+            onCancel={() => setActiveJob(null)}
           />
         </section>
       </main>
@@ -220,12 +376,14 @@ export default function StudyPlanPage() {
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="study-plan-page">
           <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
-          {activeJob?.status === 'failed' && (
+          {isJobFailed && (
             <GlassPanel style={styles.failedBanner}>
               <MaterialIcon name="error" size={20} />
               <div style={{ flex: 1 }}>
-                <p className="ui-body-md">上次计划生成失败</p>
-                {activeJob.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
+                <p className="ui-body-md">
+                  {activeJob?.status === 'timed_out' ? '上次计划生成超时' : '上次计划生成失败'}
+                </p>
+                {activeJob?.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
               </div>
               <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={handleRetry}>
                 重试
@@ -251,12 +409,14 @@ export default function StudyPlanPage() {
       <section className="study-plan-page">
         <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
 
-        {activeJob?.status === 'failed' && (
+        {isJobFailed && (
           <GlassPanel style={styles.failedBanner}>
             <MaterialIcon name="error" size={20} />
             <div style={{ flex: 1 }}>
-              <p className="ui-body-md">上次计划生成失败</p>
-              {activeJob.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
+              <p className="ui-body-md">
+                {activeJob?.status === 'timed_out' ? '上次计划生成超时' : '上次计划生成失败'}
+              </p>
+              {activeJob?.errorMessage && <p className="ui-label">{activeJob.errorMessage}</p>}
             </div>
             <button className="ui-primary-button" type="button" style={{ fontSize: 13, padding: '6px 12px' }} onClick={handleRetry}>
               重试
@@ -281,7 +441,7 @@ export default function StudyPlanPage() {
 
         <BottomActions
           quota={quota}
-          onRegenerate={() => handleGenerate()}
+          onRegenerate={() => handleGenerate({ sourcePlanId: plan?.id })}
           onSettings={() => setShowSettings(true)}
         />
 
@@ -347,8 +507,21 @@ function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
   onCancel: () => void
 }) {
   const progress = job?.progress ?? 0
-  const step = job?.currentStep ?? '正在准备...'
+  const step = job?.message ?? job?.currentStep ?? job?.stage ?? '正在准备...'
   const isFailed = job?.status === 'failed'
+  const isTimedOut = job?.status === 'timed_out'
+  const isRunning = job?.status === 'queued' || job?.status === 'running'
+
+  // Heartbeat staleness check
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!isRunning) return
+    const timer = window.setInterval(() => setNow(Date.now()), 10000)
+    return () => window.clearInterval(timer)
+  }, [isRunning])
+
+  const heartbeatAge = job?.heartbeatAt ? Math.round((now - new Date(job.heartbeatAt).getTime()) / 1000) : null
+  const isStale = heartbeatAge !== null && heartbeatAge > 180
 
   if (isPlanLoading) {
     return (
@@ -367,24 +540,39 @@ function GenerationProgressCard({ job, isPlanLoading, onCancel }: {
     )
   }
 
+  const statusLabel = isFailed ? '生成失败'
+    : isTimedOut ? '生成超时'
+    : isStale ? '仍在处理中（较长任务）'
+    : isRunning ? `进度：${progress}%`
+    : `${job?.status ?? '未知'}`
+
   return (
     <GlassPanel style={styles.progressCard}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-        <MaterialIcon name={isFailed ? 'error' : 'hourglass_top'} size={24} />
+        <MaterialIcon name={isFailed || isTimedOut ? 'error' : isStale ? 'hourglass_empty' : 'hourglass_top'} size={24} />
         <div style={{ flex: 1 }}>
-          <h2 className="ui-title-md">{isFailed ? '生成失败' : '正在生成你的雅思写作计划'}</h2>
-          <p className="ui-body-md">{isFailed ? (job?.errorMessage || '请稍后重试') : step}</p>
+          <h2 className="ui-title-md">
+            {isFailed ? '生成失败' : isTimedOut ? '生成超时' : '正在生成你的雅思写作计划'}
+          </h2>
+          <p className="ui-body-md">
+            {isFailed || isTimedOut ? (job?.errorMessage || '请稍后重试') : step}
+          </p>
         </div>
-        {!isFailed && (
+        {!isFailed && !isTimedOut && (
           <button className="ui-secondary-button" type="button" onClick={onCancel} style={{ fontSize: 13, padding: '6px 12px' }}>
             取消
           </button>
         )}
       </div>
       <div style={styles.progressBar}>
-        <div style={{ ...styles.progressFill, width: `${progress}%`, background: isFailed ? 'var(--error)' : 'var(--primary)' }} />
+        <div style={{ ...styles.progressFill, width: `${isFailed || isTimedOut ? 100 : progress}%`, background: isFailed || isTimedOut ? 'var(--error)' : 'var(--primary)' }} />
       </div>
-      <p className="ui-label" style={{ marginTop: 8 }}>{isFailed ? '失败' : `进度：${progress}%`}</p>
+      <p className="ui-label" style={{ marginTop: 8 }}>{statusLabel}</p>
+      {isRunning && heartbeatAge !== null && heartbeatAge > 60 && (
+        <p className="ui-label" style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
+          任务仍在后台运行，请耐心等待...
+        </p>
+      )}
       <p className="ui-label" style={{ marginTop: 4, color: 'var(--text-secondary)' }}>你可以离开此页面，完成后会自动通知。</p>
     </GlassPanel>
   )
