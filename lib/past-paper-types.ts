@@ -105,6 +105,13 @@ export type PastPaperQuestion = {
   sortWeight: number
   isVisible: boolean
   updatedBy: string | null
+  // Display metadata fields
+  displayPublishedAt: string | null
+  examSessionLabel: string | null
+  examSessionSource: string
+  appearanceFrequency: string | null
+  frequencyScore: number | null
+  randomSortKey: number | null
 }
 
 export type PastPaperListItem = Pick<
@@ -112,7 +119,14 @@ export type PastPaperListItem = Pick<
   'id' | 'status' | 'taskType' | 'title' | 'summary' | 'sourceType' | 'sourceName' | 'sourceYear' |
   'frequencyLevel' | 'difficulty' | 'task1VisualTypes' | 'task2QuestionType' | 'topics' | 'createdAt' |
   'examDate' | 'examSession' | 'examMode' | 'examRegion' | 'completeness' | 'primaryTopic' | 'secondaryTopics'
->
+> & {
+  displayPublishedAt?: string | null
+  examSessionLabel?: string | null
+  examSessionSource?: string
+  appearanceFrequency?: string | null
+  frequencyScore?: number | null
+  frequencySource?: string
+}
 
 export type PastPaperAIAnalysis = {
   detectedTask: PastPaperTaskType
@@ -308,6 +322,28 @@ export const ReliabilityLabels: Record<ExamSetReliability, string> = {
   multiple_reports: '多个来源报告',
   single_report: '单一来源',
   uncertain: '不确定'
+}
+
+export const FrequencySourceLabels: Record<string, string> = {
+  verified: '已核实',
+  platform_estimate: '平台参考',
+  synthetic: '模拟数据',
+  unknown: '未知'
+}
+
+export const ExamSessionSourceLabels: Record<string, string> = {
+  official: '官方场次',
+  verified: '已核实',
+  user_submitted: '用户提交',
+  synthetic: '模拟场次',
+  unknown: '待核实'
+}
+
+export const AppearanceFrequencyLabels: Record<string, string> = {
+  low: '低频',
+  medium: '中频',
+  high: '高频',
+  popular: '热门'
 }
 
 export type PastPaperListResponse = {

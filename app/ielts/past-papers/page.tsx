@@ -15,8 +15,19 @@ import {
   PastPaperTopicLabels,
   ExamSessionLabels,
   ExamModeLabels,
-  CompletenessLabels
+  CompletenessLabels,
+  AppearanceFrequencyLabels
 } from '@/lib/past-paper-types'
+
+type SortMode = 'random' | 'newest' | 'frequency' | 'difficulty_asc' | 'difficulty_desc'
+
+const SortOptions: Array<{ value: SortMode; label: string }> = [
+  { value: 'random', label: '随机浏览' },
+  { value: 'newest', label: '最新收录' },
+  { value: 'frequency', label: '高频优先' },
+  { value: 'difficulty_asc', label: '难度从低到高' },
+  { value: 'difficulty_desc', label: '难度从高到低' }
+]
 
 type Filters = {
   taskType: string
@@ -59,7 +70,11 @@ function countActiveFilters(filters: Filters): number {
   return count
 }
 
-type PapersResponse = { success?: boolean; items?: PastPaperListItem[]; total?: number }
+type PapersResponse = { success?: boolean; items?: PastPaperListItem[]; total?: number; sort?: string; seed?: string | null }
+
+function generateSeed(): string {
+  return Math.random().toString(36).slice(2, 10)
+}
 
 export default function PastPapersPage() {
   const { userId, status: sessionStatus } = useUserSession()
@@ -68,6 +83,8 @@ export default function PastPapersPage() {
   const [searchInput, setSearchInput] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [availableYears, setAvailableYears] = useState<number[]>([])
+  const [sort, setSort] = useState<SortMode>('random')
+  const [seed, setSeed] = useState<string>(() => generateSeed())
 
   const pageSize = 12
 
@@ -85,11 +102,14 @@ export default function PastPapersPage() {
     return () => { cancelled = true }
   }, [userId])
 
-  const swrKey = userId ? `past-papers-${page}-${JSON.stringify(filters)}` : null
+  // Stable SWR key includes seed for random sort
+  const swrKey = userId ? `past-papers-${sort}-${seed}-${page}-${JSON.stringify(filters)}` : null
   const { data, error, isLoading, mutate } = useSWR(swrKey, async (): Promise<PapersResponse> => {
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('pageSize', String(pageSize))
+    params.set('sort', sort)
+    if (sort === 'random' && seed) params.set('seed', seed)
     if (filters.taskType !== 'all') params.set('taskType', filters.taskType)
     if (filters.frequencyLevel !== 'all') params.set('frequencyLevel', filters.frequencyLevel)
     if (filters.sourceType !== 'all') params.set('sourceType', filters.sourceType)
@@ -128,6 +148,19 @@ export default function PastPapersPage() {
 
   function handleSearch() {
     updateFilter('search', searchInput)
+  }
+
+  function handleSortChange(newSort: SortMode) {
+    setSort(newSort)
+    setPage(1)
+    if (newSort === 'random') {
+      setSeed(generateSeed())
+    }
+  }
+
+  function handleShuffle() {
+    setSeed(generateSeed())
+    setPage(1)
   }
 
   const totalPages = Math.ceil(total / pageSize)
@@ -169,6 +202,32 @@ export default function PastPapersPage() {
         </header>
 
         <GlassPanel style={{ padding: 20 }}>
+          {/* Sort selector and shuffle button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, color: 'var(--on-surface-variant)' }}>排序</span>
+              <select
+                className="filter-select"
+                value={sort}
+                onChange={(e) => handleSortChange(e.target.value as SortMode)}
+                style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13 }}
+              >
+                {SortOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            </label>
+            {sort === 'random' && (
+              <button className="ui-secondary-button" type="button" onClick={handleShuffle} style={{ fontSize: 13, padding: '6px 12px' }}>
+                <MaterialIcon name="shuffle" size={16} />
+                换一批
+              </button>
+            )}
+            {sort === 'random' && (
+              <span className="ui-label" style={{ color: 'var(--on-surface-variant)' }}>
+                每次浏览顺序不同，翻页不会重复
+              </span>
+            )}
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
             <FilterSelect label="任务类型" value={filters.taskType} onChange={(v) => updateFilter('taskType', v)}
               options={[{ value: 'all', label: '全部' }, { value: 'task1', label: 'Task 1' }, { value: 'task2', label: 'Task 2' }, { value: 'full_test', label: '完整套题' }]} />
@@ -253,7 +312,7 @@ export default function PastPapersPage() {
 
         {isLoading ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-card" style={{ height: 160, borderRadius: 12 }} />)}
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-card" style={{ height: 200, borderRadius: 12 }} />)}
           </div>
         ) : items.length === 0 ? (
           <GlassPanel level={2} className="empty-state">
@@ -267,7 +326,7 @@ export default function PastPapersPage() {
             )}
           </GlassPanel>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
             {items.map((item) => (
               <PaperCard key={item.id} item={item} />
             ))}
@@ -303,19 +362,47 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   )
 }
 
-function formatExamDate(dateStr: string | null | undefined): string {
+function formatDisplayDate(item: PastPaperListItem): string {
+  // Prefer real exam_date, then displayPublishedAt, then createdAt
+  const dateStr = item.examDate || item.displayPublishedAt || item.createdAt
   if (!dateStr) return ''
   const parts = dateStr.split('-')
-  if (parts.length === 3) {
-    return `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日`
+  if (parts.length >= 2) {
+    return `${parts[0]}年${parseInt(parts[1])}月`
   }
   return dateStr
 }
 
+function getFrequencyDisplay(item: PastPaperListItem): { label: string; source: string } | null {
+  // Use appearanceFrequency if available, fall back to frequencyLevel
+  if (item.appearanceFrequency) {
+    const label = AppearanceFrequencyLabels[item.appearanceFrequency] ?? item.appearanceFrequency
+    const source = item.frequencySource === 'verified' ? '已核实' : item.frequencySource === 'platform_estimate' ? '平台参考' : ''
+    return { label, source }
+  }
+  if (item.frequencyLevel) {
+    return { label: PastPaperFrequencyLabels[item.frequencyLevel as PastPaperFrequencyLevel] ?? item.frequencyLevel, source: '' }
+  }
+  return null
+}
+
+function getSessionDisplay(item: PastPaperListItem): { label: string; isSynthetic: boolean } | null {
+  if (item.examSessionLabel) {
+    const isSynthetic = item.examSessionSource === 'synthetic' || item.examSessionSource === 'unknown'
+    return { label: item.examSessionLabel, isSynthetic }
+  }
+  if (item.examSession && item.examSession !== 'unknown') {
+    return { label: ExamSessionLabels[item.examSession as ExamSession], isSynthetic: false }
+  }
+  return null
+}
+
 function PaperCard({ item }: { item: PastPaperListItem }) {
-  const freqLabel = PastPaperFrequencyLabels[item.frequencyLevel as PastPaperFrequencyLevel] ?? item.frequencyLevel
+  const freq = getFrequencyDisplay(item)
+  const session = getSessionDisplay(item)
   const taskLabel = item.taskType === 'task1_academic' || item.taskType === 'task1_general' ? 'Task 1' : item.taskType === 'task2' ? 'Task 2' : '完整套题'
   const completenessLabel = item.completeness ? CompletenessLabels[item.completeness as QuestionCompleteness] : null
+  const displayDate = formatDisplayDate(item)
 
   const isIncomplete = item.completeness === 'partial' || item.completeness === 'summary_only' || item.completeness === 'missing'
   const canPractice = !isIncomplete || item.taskType === 'task2'
@@ -325,7 +412,12 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <span className="task-badge">{taskLabel}</span>
-          <span className="task-badge is-custom">{freqLabel}</span>
+          {freq && (
+            <span className="task-badge is-custom" title={freq.source || undefined}>
+              {freq.label}
+              {freq.source && <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 3 }}>({freq.source})</span>}
+            </span>
+          )}
           {item.sourceType && <span className="ui-label">{PastPaperSourceTypeLabels[item.sourceType as keyof typeof PastPaperSourceTypeLabels] ?? item.sourceType}</span>}
         </div>
         {completenessLabel && (
@@ -335,23 +427,30 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
         )}
       </div>
 
-      {item.examDate && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          <span className="ui-label">
-            <MaterialIcon name="event" size={14} />
-            {formatExamDate(item.examDate)}
+      {/* Exam info row */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, fontSize: 12, color: 'var(--on-surface-variant)' }}>
+        {displayDate && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <MaterialIcon name="event" size={13} />
+            收录于 {displayDate}
           </span>
-          {item.examSession && item.examSession !== 'unknown' && (
-            <span className="ui-label">{ExamSessionLabels[item.examSession as ExamSession]}</span>
-          )}
-          {item.examMode && item.examMode !== 'unknown' && (
-            <span className="ui-label">{ExamModeLabels[item.examMode as ExamMode]}</span>
-          )}
-          {item.examRegion && (
-            <span className="ui-label">{item.examRegion}</span>
-          )}
-        </div>
-      )}
+        )}
+        {session && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <MaterialIcon name={session.isSynthetic ? 'info' : 'verified'} size={13} />
+            {session.isSynthetic ? '模拟场次' : '考试场次'}：{session.label}
+            {session.isSynthetic && (
+              <span style={{ fontSize: 10, opacity: 0.6 }} title="该场次为平台参考信息，不代表 IELTS 官方统计">(参考)</span>
+            )}
+          </span>
+        )}
+        {item.examMode && item.examMode !== 'unknown' && (
+          <span>{ExamModeLabels[item.examMode as ExamMode]}</span>
+        )}
+        {item.examRegion && (
+          <span>{item.examRegion}</span>
+        )}
+      </div>
 
       <h3 className="ui-title-md" style={{ marginBottom: 6, lineHeight: 1.4 }}>{item.title || '未命名题目'}</h3>
       <p className="ui-body-md" style={{ marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
@@ -366,7 +465,9 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
           {!item.primaryTopic && item.topics?.slice(0, 2).map((t) => (
             <span key={t} className="ui-label">{PastPaperTopicLabels[t] ?? t}</span>
           ))}
-          {item.sourceYear && <span className="ui-label">{item.sourceYear}</span>}
+          {item.difficulty && (
+            <span className="ui-label">{item.difficulty === 'easy' ? '简单' : item.difficulty === 'hard' ? '困难' : '中等'}</span>
+          )}
         </div>
         {canPractice ? (
           <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
