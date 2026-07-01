@@ -269,6 +269,57 @@ export default function StudyPlanPage() {
     }
   }, [activeJob, activeJob?.id, activeJob?.status, pushToast])
 
+  const { data: pointsData } = useSWR<AdjustmentPoints>(
+    userId ? 'study-plan-points' : null,
+    async () => {
+      const res = await fetch('/api/study-plan/adjustment-points')
+      return res.json()
+    },
+    { revalidateOnFocus: false, dedupingInterval: 30000 }
+  )
+
+  const quota = data?.quota
+  const adjustmentBalance = pointsData?.balance ?? 0
+  const plan = data?.plan ?? null
+  const profile = data?.profile ?? null
+
+  // Check replan suggestion after analysis refresh completes
+  const checkReplanSuggestion = useCallback(async () => {
+    try {
+      const res = await fetch('/api/study-plan')
+      const planData = await res.json() as PlanData
+      const prevSnapshot = plan?.diagnosis as Record<string, unknown> | undefined
+      const newSnapshot = planData.profile?.analysisSnapshot as Record<string, unknown> | undefined
+      if (!prevSnapshot || !newSnapshot) return
+
+      const reasons: string[] = []
+      const prevCounts = prevSnapshot.counts as Record<string, number> | undefined
+      const newCounts = newSnapshot.counts as Record<string, number> | undefined
+      if (prevCounts && newCounts) {
+        const newEssays = (newCounts.total ?? 0) - (prevCounts.total ?? 0)
+        if (newEssays >= 3) reasons.push(`新增了 ${newEssays} 篇已批改作文`)
+      }
+      const prevScores = prevSnapshot.scores as Record<string, number | null> | undefined
+      const newScores = newSnapshot.scores as Record<string, number | null> | undefined
+      if (prevScores && newScores) {
+        const prevAvg = prevScores.overall ?? 0
+        const newAvg = newScores.overall ?? 0
+        if (Math.abs(newAvg - prevAvg) >= 0.5) reasons.push(`总体平均分从 ${prevAvg.toFixed(1)} 变为 ${newAvg.toFixed(1)}`)
+      }
+      const prevDiag = prevSnapshot.diagnosis as Record<string, unknown> | undefined
+      const newDiag = newSnapshot.diagnosis as Record<string, unknown> | undefined
+      if (prevDiag && newDiag) {
+        const prevWeak = (prevDiag.weakestCriteria as string[]) ?? []
+        const newWeak = (newDiag.weakestCriteria as string[]) ?? []
+        if (prevWeak[0] !== newWeak[0]) reasons.push('最薄弱评分维度发生变化')
+      }
+
+      if (reasons.length >= 2 && mountedRef.current) {
+        setShowReplanSuggestion({ reasons })
+      }
+    } catch { /* ignore */ }
+  }, [plan?.diagnosis])
+
   // Polling for analysis refresh job
   useEffect(() => {
     if (!analysisJob) return
@@ -329,57 +380,6 @@ export default function StudyPlanPage() {
   useEffect(() => {
     // This effect runs once on mount; actual checks are triggered by setting pendingReplanCheck
   }, [])
-
-  const { data: pointsData } = useSWR<AdjustmentPoints>(
-    userId ? 'study-plan-points' : null,
-    async () => {
-      const res = await fetch('/api/study-plan/adjustment-points')
-      return res.json()
-    },
-    { revalidateOnFocus: false, dedupingInterval: 30000 }
-  )
-
-  const adjustmentBalance = pointsData?.balance ?? 0
-  const plan = data?.plan ?? null
-  const profile = data?.profile ?? null
-  const quota = data?.quota
-
-  // Check replan suggestion after analysis refresh completes
-  const checkReplanSuggestion = useCallback(async () => {
-    try {
-      const res = await fetch('/api/study-plan')
-      const planData = await res.json() as PlanData
-      const prevSnapshot = plan?.diagnosis as Record<string, unknown> | undefined
-      const newSnapshot = planData.profile?.analysisSnapshot as Record<string, unknown> | undefined
-      if (!prevSnapshot || !newSnapshot) return
-
-      const reasons: string[] = []
-      const prevCounts = prevSnapshot.counts as Record<string, number> | undefined
-      const newCounts = newSnapshot.counts as Record<string, number> | undefined
-      if (prevCounts && newCounts) {
-        const newEssays = (newCounts.total ?? 0) - (prevCounts.total ?? 0)
-        if (newEssays >= 3) reasons.push(`新增了 ${newEssays} 篇已批改作文`)
-      }
-      const prevScores = prevSnapshot.scores as Record<string, number | null> | undefined
-      const newScores = newSnapshot.scores as Record<string, number | null> | undefined
-      if (prevScores && newScores) {
-        const prevAvg = prevScores.overall ?? 0
-        const newAvg = newScores.overall ?? 0
-        if (Math.abs(newAvg - prevAvg) >= 0.5) reasons.push(`总体平均分从 ${prevAvg.toFixed(1)} 变为 ${newAvg.toFixed(1)}`)
-      }
-      const prevDiag = prevSnapshot.diagnosis as Record<string, unknown> | undefined
-      const newDiag = newSnapshot.diagnosis as Record<string, unknown> | undefined
-      if (prevDiag && newDiag) {
-        const prevWeak = (prevDiag.weakestCriteria as string[]) ?? []
-        const newWeak = (newDiag.weakestCriteria as string[]) ?? []
-        if (prevWeak[0] !== newWeak[0]) reasons.push('最薄弱评分维度发生变化')
-      }
-
-      if (reasons.length >= 2 && mountedRef.current) {
-        setShowReplanSuggestion({ reasons })
-      }
-    } catch { /* ignore */ }
-  }, [plan?.diagnosis])
 
   const isGenerating = activeJob && (activeJob.status === 'queued' || activeJob.status === 'running')
   const isPlanLoading = activeJob?.status === 'completed' && !plan

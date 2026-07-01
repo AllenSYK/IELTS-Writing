@@ -231,8 +231,8 @@ img {
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.7);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(255, 255, 255, 0.35);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .ui-brand {
@@ -339,8 +339,8 @@ img {
   border-radius: 32px 32px 0 0;
   background: rgba(255, 255, 255, 0.8);
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.02);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .ui-bottom-nav a {
@@ -369,8 +369,8 @@ img {
   border: 1px solid var(--glass-border-1);
   background: var(--glass-level-1);
   box-shadow: var(--shadow-level-1);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .ui-glass-1 {
@@ -382,8 +382,8 @@ img {
   border: 1.5px solid var(--glass-border-2);
   background: var(--glass-level-2);
   box-shadow: var(--shadow-level-2);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .ui-hover-glow {
@@ -2719,8 +2719,8 @@ img {
   border-radius: 18px;
   background: var(--glass-level-2);
   box-shadow: var(--shadow-level-2);
-  backdrop-filter: blur(36px) saturate(180%);
-  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .annotation-inspector.is-empty {
@@ -3143,8 +3143,8 @@ img {
   border-radius: 26px;
   background: rgba(255, 255, 255, 0.82);
   box-shadow: var(--shadow-level-1);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .history-card-meta,
@@ -3669,7 +3669,7 @@ img {
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.68);
   box-shadow: var(--shadow-level-1);
-  backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(10px);
 }
 
 .brand {
@@ -4061,7 +4061,7 @@ img {
   padding: 0 32px;
   border-bottom: 1px solid rgba(193, 198, 215, 0.72);
   background: rgba(248, 250, 255, 0.9);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(8px);
 }
 
 .admin-topbar-left,
@@ -4882,8 +4882,8 @@ img {
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.72);
   box-shadow: 0 28px 80px rgba(27, 39, 64, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.84);
-  backdrop-filter: blur(26px) saturate(170%);
-  -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .auth-register-panel {
@@ -5495,8 +5495,8 @@ img {
   border-radius: 32px;
   background: var(--glass-level-1);
   box-shadow: var(--shadow-level-1);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .dashboard-card {
@@ -5889,8 +5889,8 @@ img {
   border-right: 1px solid rgba(255, 255, 255, 0.48);
   background: rgba(255, 255, 255, 0.58);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.7), 12px 0 32px rgba(0, 0, 0, 0.025);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .sidebar-logo {
@@ -6061,8 +6061,8 @@ img {
   padding: 0 var(--container-padding);
   background: rgba(244, 246, 255, 0.82);
   border-bottom: 1px solid rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .app-header-leading {
@@ -7338,8 +7338,8 @@ img {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.82);
   padding: 22px;
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .centered-dialog-header {
@@ -7615,8 +7615,8 @@ img {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.84);
   box-shadow: 0 16px 42px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   animation: toast-enter var(--motion-medium) var(--ease-out) both;
   pointer-events: auto;
 }
@@ -7698,8 +7698,8 @@ img {
   background: rgba(255, 245, 232, 0.9);
   color: var(--tertiary-container);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   font-size: 13px;
   font-weight: 700;
 }
@@ -7741,8 +7741,8 @@ img {
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(30px) saturate(180%);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   animation: panel-enter var(--motion-panel) var(--ease-out) both;
 }
 
@@ -8390,8 +8390,8 @@ img {
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--shadow-level-2);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   animation: panel-enter var(--motion-panel) var(--ease-out) both;
 }
 
@@ -9112,8 +9112,8 @@ body.is-resizing-editor * {
   padding: 14px 18px;
   box-shadow: var(--shadow-level-1);
   text-align: left;
-  backdrop-filter: blur(22px) saturate(170%);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .draft-entry-button:hover {

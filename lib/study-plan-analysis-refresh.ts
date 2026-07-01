@@ -48,7 +48,7 @@ export async function processAnalysisRefreshJob(jobId: string, userId: string) {
 
   const { data: job } = await service
     .from('study_plan_generation_jobs')
-    .select('*')
+    .select('id, user_id, status, progress, job_type, started_at, heartbeat_at')
     .eq('id', jobId)
     .eq('user_id', userId)
     .maybeSingle()

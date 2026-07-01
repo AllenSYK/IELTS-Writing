@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
@@ -47,7 +47,7 @@ function matchesScore(record: WritingRecordListItem, scoreFilter: ScoreFilter) {
   return score >= 7
 }
 
-function HistoryCard({ record, removing, onDelete }: { record: WritingRecordListItem; removing: boolean; onDelete: (record: WritingRecordListItem) => void }) {
+const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { record: WritingRecordListItem; removing: boolean; onDelete: (record: WritingRecordListItem) => void }) {
   const taskLabel = TaskTypeLabels[record.taskType as WritingTaskType] ?? record.taskType
   const criteria = [
     { label: record.taskType === 'task1' ? 'TA' : 'TR', value: formatBand(record.taScore ?? record.trScore ?? undefined) },
@@ -98,7 +98,7 @@ function HistoryCard({ record, removing, onDelete }: { record: WritingRecordList
       </div>
     </article>
   )
-}
+})
 
 export default function HistoryPage() {
   const { pushToast } = useToast()

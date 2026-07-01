@@ -81,7 +81,7 @@ export async function processGenerationJob(jobId: string, userId: string) {
 
   const { data: job } = await service
     .from('study_plan_generation_jobs')
-    .select('*')
+    .select('id, user_id, status, progress, job_type, input_data, started_at, heartbeat_at')
     .eq('id', jobId)
     .eq('user_id', userId)
     .maybeSingle()
@@ -112,7 +112,7 @@ export async function processGenerationJob(jobId: string, userId: string) {
     await updateStage(service, jobId, 'loading_profile')
     const { data: profile } = await service
       .from('study_plan_profiles')
-      .select('*')
+      .select('user_id, overall_target, task1_target, task2_target, exam_date, sessions_per_week, minutes_per_session, preferred_days, include_full_tests, intensity, allow_timed_practice, question_bank_ratio, ai_generated_ratio')
       .eq('user_id', userId)
       .maybeSingle()
 

@@ -14,13 +14,13 @@ export async function GET() {
   const [planResult, profileResult, quotaResult] = await Promise.all([
     service
       .from('study_plans')
-      .select('*')
+      .select('id, user_id, version, status, current_phase, period_start, period_end, diagnosis, preferences_snapshot, goals_snapshot, ai_model, generated_at, created_at')
       .eq('user_id', userId)
       .eq('status', 'active')
       .maybeSingle(),
     service
       .from('study_plan_profiles')
-      .select('*')
+      .select('user_id, overall_target, task1_target, task2_target, exam_date, sessions_per_week, minutes_per_session, preferred_days, include_full_tests, include_past_papers, task1_ratio, task2_ratio, prefer_weakness, weekend_extended, timezone, intensity, allow_timed_practice, current_level, question_bank_ratio, ai_generated_ratio, analysis_snapshot, analysis_updated_at, analysis_source_record_count, analysis_latest_record_at')
       .eq('user_id', userId)
       .maybeSingle(),
     service
@@ -34,7 +34,7 @@ export async function GET() {
   if (planResult.data) {
     const { data: taskData } = await service
       .from('study_plan_tasks')
-      .select('*')
+      .select('id, plan_id, user_id, scheduled_date, task_type, source, question_id, title, description, difficulty, priority, focus_criteria, focus_error_tags, estimated_minutes, status, writing_record_id, draft_id, started_at, completed_at, skip_reason, generated_reason, writing_mode, question_source, original_question_source, fallback_reason, created_at, updated_at')
       .eq('plan_id', planResult.data.id)
       .order('scheduled_date', { ascending: true })
     tasks = (taskData ?? []).map((t) => mapTask(t as Record<string, unknown>))

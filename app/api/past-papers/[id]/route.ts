@@ -13,7 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const { data, error } = await service
     .from('past_paper_questions')
-    .select('*')
+    .select('id, status, task_type, title, question_text, summary, source_type, source_name, source_year, frequency_level, difficulty, task1_visual_types, task1_visual_data, task2_question_type, task2_topic, exam_date, exam_session, tags, topics, keywords, show_source_image, created_at')
     .eq('id', id)
     .eq('status', 'published')
     .single()
