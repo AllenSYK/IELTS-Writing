@@ -1518,12 +1518,6 @@ export default function WritePage() {
                 )
             ) : null}
 
-            <div className="exam-requirement">
-              <span>
-                <MaterialIcon name="info" size={18} />
-                Write at least <strong>{activeQuestion.wordTarget} words</strong>.
-              </span>
-            </div>
           </div>
         </aside>
 

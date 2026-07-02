@@ -894,7 +894,7 @@ img {
 }
 
 .exam-left-pane {
-  padding: var(--container-padding);
+  padding: 20px var(--container-padding) var(--container-padding);
   border-right: 1px solid rgba(193, 198, 215, 0.3);
   background: var(--surface-container-lowest);
   box-shadow: inset -4px 0 12px rgba(0, 0, 0, 0.01);
@@ -912,7 +912,7 @@ img {
 }
 
 .exam-section-header {
-  padding-bottom: 16px;
+  padding-bottom: 12px;
   border-bottom: 1px solid rgba(193, 198, 215, 0.2);
 }
 

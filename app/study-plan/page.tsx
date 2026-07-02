@@ -1276,23 +1276,25 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
             const sourceLabel = QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
             const isAi = task.questionSource === 'ai_generated'
             return (
-              <div key={task.id} style={styles.calendarTaskLine}>
-                <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), flexShrink: 0 }} />
-                <span style={{ fontSize: 13, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: task.status === 'completed' ? 'var(--text-secondary)' : undefined, textDecoration: task.status === 'completed' ? 'line-through' : undefined }}>
-                  {shortTitle}
-                </span>
-                <span style={{
-                  fontSize: 10,
-                  padding: '0 3px',
-                  borderRadius: 3,
-                  background: isAi ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'var(--primary-container)',
-                  color: isAi ? '#fff' : 'var(--on-primary-container)',
-                  flexShrink: 0,
-                  lineHeight: '14px',
-                  fontWeight: 600
-                }}>
-                  {sourceLabel}
-                </span>
+              <div key={task.id} style={{ ...styles.calendarTaskLine, alignItems: 'flex-start' }}>
+                <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), flexShrink: 0, marginTop: 5 }} />
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <span style={{ fontSize: 13, lineHeight: 1.35, fontWeight: 550, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', color: task.status === 'completed' ? 'var(--text-secondary)' : undefined, textDecoration: task.status === 'completed' ? 'line-through' : undefined }}>
+                    {shortTitle}
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    padding: '0 4px',
+                    borderRadius: 3,
+                    background: isAi ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'var(--primary-container)',
+                    color: isAi ? '#fff' : 'var(--on-primary-container)',
+                    alignSelf: 'flex-start',
+                    lineHeight: '16px',
+                    fontWeight: 600
+                  }}>
+                    {sourceLabel}
+                  </span>
+                </div>
               </div>
             )
           })}
@@ -2122,7 +2124,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   calendarCellEmpty: {
     borderRadius: 16,
-    minHeight: 130
+    minHeight: 148
   },
   calendarCell: {
     borderRadius: 16,
@@ -2132,7 +2134,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 4,
     transition: 'border-color 0.15s, background 0.15s',
-    minHeight: 130,
+    minHeight: 148,
     overflow: 'hidden'
   },
   calendarDayNum: {
