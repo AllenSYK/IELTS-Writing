@@ -4,6 +4,7 @@ import { loadWritingRecordsFromServer } from '@/lib/writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import { selectQuestionsForPlan, buildQuestionSnapshot } from '@/lib/question-selection'
 import type { TaskQuestionResult } from '@/lib/question-selection'
+import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
 
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timed_out'
 
@@ -526,6 +527,10 @@ function buildFullPeriodTasks(
     }
 
     currentDate = addDaysToDateKey(currentDate, 1)
+  }
+
+  for (const task of tasks) {
+    task.taskType = normalizeStudyPlanTaskType(task.taskType)
   }
 
   return tasks

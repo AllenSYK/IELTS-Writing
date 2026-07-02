@@ -10,6 +10,44 @@ export type StudyPlanTaskSource = 'past_paper' | 'built_in' | 'weakness_drill' |
 
 export type QuestionSource = 'question_bank' | 'ai_generated'
 
+export const DB_ALLOWED_TASK_TYPES = ['task1', 'task2', 'full_test', 'grammar_drill', 'vocabulary_drill', 'review'] as const
+export type DBStudyPlanTaskType = typeof DB_ALLOWED_TASK_TYPES[number]
+
+const TASK_TYPE_MAP: Record<string, DBStudyPlanTaskType> = {
+  task1: 'task1',
+  task_1: 'task1',
+  ielts_task1: 'task1',
+  academic_task1: 'task1',
+  task2: 'task2',
+  task_2: 'task2',
+  ielts_task2: 'task2',
+  full_test: 'full_test',
+  mock_test: 'full_test',
+  full_mock: 'full_test',
+  complete_test: 'full_test',
+  grammar_drill: 'grammar_drill',
+  grammar: 'grammar_drill',
+  grammar_practice: 'grammar_drill',
+  vocabulary_drill: 'vocabulary_drill',
+  vocabulary: 'vocabulary_drill',
+  vocab: 'vocabulary_drill',
+  vocabulary_practice: 'vocabulary_drill',
+  review: 'review',
+  revision: 'review',
+  error_review: 'review',
+  diagnostic: 'task2',
+  model_answer_review: 'review',
+  timed_practice: 'task1'
+}
+
+export function normalizeStudyPlanTaskType(input: unknown): DBStudyPlanTaskType {
+  if (typeof input === 'string') {
+    const mapped = TASK_TYPE_MAP[input.toLowerCase().trim()]
+    if (mapped) return mapped
+  }
+  return 'review'
+}
+
 export const QuestionSourceLabels: Record<QuestionSource, string> = {
   question_bank: '题库',
   ai_generated: 'AI'

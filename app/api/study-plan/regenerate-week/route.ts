@@ -5,6 +5,7 @@ import { getAiConfig, AiProviderError } from '@/lib/ai-provider'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadWritingRecordsFromServer } from '@/lib/writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
+import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
 
 export async function POST() {
   const check = await requireActiveWebLicense()
@@ -88,7 +89,7 @@ export async function POST() {
       plan_id: activePlan.id,
       user_id: userId,
       scheduled_date: task.scheduledDate,
-      task_type: task.taskType,
+      task_type: normalizeStudyPlanTaskType(task.taskType),
       source: task.source ?? 'built_in',
       title: task.title ?? '',
       description: task.description ?? '',

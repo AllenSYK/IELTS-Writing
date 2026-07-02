@@ -4,6 +4,7 @@ import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { getAiConfig, AiProviderError } from '@/lib/ai-provider'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadWritingRecordsFromServer } from '@/lib/writing-records'
+import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
 
 export async function POST(request: Request) {
   const check = await requireActiveWebLicense()
@@ -83,6 +84,10 @@ export async function POST(request: Request) {
     tasks = aiTasks
   } catch {
     tasks = buildFallbackTasks(preferences, goals, diagnosis) as unknown as Array<Record<string, unknown>>
+  }
+
+  for (const task of tasks) {
+    task.taskType = normalizeStudyPlanTaskType(task.taskType)
   }
 
   const periodStart = todayShanghai()
@@ -170,8 +175,8 @@ async function generatePlanWithAI(
   const systemPrompt = `You are an IELTS study plan generator. Return a JSON object with a "tasks" array of 5-7 study tasks for one week.
 Each task object must have:
 - scheduledDate (YYYY-MM-DD)
-- taskType (task1|task2|full_test|grammar_drill|vocabulary_drill|review|diagnostic|error_review|model_answer_review|timed_practice)
-- source (built_in|weakness_drill|review|diagnostic)
+- taskType (task1|task2|full_test|grammar_drill|vocabulary_drill|review)
+- source (built_in|weakness_drill|review)
 - title (short Chinese title, max 30 chars)
 - description (Chinese description, max 100 chars)
 - focusCriteria (string array from: Task Achievement, Task Response, Coherence and Cohesion, Lexical Resource, Grammatical Range and Accuracy)
@@ -269,8 +274,8 @@ function buildFallbackTasks(
       if (i === 0 && diagnosis.dataSufficiency === 'none') {
         tasks.push({
           scheduledDate: date,
-          taskType: 'diagnostic',
-          source: 'diagnostic',
+          taskType: 'task2',
+          source: 'weakness_drill',
           title: '诊断测试',
           description: '完成一篇 Task 2 写作，帮助系统了解你的当前水平。',
           focusCriteria: ['Task Response', 'Coherence and Cohesion'],
@@ -349,7 +354,7 @@ function buildFallbackTasks(
     if (!usedDates.has(date)) {
       tasks.push({
         scheduledDate: date,
-        taskType: 'error_review',
+        taskType: 'review',
         source: 'review',
         title: '错误复盘',
         description: '回顾最近作文中的重复错误，总结改进方法。',

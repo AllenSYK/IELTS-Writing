@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
 
 const ReplaceSchema = z.object({
   newTaskType: z.string().min(1).max(50),
@@ -36,15 +37,17 @@ export async function POST(
 
   if (fetchError || !existing) return json({ success: false, message: 'Task not found' }, { status: 404 })
 
-  const writingMode = body.newTaskType === 'task1' ? 'task1'
-    : body.newTaskType === 'task2' ? 'task2'
-    : body.newTaskType === 'full_test' ? null
+  const normalizedType = normalizeStudyPlanTaskType(body.newTaskType)
+
+  const writingMode = normalizedType === 'task1' ? 'task1'
+    : normalizedType === 'task2' ? 'task2'
+    : normalizedType === 'full_test' ? null
     : null
 
   const { error } = await service
     .from('study_plan_tasks')
     .update({
-      task_type: body.newTaskType,
+      task_type: normalizedType,
       title: body.newTitle,
       description: body.newDescription,
       writing_mode: writingMode,
