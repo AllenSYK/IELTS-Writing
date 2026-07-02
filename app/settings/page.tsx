@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { getAvatarInitial } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
@@ -84,33 +83,30 @@ export default function SettingsPage() {
   if (!userId) {
     return (
       <main className="settings-page" data-main-content tabIndex={-1}>
-        <div className="settings-main">
-          <h1 className="settings-title">设置</h1>
-          <GlassPanel className="settings-card settings-skeleton">&nbsp;</GlassPanel>
-        </div>
+        <section className="settings-main">
+          <div className="settings-account-card settings-skeleton" />
+        </section>
       </main>
     )
   }
 
   return (
     <main className="settings-page" data-main-content tabIndex={-1}>
-      <div className="settings-main">
-        <h1 className="settings-title">设置</h1>
-
-        <GlassPanel className="settings-card">
-          <div className="settings-identity">
+      <section className="settings-main">
+        <div className="settings-account-card">
+          <div className="settings-account-row">
             <span className="settings-avatar" aria-label={`头像：${avatarInitial}`}>
               <span>{avatarInitial}</span>
             </span>
 
-            <div className="settings-info">
+            <div className="settings-account-info">
               {displayNameLoading && !editing ? (
-                <div className="settings-name-skeleton" />
+                <div className="settings-nickname-skeleton" />
               ) : editing ? (
-                <div className="settings-edit-form">
+                <div className="settings-nickname-edit">
                   <input
                     ref={inputRef}
-                    className="settings-input"
+                    className="settings-nickname-input"
                     value={nicknameInput}
                     onChange={(e) => { setNicknameInput(e.target.value); setError(null) }}
                     onKeyDown={handleKeyDown}
@@ -118,10 +114,10 @@ export default function SettingsPage() {
                     placeholder="输入昵称"
                     aria-invalid={!!error}
                   />
-                  {error && <span className="settings-input-error" role="alert">{error}</span>}
-                  <div className="settings-edit-actions">
+                  {error && <span className="settings-nickname-error" role="alert">{error}</span>}
+                  <div className="settings-nickname-actions">
                     <button
-                      className="settings-btn settings-btn-cancel"
+                      className="settings-nickname-btn settings-nickname-cancel"
                       type="button"
                       onClick={cancelEditing}
                       disabled={saving}
@@ -129,7 +125,7 @@ export default function SettingsPage() {
                       取消
                     </button>
                     <button
-                      className="settings-btn settings-btn-save"
+                      className="settings-nickname-btn settings-nickname-save"
                       type="button"
                       onClick={() => void handleSave()}
                       disabled={saving || nicknameInput.trim() === display}
@@ -140,14 +136,13 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <>
-                  <div className="settings-name-row">
-                    <span className="settings-name">{display}</span>
+                  <div className="settings-display-name-row">
+                    <span className="settings-display-name">{display}</span>
                     <button
                       className="settings-edit-btn"
                       type="button"
                       onClick={startEditing}
                     >
-                      <MaterialIcon name="edit" size={14} />
                       修改
                     </button>
                   </div>
@@ -159,19 +154,17 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="settings-divider" />
-
-          <div className="settings-logout-area">
+          <div className="settings-logout-row">
             <LogoutButton />
           </div>
-        </GlassPanel>
+        </div>
 
         <footer className="settings-footer">
           <Link href="/terms">服务条款</Link>
           <span className="settings-footer-dot">·</span>
           <Link href="/privacy">隐私政策</Link>
         </footer>
-      </div>
+      </section>
     </main>
   )
 }

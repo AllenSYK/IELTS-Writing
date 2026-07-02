@@ -69,7 +69,7 @@ test('settings and support pages use browser services only', async () => {
   for (const source of [settingsPage, supportPage]) {
     assert.doesNotMatch(source, /desktopApp|desktopLicense|desktopUpdater|nativeBridge/i)
   }
-  assert.match(settingsPage, /settings-card/)
+  assert.match(settingsPage, /settings-account-card/)
 })
 
 test('Stored legacy evaluations normalize into the new result shape', () => {
@@ -290,9 +290,9 @@ test('settings profile exposes account identity and a confirmed cache-safe logou
     readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
-  assert.match(settings, /settings-identity/)
-  assert.match(settings, /settings-name/)
-  assert.match(settings, /settings-logout-area[\s\S]*?<LogoutButton \/>/)
+  assert.match(settings, /settings-account-row/)
+  assert.match(settings, /settings-display-name/)
+  assert.match(settings, /settings-logout-row[\s\S]*?<LogoutButton \/>/)
   assert.equal((settings.match(/<LogoutButton \/>/g) || []).length, 1)
   assert.match(session, /accountDisplayName/)
   assert.match(logout, /CenteredDialog/)
