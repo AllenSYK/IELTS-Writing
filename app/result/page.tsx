@@ -210,7 +210,9 @@ export default function ResultPage() {
       shortLabel: key === 'taskAchievement' ? 'TA' : key === 'taskResponse' ? 'TR' : key === 'coherenceCohesion' ? 'CC' : key === 'lexicalResource' ? 'LR' : 'GRA',
       label: resultCriterionLabel(key),
       score: criterion?.score ? formatBand(criterion.score) : '—',
-      feedback: criterion?.feedback
+      feedback: criterion?.feedback,
+      evidence: criterion?.evidence,
+      whyNotHigher: criterion?.whyNotHigher
     }
   })
 

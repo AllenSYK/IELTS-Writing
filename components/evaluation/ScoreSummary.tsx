@@ -19,6 +19,8 @@ type CriterionSummary = {
   label: string
   score: string
   feedback?: string
+  evidence?: string[]
+  whyNotHigher?: string
 }
 
 function CriteriaDetailDialog({
@@ -44,6 +46,22 @@ function CriteriaDetailDialog({
           <h3 className="ui-label">评分说明</h3>
           <p>{criterion.feedback || '本次未返回该项具体说明。'}</p>
         </div>
+        {criterion.evidence && criterion.evidence.length > 0 && (
+          <div className="criteria-detail-feedback">
+            <h3 className="ui-label">具体表现</h3>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {criterion.evidence.map((e, i) => (
+                <li key={i} style={{ marginBottom: 4 }}>{e}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {criterion.whyNotHigher && (
+          <div className="criteria-detail-feedback">
+            <h3 className="ui-label">为什么不是更高分</h3>
+            <p>{criterion.whyNotHigher}</p>
+          </div>
+        )}
       </div>
     </CenteredDialog>
   )
@@ -92,17 +110,22 @@ function buildCriteriaForTask(
   taskType: 'task1' | 'task2'
 ): CriterionSummary[] {
   const keys = criterionKeysForTask(taskType as WritingTaskType)
-  return keys.map((key) => ({
-    key,
-    shortLabel: key === 'taskAchievement' ? 'TA' : key === 'taskResponse' ? 'TR' : key === 'coherenceCohesion' ? 'CC' : key === 'lexicalResource' ? 'LR' : 'GRA',
-    label: key === 'taskAchievement' ? 'Task Achievement'
-      : key === 'taskResponse' ? 'Task Response'
-      : key === 'coherenceCohesion' ? 'Coherence and Cohesion'
-      : key === 'lexicalResource' ? 'Lexical Resource'
-      : 'Grammatical Range and Accuracy',
-    score: evaluation?.criteria?.[key]?.score ? formatBand(evaluation.criteria[key]!.score) : '—',
-    feedback: evaluation?.criteria?.[key]?.feedback
-  }))
+  return keys.map((key) => {
+    const c = evaluation?.criteria?.[key]
+    return {
+      key,
+      shortLabel: key === 'taskAchievement' ? 'TA' : key === 'taskResponse' ? 'TR' : key === 'coherenceCohesion' ? 'CC' : key === 'lexicalResource' ? 'LR' : 'GRA',
+      label: key === 'taskAchievement' ? 'Task Achievement'
+        : key === 'taskResponse' ? 'Task Response'
+        : key === 'coherenceCohesion' ? 'Coherence and Cohesion'
+        : key === 'lexicalResource' ? 'Lexical Resource'
+        : 'Grammatical Range and Accuracy',
+      score: c?.score ? formatBand(c.score) : '—',
+      feedback: c?.feedback,
+      evidence: c?.evidence,
+      whyNotHigher: c?.whyNotHigher
+    }
+  })
 }
 
 export function ScoreSummary({
@@ -210,6 +233,13 @@ export function ScoreSummary({
               <span className="criterion-card-label">{criterion.label}</span>
               <strong className="criterion-card-score">{criterion.score}</strong>
               <span className="criterion-card-abbr">{criterion.shortLabel}</span>
+              <span
+                className="criteria-detail-btn"
+                role="presentation"
+                aria-hidden="true"
+              >
+                查看详情
+              </span>
             </button>
           ))}
         </div>
