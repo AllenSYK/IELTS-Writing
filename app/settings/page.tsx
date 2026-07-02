@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { MaterialIcon } from '@/components/app-ui'
 import { getAvatarInitial } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
@@ -143,7 +144,8 @@ export default function SettingsPage() {
                       type="button"
                       onClick={startEditing}
                     >
-                      修改
+                      <MaterialIcon name="edit" size={15} />
+                      <span>修改</span>
                     </button>
                   </div>
                   <p className="settings-email" title={emailDisplay}>
@@ -153,6 +155,8 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          <div className="settings-divider" />
 
           <div className="settings-logout-row">
             <LogoutButton />
