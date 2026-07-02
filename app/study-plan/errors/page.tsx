@@ -438,19 +438,19 @@ function ErrorPatternCard({ pattern, onView, onReview }: {
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <strong>{pattern.title}</strong>
-            <span className="task-badge" style={{ fontSize: 11 }}>{categoryLabel}</span>
-            <span style={{ fontSize: 11, color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
+            <span className="task-badge" style={{ fontSize: 12 }}>{categoryLabel}</span>
+            <span style={{ fontSize: 12, color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
           </div>
           {pattern.description && (
-            <p className="ui-body-md" style={{ marginBottom: 6, fontSize: 13 }}>{pattern.description}</p>
+            <p className="ui-body-md" style={{ marginBottom: 8, fontSize: 15 }}>{pattern.description}</p>
           )}
-          <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
             <span>出现 {pattern.occurrenceCount} 次</span>
             <span>最近：{new Date(pattern.lastSeenAt).toLocaleDateString('zh-CN')}</span>
             <span>掌握度：{Math.round(pattern.masteryLevel * 100)}%</span>
           </div>
           {pattern.exampleWrong && (
-            <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 13 }}>
+            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 15 }}>
               <div style={{ color: 'var(--error)', marginBottom: 4 }}>
                 <span style={{ verticalAlign: 'middle', marginRight: 4 }}><MaterialIcon name="close" size={14} /></span>
                 {pattern.exampleWrong}
@@ -465,11 +465,11 @@ function ErrorPatternCard({ pattern, onView, onReview }: {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="ui-secondary-button" type="button" onClick={onView} style={{ fontSize: 13, padding: '6px 12px' }}>
+          <button className="ui-secondary-button" type="button" onClick={onView} style={{ fontSize: 14, padding: '6px 12px' }}>
             详情
           </button>
           {pattern.status !== 'mastered' && (
-            <button className="ui-primary-button" type="button" onClick={onReview} style={{ fontSize: 13, padding: '6px 12px' }}>
+            <button className="ui-primary-button" type="button" onClick={onReview} style={{ fontSize: 14, padding: '6px 12px' }}>
               复习
             </button>
           )}
@@ -553,7 +553,7 @@ function ErrorDetailDialog({ pattern, onClose, onReview }: {
             <span className="ui-label">最近出现</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
               {occurrences.map((occ) => (
-                <div key={occ.id} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 13 }}>
+                <div key={occ.id} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 14 }}>
                   {occ.sentenceExcerpt && <p style={{ marginBottom: 4 }}>{occ.sentenceExcerpt}</p>}
                   {occ.correction && (
                     <p style={{ color: 'var(--success)' }}>
@@ -561,7 +561,7 @@ function ErrorDetailDialog({ pattern, onClose, onReview }: {
                       {occ.correction}
                     </p>
                   )}
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                     {new Date(occ.createdAt).toLocaleDateString('zh-CN')}
                   </span>
                 </div>

@@ -1278,11 +1278,11 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
             return (
               <div key={task.id} style={styles.calendarTaskLine}>
                 <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), flexShrink: 0 }} />
-                <span style={{ fontSize: 11, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: task.status === 'completed' ? 'var(--text-secondary)' : undefined, textDecoration: task.status === 'completed' ? 'line-through' : undefined }}>
+                <span style={{ fontSize: 13, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: task.status === 'completed' ? 'var(--text-secondary)' : undefined, textDecoration: task.status === 'completed' ? 'line-through' : undefined }}>
                   {shortTitle}
                 </span>
                 <span style={{
-                  fontSize: 8,
+                  fontSize: 10,
                   padding: '0 3px',
                   borderRadius: 3,
                   background: isAi ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : 'var(--primary-container)',
@@ -1297,10 +1297,10 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
             )
           })}
           {totalCount > 3 && (
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)', paddingLeft: 10 }}>+{totalCount - 3} 个任务</span>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', paddingLeft: 10 }}>+{totalCount - 3} 个任务</span>
           )}
           {isRestDay && (
-            <span style={{ fontSize: 10, color: 'var(--text-secondary)', opacity: 0.6 }}>休息日</span>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', opacity: 0.6 }}>休息日</span>
           )}
         </div>
 
@@ -1381,7 +1381,7 @@ function CalendarLegend() {
         { label: '模考', color: '#3a6eb5' },
         { label: '已完成', color: '#34a853' }
       ].map((item) => (
-        <span key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)' }}>
+        <span key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
           <span style={{ width: 8, height: 8, borderRadius: 4, background: item.color }} />
           {item.label}
         </span>
@@ -2110,7 +2110,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   calendarWeekDay: {
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 13,
     color: 'var(--text-secondary)',
     padding: '4px 0',
     fontWeight: 600
@@ -2136,7 +2136,7 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden'
   },
   calendarDayNum: {
-    fontSize: 13,
+    fontSize: 14,
     lineHeight: 1,
     fontWeight: 400
   },
@@ -2161,7 +2161,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0
   },
   calendarMinutes: {
-    fontSize: 10,
+    fontSize: 12,
     color: 'var(--text-secondary)',
     lineHeight: 1,
     marginTop: 'auto'
