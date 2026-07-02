@@ -18,6 +18,7 @@ import {
   splitEssayIntoBlocks,
 } from '@/lib/essay-annotations'
 import {
+  normalizeAnnotationBlockResponse,
   validateBlockAnnotationResponse,
   type BlockAnnotationDraft
 } from '@/lib/essay-annotation-schema'
@@ -948,7 +949,8 @@ async function requestAnnotations(config: AiConfig, input: EssayEvaluationInput,
         requestId: `${requestId}-block-${block.index}`,
         stage: `annotation-block-${block.index + 1}`,
         validate: (value) => {
-          const validated = validateBlockAnnotationResponse(value, block)
+          const normalized = normalizeAnnotationBlockResponse(value)
+          const validated = validateBlockAnnotationResponse(normalized, block)
           if (!validated.success) {
             throw new AiResponseError(
               'AI 返回的文本块批注格式不正确。',
@@ -967,21 +969,62 @@ async function requestAnnotations(config: AiConfig, input: EssayEvaluationInput,
 
   const annotations: EssayAnnotation[] = []
   const warnings: string[] = []
+  const failedBlocks: Array<{ block: typeof blocks[number]; error: unknown }> = []
+
   settled.forEach((result, index) => {
     if (result.status === 'fulfilled') {
       annotations.push(...result.value)
       return
     }
-    const block = blocks[index]
-    const error = result.reason
-    warnings.push(`第 ${block.index + 1} 个文本块检查失败（blockId: ${block.id}）：${error instanceof Error ? error.message : '未知错误'}`)
-    console.warn('[ai-annotation-block]', {
-      requestId,
-      blockId: block.id,
-      blockIndex: block.index,
-      code: error instanceof AiResponseError ? error.code : 'ai_annotation_failed'
-    })
+    failedBlocks.push({ block: blocks[index], error: result.reason })
   })
+
+  if (failedBlocks.length > 0) {
+    const retryResults = await Promise.allSettled(
+      failedBlocks.map(async ({ block }) => {
+        const response = await requestValidatedJson({
+          config,
+          messages: [
+            { role: 'system', content: AnnotationSystemPrompt + '\n\n严格只返回 JSON，不要任何解释文字。' },
+            { role: 'user', content: buildAnnotationPrompt(input, block) }
+          ],
+          maxTokens: MAX_ANNOTATION_TOKENS,
+          requestId: `${requestId}-block-${block.index}-retry`,
+          stage: `annotation-block-${block.index + 1}-retry`,
+          validate: (value) => {
+            const normalized = normalizeAnnotationBlockResponse(value)
+            const validated = validateBlockAnnotationResponse(normalized, block)
+            if (!validated.success) {
+              throw new AiResponseError(
+                'AI 返回的文本块批注格式不正确。',
+                'ai_annotation_schema_error',
+                validated.details
+              )
+            }
+            return validated.data
+          }
+        })
+        return response.annotations.map((annotation) =>
+          locateAnnotationInBlock(annotation as BlockAnnotationDraft, block, input.taskType)
+        )
+      })
+    )
+
+    retryResults.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        annotations.push(...result.value)
+      } else {
+        const block = failedBlocks[index].block
+        warnings.push(`第 ${block.index + 1} 个文本块检查失败（blockId: ${block.id}）`)
+        console.warn('[ai-annotation-block-retry-failed]', {
+          requestId,
+          blockId: block.id,
+          blockIndex: block.index,
+          code: result.reason instanceof AiResponseError ? result.reason.code : 'ai_annotation_failed'
+        })
+      }
+    })
+  }
 
   return {
     annotations: dedupeAndSortAnnotations(annotations),

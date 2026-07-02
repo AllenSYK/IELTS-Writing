@@ -33,6 +33,45 @@ export type BlockAnnotationDraft = Omit<z.infer<typeof BlockAnnotationDraftSchem
   blockId?: string
 }
 
+export function normalizeAnnotationBlockResponse(raw: unknown): unknown {
+  if (typeof raw === 'string') {
+    let text = raw.trim()
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+    try {
+      return JSON.parse(text)
+    } catch {
+      return raw
+    }
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    const obj = raw as Record<string, unknown>
+    if (Array.isArray(obj.annotations)) {
+      return {
+        blockId: obj.blockId ?? obj.block_id ?? '',
+        annotations: obj.annotations.map((a: unknown) => {
+          if (typeof a !== 'object' || a === null) return a
+          const ann = a as Record<string, unknown>
+          return {
+            blockId: ann.blockId ?? ann.block_id ?? obj.blockId ?? '',
+            originalText: ann.originalText ?? ann.original ?? ann.text ?? '',
+            occurrence: ann.occurrence ?? 1,
+            replacement: ann.replacement ?? ann.correction ?? ann.suggestion,
+            category: ann.category ?? 'grammar',
+            severity: ann.severity ?? 'medium',
+            scoreCriterion: ann.scoreCriterion ?? ann.score_criterion ?? 'Grammatical Range and Accuracy',
+            explanationZh: ann.explanationZh ?? ann.explanation_zh ?? ann.explanation ?? '',
+            explanationEn: ann.explanationEn ?? ann.explanation_en ?? '',
+            impactOnScore: ann.impactOnScore ?? ann.impact_on_score ?? '',
+            suggestion: ann.suggestion ?? ann.replacement ?? ''
+          }
+        }),
+        checkedWholeBlock: obj.checkedWholeBlock ?? true
+      }
+    }
+  }
+  return raw
+}
+
 export function validateBlockAnnotationResponse(
   value: unknown,
   block: { id?: string; text: string }

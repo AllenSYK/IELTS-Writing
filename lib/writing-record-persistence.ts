@@ -37,9 +37,13 @@ export function prepareWritingRecordForServer(userId: string, record: WritingRec
     ownerUserId: userId
   })
   const failedBlockIds = (normalized.evaluation.annotationWarnings ?? [])
-    .map((warning) => warning.match(/blockId[：:]\s*([^\s，。]+)/)?.[1])
+    .map((warning) => {
+      const match = warning.match(/blockId[：:]\s*(block-[\w-]+)/)
+      return match?.[1]
+    })
     .filter((value): value is string => Boolean(value))
-  const processingStatus = failedBlockIds.length > 0 ? 'partial' : 'complete'
+  const hasScoring = Boolean(normalized.evaluation.overallBand || normalized.evaluation.bandEstimate)
+  const processingStatus = !hasScoring ? 'failed' : failedBlockIds.length > 0 ? 'partial' : 'complete'
 
   return {
     record: normalized,

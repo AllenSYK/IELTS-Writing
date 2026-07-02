@@ -529,12 +529,7 @@ export default function ResultPage() {
                     </div>
                     {evaluation.annotationWarnings && evaluation.annotationWarnings.length > 0 ? (
                       <div className="annotation-warning-list" role="status">
-                        <strong>部分分析未完成</strong>
-                        <ul>
-                          {evaluation.annotationWarnings.map((warning, index) => (
-                            <li key={`annotation-warning-${index}`}>{warning}</li>
-                          ))}
-                        </ul>
+                        <strong>部分批注暂未生成，整体评分不受影响</strong>
                       </div>
                     ) : null}
                     {allAnnotations.length > 0 && visibleAnnotations.length === 0 ? (

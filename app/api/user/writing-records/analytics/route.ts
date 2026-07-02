@@ -175,7 +175,7 @@ export async function GET() {
     .from('writing_records')
     .select('id, task_type, submitted_at, processing_status, evaluation, annotations')
     .eq('user_id', user.id)
-    .in('processing_status', ['complete', 'completed'])
+    .in('processing_status', ['complete', 'completed', 'partial'])
     .order('submitted_at', { ascending: true })
     .limit(50)
 
