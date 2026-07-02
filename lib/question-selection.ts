@@ -98,6 +98,7 @@ export async function selectQuestionsForPlan(
     preferredTask1Types?: Task1VisualCategory[]
     preferredTask2Types?: string[]
     bankRatio?: number
+    onHeartbeat?: () => void
   }
 ): Promise<{
   task1Questions: TaskQuestionResult[]
@@ -139,6 +140,7 @@ export async function selectQuestionsForPlan(
   for (const t of planTasks ?? []) {
     if (t.question_id) usedQuestionIds.add(t.question_id as string)
   }
+  options.onHeartbeat?.()
 
   // Load all published questions
   const { data: allTask1 } = await service
@@ -154,6 +156,8 @@ export async function selectQuestionsForPlan(
     .eq('status', 'published')
     .eq('task_type', 'task2')
     .order('published_at', { ascending: false })
+
+  options.onHeartbeat?.()
 
   const toPick = (row: Record<string, unknown>): QuestionPick => ({
     id: row.id as string,
@@ -319,6 +323,7 @@ export async function selectQuestionsForPlan(
       aiTask2Questions.push({ ...bankTask2Questions[i % bankTask2Questions.length] })
     }
   }
+  options.onHeartbeat?.()
 
   // Build final task1 results with source tags
   const task1Results: TaskQuestionResult[] = []

@@ -330,7 +330,12 @@ export default function StudyPlanPage() {
     }
 
     if (data?.plan) {
-      dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
+      if (state.activeJob && isJobActive(state.activeJob)) {
+        dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
+        dispatch({ type: 'ACTIVE_JOB_RECOVERED', job: state.activeJob })
+      } else {
+        dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
+      }
     } else if (!state.activeJob) {
       dispatch({ type: 'BOOT_RESOLVED_WITHOUT_PLAN' })
     }
@@ -380,11 +385,12 @@ export default function StudyPlanPage() {
     return () => { cancelled = true }
   }, [userId, jobRestored])
 
-  // SWR data sync: update plan data without changing viewMode during replan-setup
+  // SWR data sync: update plan data without changing viewMode during replan-setup or active job
   useEffect(() => {
     if (!data?.plan) return
     if (state.viewMode === 'replan-setup') return
     if (state.viewMode === 'resolving') return
+    if (state.viewMode === 'replanning' || state.viewMode === 'generating' || state.viewMode === 'loading-plan') return
 
     if (state.viewMode === 'plan' || state.viewMode === 'failed') {
       dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
@@ -473,22 +479,25 @@ export default function StudyPlanPage() {
           if (planData.plan) {
             if (!cancelled && mountedRef.current) {
               dispatch({ type: 'PLAN_FETCH_SUCCEEDED', plan: planData.plan, profile: planData.profile ?? null })
+              void mutate()
               pushToast({ kind: 'success', title: '学习计划已更新' })
             }
             return
           }
         } catch {}
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)))
+        await new Promise(r => setTimeout(r, 1500 * (i + 1)))
       }
       if (!cancelled && mountedRef.current) {
         if (state.planLoadRetries < 2) {
           dispatch({ type: 'PLAN_FETCH_FAILED' })
-          pushToast({ kind: 'info', title: '计划加载中', message: '稍后将自动重试' })
+          pushToast({ kind: 'info', title: '计划已生成', message: '正在同步数据，请稍候...' })
+          void mutate()
           setTimeout(() => {
             if (mountedRef.current) dispatch({ type: 'RETURN_TO_PLAN' })
           }, 3000)
         } else {
           dispatch({ type: 'RETURN_TO_PLAN' })
+          void mutate()
           pushToast({ kind: 'info', title: '计划已生成', message: '请刷新页面查看' })
         }
       }
@@ -496,7 +505,7 @@ export default function StudyPlanPage() {
 
     loadNewPlan()
     return () => { cancelled = true }
-  }, [state.viewMode, state.activeJob?.resultPlanId, state.planLoadRetries, pushToast])
+  }, [state.viewMode, state.activeJob?.resultPlanId, state.planLoadRetries, pushToast, mutate])
 
   const { data: pointsData } = useSWR<AdjustmentPoints>(
     userId ? 'study-plan-points' : null,
@@ -2021,11 +2030,16 @@ const styles: Record<string, React.CSSProperties> = {
   progressCard: {
     padding: 24,
     borderRadius: 28,
-    background: 'linear-gradient(135deg, var(--surface-container-high), var(--surface-container))'
+    marginBottom: 24,
+    background: 'var(--surface-container-high)',
+    border: '1px solid var(--glass-border-1)'
   },
   replanBanner: {
-    padding: 16,
-    borderRadius: 20
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 24,
+    background: 'var(--surface-container-high)',
+    border: '1px solid var(--glass-border-1)'
   },
   progressBar: {
     height: 6,
@@ -2044,7 +2058,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 20
+    borderRadius: 20,
+    marginBottom: 24
   },
   overviewCard: {
     padding: 20,

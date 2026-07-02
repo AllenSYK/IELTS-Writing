@@ -98,6 +98,10 @@ export async function processGenerationJob(jobId: string, userId: string) {
 
   const startedAt = Date.now()
 
+  const heartbeatInterval = setInterval(() => {
+    heartbeat(service, jobId).catch(() => {})
+  }, 20_000)
+
   try {
     // Start
     await updateJob(service, jobId, {
@@ -172,7 +176,8 @@ export async function processGenerationJob(jobId: string, userId: string) {
       task2Count,
       mockCount,
       weaknesses: preferences.weaknesses,
-      bankRatio: preferences.questionBankRatio
+      bankRatio: preferences.questionBankRatio,
+      onHeartbeat: () => heartbeat(service, jobId).catch(() => {})
     })
 
     await heartbeat(service, jobId)
@@ -258,7 +263,9 @@ export async function processGenerationJob(jobId: string, userId: string) {
       // wallet bonus is best-effort
     }
 
+    clearInterval(heartbeatInterval)
   } catch (err) {
+    clearInterval(heartbeatInterval)
     const errorMsg = err instanceof Error ? err.message : 'Unknown error'
     const errorCode = errorMsg.includes('JOB_NOT_FOUND') ? 'JOB_NOT_FOUND'
       : errorMsg.includes('JOB_INVALID_STATE') ? 'JOB_INVALID_STATE'

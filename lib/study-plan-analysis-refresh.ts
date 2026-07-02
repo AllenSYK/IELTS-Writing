@@ -62,6 +62,10 @@ export async function processAnalysisRefreshJob(jobId: string, userId: string) {
     message: '正在加载写作记录'
   })
 
+  const heartbeatInterval = setInterval(() => {
+    heartbeat(service, jobId).catch(() => {})
+  }, 20_000)
+
   try {
     // Step 1: Load records
     await setStage(service, jobId, 'loading_records')
@@ -150,7 +154,9 @@ export async function processAnalysisRefreshJob(jobId: string, userId: string) {
       timestamp: new Date().toISOString()
     }))
 
+    clearInterval(heartbeatInterval)
   } catch (err) {
+    clearInterval(heartbeatInterval)
     const errorMsg = err instanceof Error ? err.message : 'Unknown error'
     console.error(JSON.stringify({
       event: 'ANALYSIS_REFRESH_FAILED',
