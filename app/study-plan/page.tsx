@@ -614,6 +614,22 @@ export default function StudyPlanPage() {
   const isAnalysisRefreshing = analysisJob && (analysisJob.status === 'queued' || analysisJob.status === 'running')
 
   const handleGenerate = useCallback(async (formData?: Record<string, unknown>) => {
+    const pendingJob: GenerationJob = {
+      id: 'pending',
+      status: 'queued',
+      progress: 0,
+      currentStep: null,
+      resultPlanId: null,
+      errorMessage: null,
+      createdAt: new Date().toISOString()
+    }
+    if (formData?.sourcePlanId) {
+      dispatch({ type: 'SUBMIT_REPLAN', job: pendingJob })
+    } else {
+      dispatch({ type: 'SUBMIT_INITIAL', job: pendingJob })
+    }
+    setShowCreate(false)
+
     try {
       const res = await fetch('/api/study-plan/generation-jobs', {
         method: 'POST',
@@ -622,11 +638,12 @@ export default function StudyPlanPage() {
       })
       const json = await res.json() as { success?: boolean; jobId?: string; status?: string; progress?: number; currentStep?: string; message?: string }
       if (!res.ok && res.status !== 202 && res.status !== 200) {
+        dispatch({ type: 'RETURN_TO_PLAN' })
         pushToast({ kind: 'error', title: '创建失败', message: json.message || '请稍后重试' })
         return
       }
       if (json.jobId) {
-        const job: GenerationJob = {
+        const realJob: GenerationJob = {
           id: json.jobId,
           status: json.status ?? 'queued',
           progress: json.progress ?? 0,
@@ -636,16 +653,11 @@ export default function StudyPlanPage() {
           createdAt: new Date().toISOString()
         }
         try { localStorage.setItem('activeStudyPlanJobId', json.jobId) } catch {}
-
-        if (formData?.sourcePlanId) {
-          dispatch({ type: 'SUBMIT_REPLAN', job })
-        } else {
-          dispatch({ type: 'SUBMIT_INITIAL', job })
-        }
+        dispatch({ type: 'JOB_PROGRESS', job: realJob })
       }
-      setShowCreate(false)
       pushToast({ kind: 'success', title: '正在后台生成学习计划', message: '你可以离开此页面，完成后会自动通知。' })
     } catch {
+      dispatch({ type: 'RETURN_TO_PLAN' })
       pushToast({ kind: 'error', title: '创建失败', message: '请稍后重试' })
     }
   }, [pushToast])
@@ -854,7 +866,7 @@ export default function StudyPlanPage() {
           <SettingsDialog
             profile={profile}
             onClose={() => setShowSettings(false)}
-            onMutate={() => { void mutate() }}
+            mutate={() => void mutate()}
           />
         )}
 
@@ -1460,6 +1472,7 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
   onGenerate: (data: Record<string, unknown>) => void
   onClose: () => void
 }) {
+  const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
     overallTarget: profile?.overallTarget ?? 6.5,
     examDate: profile?.examDate ?? '',
@@ -1511,9 +1524,9 @@ function CreatePlanWizard({ profile, diagnosis, onGenerate, onClose }: {
       onClose={onClose}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="ui-secondary-button" type="button" onClick={onClose}>取消</button>
-          <button className="ui-primary-button" type="button" onClick={() => onGenerate(form)}>
-            后台生成
+          <button className="ui-secondary-button" type="button" disabled={submitting} onClick={onClose}>取消</button>
+          <button className="ui-primary-button" type="button" disabled={submitting} onClick={() => { setSubmitting(true); onGenerate(form) }}>
+            {submitting ? '正在启动…' : '后台生成'}
           </button>
         </div>
       }
@@ -1614,6 +1627,7 @@ function ReplanSetupDialog({ profile, diagnosis, planId, onGenerate, onCancel }:
   onGenerate: (data: Record<string, unknown>) => void
   onCancel: () => void
 }) {
+  const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
     overallTarget: profile?.overallTarget ?? 6.5,
     examDate: profile?.examDate ?? '',
@@ -1665,9 +1679,9 @@ function ReplanSetupDialog({ profile, diagnosis, planId, onGenerate, onCancel }:
       onClose={onCancel}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="ui-secondary-button" type="button" onClick={onCancel}>取消</button>
-          <button className="ui-primary-button" type="button" onClick={() => onGenerate({ ...form, sourcePlanId: planId })}>
-            确认重新规划
+          <button className="ui-secondary-button" type="button" disabled={submitting} onClick={onCancel}>取消</button>
+          <button className="ui-primary-button" type="button" disabled={submitting} onClick={() => { setSubmitting(true); onGenerate({ ...form, sourcePlanId: planId }) }}>
+            {submitting ? '正在启动…' : '确认重新规划'}
           </button>
         </div>
       }
@@ -1761,10 +1775,10 @@ function ReplanSetupDialog({ profile, diagnosis, planId, onGenerate, onCancel }:
   )
 }
 
-function SettingsDialog({ profile, onClose, onMutate }: {
+function SettingsDialog({ profile, onClose, mutate }: {
   profile: StudyPlanProfile
   onClose: () => void
-  onMutate: () => void
+  mutate: () => void
 }) {
   const { pushToast } = useToast()
   const [saving, setSaving] = useState(false)
@@ -1812,14 +1826,14 @@ function SettingsDialog({ profile, onClose, onMutate }: {
       const data = await res.json() as { success?: boolean; message?: string }
       if (!res.ok || !data.success) {
         pushToast({ kind: 'error', title: '保存失败', message: data.message || '请稍后重试' })
+        setSaving(false)
         return
       }
-      pushToast({ kind: 'success', title: '设置已更新' })
-      onMutate()
       onClose()
+      pushToast({ kind: 'success', title: '设置已更新' })
+      void mutate()
     } catch {
       pushToast({ kind: 'error', title: '保存失败' })
-    } finally {
       setSaving(false)
     }
   }
