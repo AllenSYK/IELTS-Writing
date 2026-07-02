@@ -240,3 +240,149 @@
     padding-bottom: calc(48px + env(safe-area-inset-bottom));
   }
 }
+
+/* ── New criteria grid (three-layer cards) ── */
+
+.criteria-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.criterion-card {
+  min-height: 180px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  background: rgba(255, 255, 255, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  text-align: center;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+
+.criterion-card:hover {
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.criterion-card:focus-visible {
+  outline: 3px solid rgba(10, 102, 255, 0.3);
+  outline-offset: 2px;
+}
+
+.criterion-card-label {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.3;
+  min-height: 40px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  color: var(--on-surface);
+}
+
+.criterion-card-score {
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--primary);
+}
+
+.criterion-card-abbr {
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--on-surface-variant);
+}
+
+/* ── Criteria detail dialog ── */
+
+.criteria-detail-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(680px, calc(100vh - 80px));
+}
+
+.criteria-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.criteria-detail-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0;
+}
+
+.criteria-detail-score {
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--primary);
+}
+
+.criteria-detail-abbr {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--on-surface-variant);
+}
+
+.criteria-detail-feedback h3 {
+  margin-bottom: 8px;
+}
+
+.criteria-detail-feedback p {
+  color: var(--on-surface-variant);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1040px) {
+  .criteria-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .criteria-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .criterion-card {
+    min-height: 140px;
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .criterion-card-label {
+    font-size: 13px;
+    min-height: 34px;
+  }
+
+  .criterion-card-score {
+    font-size: 36px;
+  }
+
+  .criterion-card-abbr {
+    font-size: 12px;
+  }
+
+  .criteria-detail-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 32px);
+  }
+}

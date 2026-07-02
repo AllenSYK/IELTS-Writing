@@ -408,9 +408,6 @@ export default function ResultPage() {
       <section className="result-main">
         <header className="result-header">
           <div className="result-header-copy">
-            <p className="ui-label" style={{ color: 'var(--primary)' }}>
-              Assessment Result
-            </p>
             <h1 className="ui-title-display">{record.title}</h1>
             <p className="ui-body-md">
               Submitted on {formatDate(record.submittedAt)} • {record.wordCount} Words • {TaskTypeLabels[record.taskType]}
