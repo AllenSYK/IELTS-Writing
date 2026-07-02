@@ -1343,18 +1343,7 @@ export default function WritePage() {
               <span>/{wordTarget}</span>
             </span>
           </div>
-          {mode === 'mock' ? (
-            <>
-              <div className="exam-divider" />
-              <div className="exam-info-item">
-                <span className="ui-label">总字数</span>
-                <span className={`exam-word-count ${totalMockWords >= 400 ? 'word-count-good' : totalMockWords >= 320 ? 'word-count-medium' : 'word-count-low'}`}>
-                  {totalMockWords}
-                  <span>/400</span>
-                </span>
-              </div>
-            </>
-          ) : null}
+          {mode === 'mock' ? null : null}
         </div>
 
         <div className="exam-actions">
@@ -1394,10 +1383,6 @@ export default function WritePage() {
             <span>
               <MaterialIcon name="notes" size={15} />
               当前：{activeMockTask === 'task1' ? 'Task 1' : 'Task 2'} {wordCount}/{wordTarget}
-            </span>
-            <span>
-              <MaterialIcon name="functions" size={15} />
-              总计：{totalMockWords}/400
             </span>
           </>
         ) : (
@@ -1624,17 +1609,7 @@ export default function WritePage() {
               onScroll={persistEditorPosition}
               aria-label={`${activeQuestion.taskType} writing editor`}
             />
-            <div className="editor-footer">
-              <span className="word-count-hint">
-                {wordCount < 50 ? (
-                  <span className="hint-warning">至少需要 50 字才能提交批改（当前 {wordCount} 字）</span>
-                ) : wordCount < wordTarget ? (
-                  <span className="hint-info">建议至少 {wordTarget} 字（当前 {wordCount} 字）</span>
-                ) : (
-                  <span className="hint-success">字数已达标（{wordCount} 字）</span>
-                )}
-              </span>
-            </div>
+            <div className="editor-footer" />
             {loading ? (
               <section className="editor-progress-panel" role="status" aria-live="polite">
                 <div className="progress-header">

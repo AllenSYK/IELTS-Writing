@@ -104,7 +104,7 @@ export async function generateQuestionForSelection({
         return rememberQuestion(userId, taskType, selection, question)
       }
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : '题目生成失败，已改用本地题库。')
+      onNotice('题目生成遇到问题，已改用本地题库。')
       break
     }
   }

@@ -116,7 +116,7 @@ test('practice page exposes a centered draft manager and complete-test configura
   assert.match(manager, /确认删除/)
   assert.match(editor, /kind: 'full_test'/)
   assert.match(editor, /activeTask:/)
-  assert.match(editor, /总计：\{totalMockWords\}\/400/)
+  assert.doesNotMatch(editor, /总计：\{totalMockWords\}\/400/)
   assert.match(editor, /className="result-tabs full-test-tabs"/)
   assert.match(editor, /Task 1：\{mockTask1Label\}/)
   assert.match(editor, /Task 2：\{mockTask2Label\}/)

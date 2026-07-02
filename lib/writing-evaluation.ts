@@ -67,13 +67,13 @@ export function evaluationErrorMessage(error: unknown) {
 
   const messages: Record<EvaluationErrorKind, { title: string; message: string }> = {
     cancelled: { title: '已取消', message: '批改已取消。' },
-    timeout: { title: '响应超时', message: '批改服务响应超时，请检查网络后重试。' },
+    timeout: { title: '响应超时', message: '批改服务响应超时，请稍后重试。' },
     network: { title: '网络错误', message: '网络连接失败，作文已保存在本地，请检查网络后重试。' },
     authentication: { title: '请先登录', message: '请先登录后再使用批改功能。' },
     license: { title: '需要激活', message: '请先激活账号后再使用批改功能。' },
-    'rate-limit': { title: '请求限制', message: '请求过于频繁，请稍后重试。' },
-    service: { title: '服务不可用', message: '批改服务暂时不可用，请稍后重试。' },
-    'invalid-response': { title: '格式异常', message: '批改结果格式异常，作文已保存，请重新批改。' },
+    'rate-limit': { title: '请求限制', message: '请求过于频繁，请等待一分钟后重试。' },
+    service: { title: '服务繁忙', message: '批改服务繁忙，请稍后重试。' },
+    'invalid-response': { title: '格式异常', message: '批改结果解析失败，请重新提交。' },
     unknown: { title: '批改失败', message: error.message || '批改失败，请稍后重试。' }
   }
   return messages[error.kind]

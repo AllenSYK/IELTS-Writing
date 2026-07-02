@@ -488,11 +488,41 @@ function normalizeGeneratedPromptResponse(raw: unknown, taskType: string) {
   return result
 }
 
-function knownQuestionType(input: PromptGenerationInput, questionType: string) {
-  if (input.taskType === 'task1') {
-    return questionType !== 'random' && Task1ChartTypes.includes(questionType as PromptSelection['task1ChartType'])
+function normalizeQuestionType(raw: string, taskType: string): string {
+  const q = raw.toLowerCase().trim().replace(/[\s-]+/g, '_')
+  if (taskType === 'task1') {
+    const map: Record<string, string> = {
+      line_graph: 'line_chart', line: 'line_chart', linegraph: 'line_chart',
+      bar_graph: 'bar_chart', bar: 'bar_chart', bargraph: 'bar_chart', column_chart: 'bar_chart',
+      pie: 'pie_chart', piegraph: 'pie_chart', doughnut: 'pie_chart',
+      data_table: 'table', datatable: 'table',
+      flowchart: 'process', flow_chart: 'process', process_diagram: 'process',
+      map_comparison: 'map', floor_plan: 'floor_plan', before_after: 'before_after',
+      combination: 'mixed_charts', mixed: 'mixed_charts', mixed_chart: 'mixed_charts', multiple_charts: 'mixed_charts',
+      dynamic: 'dynamic_chart', animated: 'dynamic_chart',
+      comparison: 'static_comparison'
+    }
+    return map[q] ?? raw
   }
-  return questionType !== 'random' && Task2EssayTypes.includes(questionType as PromptSelection['task2EssayType'])
+  const map: Record<string, string> = {
+    opinion: 'agree_disagree', opinion_essay: 'agree_disagree', agree_or_disagree: 'agree_disagree', agree_disagree: 'agree_disagree',
+    discussion: 'discussion_opinion', discussion_both_views: 'discussion_opinion', both_views: 'discussion_opinion', discuss_both: 'discussion_opinion',
+    advantages_disadvantages: 'advantages_disadvantages', advantage_disadvantage: 'advantages_disadvantages', pros_cons: 'advantages_disadvantages',
+    cause_solution: 'cause_solution', causes_solutions: 'cause_solution', problem_solution: 'problem_solution', problems_solutions: 'problem_solution',
+    double_question: 'two_part', two_questions: 'two_part', two_part_question: 'two_part',
+    positive_negative: 'positive_negative', positive_or_negative: 'positive_negative', positive_negative_development: 'positive_negative',
+    direct_question: 'direct_question', direct: 'direct_question',
+    outweigh: 'outweigh', advantages_outweigh_disadvantages: 'outweigh'
+  }
+  return map[q] ?? raw
+}
+
+function knownQuestionType(input: PromptGenerationInput, questionType: string) {
+  const normalized = normalizeQuestionType(questionType, input.taskType)
+  if (input.taskType === 'task1') {
+    return normalized !== 'random' && Task1ChartTypes.includes(normalized as PromptSelection['task1ChartType'])
+  }
+  return normalized !== 'random' && Task2EssayTypes.includes(normalized as PromptSelection['task2EssayType'])
 }
 
 function parseGeneratedPrompt(text: string, input: PromptGenerationInput, requestId: string) {
@@ -509,22 +539,32 @@ function parseGeneratedPrompt(text: string, input: PromptGenerationInput, reques
   }
 
   const data = parsed.data
+  data.questionType = normalizeQuestionType(data.questionType, input.taskType)
   if (!knownQuestionType(input, data.questionType)) {
-    throw new AiResponseError('AI返回的题型不在支持列表中。', 'ai_prompt_type_invalid')
+    const fallbackType = input.taskType === 'task1' ? input.selection.task1ChartType : input.selection.task2EssayType
+    if (fallbackType && fallbackType !== 'random') {
+      console.warn('[ai-prompt-type-fallback]', { requestId, rawType: parsed.data.questionType, fallbackTo: fallbackType })
+      data.questionType = fallbackType
+    } else {
+      data.questionType = input.taskType === 'task1' ? 'bar_chart' : 'agree_disagree'
+      console.warn('[ai-prompt-type-default]', { requestId, rawType: parsed.data.questionType, fallbackTo: data.questionType })
+    }
   }
   if (
     input.taskType === 'task1' &&
     input.selection.task1ChartType !== 'random' &&
     data.questionType !== input.selection.task1ChartType
   ) {
-    throw new AiResponseError('AI生成的 Task 1 题型与用户选择不一致。', 'ai_prompt_type_mismatch')
+    data.questionType = input.selection.task1ChartType
+    console.warn('[ai-prompt-type-mismatch]', { requestId, got: data.questionType, expected: input.selection.task1ChartType })
   }
   if (
     input.taskType === 'task2' &&
     input.selection.task2EssayType !== 'random' &&
     data.questionType !== input.selection.task2EssayType
   ) {
-    throw new AiResponseError('AI生成的 Task 2 题型与用户选择不一致。', 'ai_prompt_type_mismatch')
+    data.questionType = input.selection.task2EssayType
+    console.warn('[ai-prompt-type-mismatch]', { requestId, got: data.questionType, expected: input.selection.task2EssayType })
   }
 
   if (input.taskType === 'task1') {
