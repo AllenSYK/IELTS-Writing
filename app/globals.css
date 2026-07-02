@@ -3078,6 +3078,7 @@ img {
   display: grid;
   grid-template-columns: 3fr 9fr;
   gap: var(--gutter);
+  align-items: start;
 }
 
 .history-filters {
@@ -3085,6 +3086,7 @@ img {
   top: 100px;
   padding: 24px;
   border-radius: 32px;
+  align-self: start;
 }
 
 .filter-group {
