@@ -148,6 +148,7 @@ export default function ResultPage() {
   const [revisedSubTab, setRevisedSubTab] = useState<RevisedSubTab>('annotation')
   const [mistakeSaved, setMistakeSaved] = useState(false)
   const [rewriting, setRewriting] = useState(false)
+  const [mockAnnotationTask, setMockAnnotationTask] = useState<'task1' | 'task2'>('task2')
 
   useEffect(() => {
     if (!userId) return
@@ -181,8 +182,11 @@ export default function ResultPage() {
   if (!record) return <EmptyResult />
 
   const evaluation = record.evaluation
-  const originalEssay = record.originalEssay || record.essay
-  const allAnnotations = evaluation.annotations ?? []
+  const isMock = record.taskType === 'mock'
+  const mockActiveComponent = isMock ? record.components?.[mockAnnotationTask] : undefined
+  const effectiveEvaluation = isMock && mockActiveComponent?.evaluation ? mockActiveComponent.evaluation : evaluation
+  const originalEssay = isMock && mockActiveComponent?.essay ? mockActiveComponent.essay : (record.originalEssay || record.essay)
+  const allAnnotations = (isMock ? (effectiveEvaluation.annotations ?? []) : (evaluation.annotations ?? []))
   const unresolvedAnnotations = allAnnotations.filter((annotation) => !isResolvedAnnotation(annotation, originalEssay))
   const acceptedIds = new Set(acceptedChanges.map((change) => change.annotationId))
   const activeAnnotations = allAnnotations.filter((annotation) => !ignoredIds.has(annotation.id) && !acceptedIds.has(annotation.id))
@@ -196,12 +200,11 @@ export default function ResultPage() {
     ? visibleAnnotations.find((annotation) => annotation.id === effectiveSelectedAnnotationId) ?? null
     : null
   const modifiedEssay = applyAcceptedAnnotationChanges(originalEssay, acceptedChanges, allAnnotations)
-  const criterionOrder = criterionKeysForTask(record.taskType)
-  const correctedEssay = evaluation.correctedEssay?.trim()
-  const revisedEssay = evaluation.improvedEssay?.trim() || evaluation.revisedEssay?.trim()
-  const modelEssay = evaluation.modelEssay?.trim()
-  const criteriaSummaries = criterionOrder.map((key) => {
-    const criterion = evaluation.criteria?.[key]
+  const correctedEssay = effectiveEvaluation.correctedEssay?.trim()
+  const revisedEssay = effectiveEvaluation.improvedEssay?.trim() || effectiveEvaluation.revisedEssay?.trim()
+  const modelEssay = effectiveEvaluation.modelEssay?.trim()
+  const criteriaSummaries = criterionKeysForTask(record.taskType).map((key) => {
+    const criterion = effectiveEvaluation.criteria?.[key]
     return {
       key,
       shortLabel: key === 'taskAchievement' ? 'TA' : key === 'taskResponse' ? 'TR' : key === 'coherenceCohesion' ? 'CC' : key === 'lexicalResource' ? 'LR' : 'GRA',

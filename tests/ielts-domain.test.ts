@@ -481,10 +481,11 @@ test('Task 1 and Task 2 require their correct first criterion', () => {
   }), 'task2')
   assert.equal(task1.criteria?.taskAchievement?.score, '6')
   assert.equal(task2.criteria?.taskResponse?.score, '6')
-  assert.throws(() => parseAiEvaluationText(JSON.stringify({
+  const task1WithTR = parseAiEvaluationText(JSON.stringify({
     ...shared,
     taskResponse: { score: 6, feedback: '错误维度' }
-  }), 'task1'))
+  }), 'task1')
+  assert.equal(task1WithTR.criteria?.taskAchievement?.score, '6')
 })
 
 test('More than 20 legacy annotations are preserved without truncation', () => {

@@ -1,14 +1,17 @@
 'use client'
 
-import { useState, useCallback, type KeyboardEvent } from 'react'
+import { useState, useCallback, useMemo, type KeyboardEvent } from 'react'
 import { GlassPanel } from '@/components/app-ui'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import {
   formatBand,
   type CriterionKey,
   type EssayEvaluation,
-  type WritingRecord
+  type WritingRecord,
+  type WritingRecordComponent
 } from '@/lib/writing-records'
+import { criterionKeysForTask } from '@/lib/ielts-scoring'
+import type { WritingTaskType } from '@/lib/writing-records'
 
 type CriterionSummary = {
   key: CriterionKey
@@ -46,6 +49,62 @@ function CriteriaDetailDialog({
   )
 }
 
+function MockTaskTabs({
+  activeTask,
+  task1Component,
+  task2Component,
+  onChange
+}: {
+  activeTask: 'task1' | 'task2'
+  task1Component?: WritingRecordComponent
+  task2Component?: WritingRecordComponent
+  onChange: (task: 'task1' | 'task2') => void
+}) {
+  const t1Ready = Boolean(task1Component?.evaluation?.overallBand || task1Component?.evaluation?.bandEstimate)
+  const t2Ready = Boolean(task2Component?.evaluation?.overallBand || task2Component?.evaluation?.bandEstimate)
+
+  return (
+    <div className="mock-task-tabs" role="tablist" aria-label="模考任务切换">
+      <button
+        className={`mock-task-tab ${activeTask === 'task1' ? 'is-active' : ''}`}
+        type="button"
+        role="tab"
+        aria-selected={activeTask === 'task1'}
+        onClick={() => onChange('task1')}
+      >
+        Task 1{t1Ready ? '' : ' · 待批改'}
+      </button>
+      <button
+        className={`mock-task-tab ${activeTask === 'task2' ? 'is-active' : ''}`}
+        type="button"
+        role="tab"
+        aria-selected={activeTask === 'task2'}
+        onClick={() => onChange('task2')}
+      >
+        Task 2{t2Ready ? '' : ' · 待批改'}
+      </button>
+    </div>
+  )
+}
+
+function buildCriteriaForTask(
+  evaluation: EssayEvaluation | undefined,
+  taskType: 'task1' | 'task2'
+): CriterionSummary[] {
+  const keys = criterionKeysForTask(taskType as WritingTaskType)
+  return keys.map((key) => ({
+    key,
+    shortLabel: key === 'taskAchievement' ? 'TA' : key === 'taskResponse' ? 'TR' : key === 'coherenceCohesion' ? 'CC' : key === 'lexicalResource' ? 'LR' : 'GRA',
+    label: key === 'taskAchievement' ? 'Task Achievement'
+      : key === 'taskResponse' ? 'Task Response'
+      : key === 'coherenceCohesion' ? 'Coherence and Cohesion'
+      : key === 'lexicalResource' ? 'Lexical Resource'
+      : 'Grammatical Range and Accuracy',
+    score: evaluation?.criteria?.[key]?.score ? formatBand(evaluation.criteria[key]!.score) : '—',
+    feedback: evaluation?.criteria?.[key]?.feedback
+  }))
+}
+
 export function ScoreSummary({
   record,
   evaluation,
@@ -57,6 +116,33 @@ export function ScoreSummary({
 }) {
   const overall = formatBand(evaluation.overallBand || evaluation.bandEstimate)
   const [activeCriterion, setActiveCriterion] = useState<CriterionSummary | null>(null)
+  const [mockTask, setMockTask] = useState<'task1' | 'task2'>(() => {
+    if (record.taskType !== 'mock') return 'task1'
+    const t1 = record.components?.task1?.evaluation
+    const t2 = record.components?.task2?.evaluation
+    const t1Ready = Boolean(t1?.overallBand || t1?.bandEstimate)
+    return t1Ready ? 'task1' : 'task2'
+  })
+
+  const isMock = record.taskType === 'mock'
+  const task1Component = record.components?.task1
+  const task2Component = record.components?.task2
+  const activeComponent = isMock ? (mockTask === 'task1' ? task1Component : task2Component) : undefined
+  const activeEvaluation = activeComponent?.evaluation
+
+  const mockCriteria = useMemo(() => {
+    if (!isMock) return criteria
+    return buildCriteriaForTask(activeEvaluation, mockTask)
+  }, [isMock, activeEvaluation, mockTask, criteria])
+
+  const displayCriteria = isMock ? mockCriteria : criteria
+  const displayOverall = isMock
+    ? (activeEvaluation ? formatBand(activeEvaluation.overallBand || activeEvaluation.bandEstimate) : '—')
+    : overall
+  const displaySummary = isMock
+    ? (activeEvaluation?.summary || activeEvaluation?.overallFeedback || '本次未返回该项具体说明。')
+    : (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
+  const taskLabel = isMock ? (mockTask === 'task1' ? 'Task 1' : 'Task 2') : null
 
   const handleCardClick = useCallback((criterion: CriterionSummary) => {
     setActiveCriterion(criterion)
@@ -72,23 +158,32 @@ export function ScoreSummary({
   return (
     <>
       <GlassPanel className="score-summary-panel">
+        {isMock && (
+          <MockTaskTabs
+            activeTask={mockTask}
+            task1Component={task1Component}
+            task2Component={task2Component}
+            onChange={setMockTask}
+          />
+        )}
+
         <div className="score-summary-heading">
           <div className="score-summary-hero">
-            <span className="ui-label">Overall Band Score</span>
-            <strong>{overall}</strong>
+            <span className="ui-label">{taskLabel ? `${taskLabel} Band Score` : 'Overall Band Score'}</span>
+            <strong>{displayOverall}</strong>
             <p className="ui-body-md">
-              {record.taskType === 'mock' ? 'Task 2 加权综合评分' : '雅思写作模拟评分'}
+              {isMock ? (activeEvaluation ? `${taskLabel} 评分` : `${taskLabel} 批改未完成`) : '雅思写作模拟评分'}
             </p>
           </div>
 
           <div className="score-summary-overview">
             <span className="ui-label">总体评价</span>
-            <p>{evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。'}</p>
+            <p>{displaySummary}</p>
           </div>
         </div>
 
         <div className="criteria-grid" aria-label="四项评分">
-          {criteria.map((criterion) => (
+          {displayCriteria.map((criterion) => (
             <button
               key={criterion.key}
               className="criterion-card"

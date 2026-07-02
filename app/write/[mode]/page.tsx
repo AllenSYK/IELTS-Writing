@@ -1070,6 +1070,34 @@ export default function WritePage() {
         task2Error = err instanceof Error ? err.message : 'Task 2 批改失败'
       }
 
+      if (task1Error && !task1Evaluation) {
+        try {
+          task1Evaluation = await evaluateEssay({
+            essay: mockEssays.task1,
+            taskType: 'task1',
+            prompt: buildPrompt(mockQuestions.task1),
+            questionType: mockQuestions.task1.questionType
+          }, `${dedupeKey1}-retry`, abortController.signal)
+          task1Error = null
+        } catch {
+          // retry failed, keep original error
+        }
+      }
+
+      if (task2Error && !task2Evaluation) {
+        try {
+          task2Evaluation = await evaluateEssay({
+            essay: mockEssays.task2,
+            taskType: 'task2',
+            prompt: buildPrompt(mockQuestions.task2),
+            questionType: mockQuestions.task2.questionType
+          }, `${dedupeKey2}-retry`, abortController.signal)
+          task2Error = null
+        } catch {
+          // retry failed, keep original error
+        }
+      }
+
       if (!task1Evaluation && !task2Evaluation) {
         throw new WritingEvaluationError('service', 'Task 1 和 Task 2 批改均失败，请稍后重试。')
       }

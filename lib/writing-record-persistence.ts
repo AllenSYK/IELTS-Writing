@@ -42,8 +42,24 @@ export function prepareWritingRecordForServer(userId: string, record: WritingRec
       return match?.[1]
     })
     .filter((value): value is string => Boolean(value))
-  const hasScoring = Boolean(normalized.evaluation.overallBand || normalized.evaluation.bandEstimate)
-  const processingStatus = !hasScoring ? 'failed' : failedBlockIds.length > 0 ? 'partial' : 'complete'
+
+  let processingStatus: string
+  if (normalized.taskType === 'mock' && normalized.components) {
+    const t1 = normalized.components.task1?.evaluation
+    const t2 = normalized.components.task2?.evaluation
+    const t1Done = Boolean(t1?.overallBand || t1?.bandEstimate)
+    const t2Done = Boolean(t2?.overallBand || t2?.bandEstimate)
+    if (t1Done && t2Done) {
+      processingStatus = failedBlockIds.length > 0 ? 'partial' : 'complete'
+    } else if (t1Done || t2Done) {
+      processingStatus = 'partial'
+    } else {
+      processingStatus = 'failed'
+    }
+  } else {
+    const hasScoring = Boolean(normalized.evaluation.overallBand || normalized.evaluation.bandEstimate)
+    processingStatus = !hasScoring ? 'failed' : failedBlockIds.length > 0 ? 'partial' : 'complete'
+  }
 
   return {
     record: normalized,

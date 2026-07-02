@@ -622,7 +622,7 @@ function normalizeNewWeaknessToLegacy(item: { criterion: string; point: string; 
   return item.correction ? `${item.point}（修正：${item.correction}）` : item.point
 }
 
-function normalizeProviderEvaluation(value: unknown) {
+function normalizeProviderEvaluation(value: unknown, taskType?: Exclude<WritingTaskType, 'mock'>) {
   if (!isRecord(value)) return value
 
   const newParsed = NewScoringResponseSchema.safeParse(value)
@@ -632,10 +632,16 @@ function normalizeProviderEvaluation(value: unknown) {
     const firstCriterion = scores.TA
       ? { taskAchievement: normalizeNewCriterionToLegacy(scores.TA) }
       : scores.TR
-        ? { taskResponse: normalizeNewCriterionToLegacy(scores.TR) }
+        ? { taskAchievement: normalizeNewCriterionToLegacy(scores.TR) }
+        : {}
+    const secondCriterion = scores.TR
+      ? { taskResponse: normalizeNewCriterionToLegacy(scores.TR) }
+      : scores.TA
+        ? { taskResponse: normalizeNewCriterionToLegacy(scores.TA) }
         : {}
     return {
       ...firstCriterion,
+      ...secondCriterion,
       coherenceCohesion: normalizeNewCriterionToLegacy(scores.CC),
       lexicalResource: normalizeNewCriterionToLegacy(scores.LR),
       grammaticalRangeAccuracy: normalizeNewCriterionToLegacy(scores.GRA),
@@ -653,12 +659,13 @@ function normalizeProviderEvaluation(value: unknown) {
 
   const criteria = isRecord(value.criteria) ? value.criteria : {}
 
-  // These aliases were accepted by the initial public web release and may exist in saved responses.
   const rawAnnotations = Array.isArray(value.annotations) ? value.annotations : []
+  const ta = value.taskAchievement ?? criteria.taskAchievement
+  const tr = value.taskResponse ?? criteria.taskResponse
   return {
     ...value,
-    taskAchievement: value.taskAchievement ?? criteria.taskAchievement,
-    taskResponse: value.taskResponse ?? criteria.taskResponse,
+    taskAchievement: ta ?? tr,
+    taskResponse: tr ?? ta,
     coherenceCohesion: value.coherenceCohesion ?? criteria.coherenceCohesion,
     lexicalResource: value.lexicalResource ?? criteria.lexicalResource,
     grammaticalRangeAccuracy: value.grammaticalRangeAccuracy ?? criteria.grammaticalRangeAccuracy,
@@ -684,7 +691,7 @@ function schemaDetails(error: z.ZodError) {
 }
 
 function validateScoringResult(value: unknown, taskType: Exclude<WritingTaskType, 'mock'>) {
-  const parsed = AiScoringSchema.safeParse(normalizeProviderEvaluation(value))
+  const parsed = AiScoringSchema.safeParse(normalizeProviderEvaluation(value, taskType))
   if (!parsed.success) {
     console.error('[ai-scoring-schema]', schemaDetails(parsed.error))
     throw new AiResponseError('AI 返回的正式评分格式不正确。', 'ai_scoring_schema_error')
