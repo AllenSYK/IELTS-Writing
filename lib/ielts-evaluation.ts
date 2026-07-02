@@ -622,6 +622,15 @@ function normalizeNewWeaknessToLegacy(item: { criterion: string; point: string; 
   return item.correction ? `${item.point}（修正：${item.correction}）` : item.point
 }
 
+const TASK1_RUBRIC_SIGNALS = ['overview', 'key features', 'comparisons', 'data', 'process', 'map', 'factual', 'trends', 'stages', 'diagram', 'chart', 'graph', 'table', 'pie', 'bar', 'line']
+const TASK2_RUBRIC_SIGNALS = ['position', 'addressing', 'idea development', 'argument', 'relevance', 'opinion', 'discuss', 'advantages', 'disadvantages', 'solution', 'agree', 'disagree', 'both views']
+
+function matchesRubricContent(feedback: string | undefined, signals: string[]): boolean {
+  if (!feedback) return false
+  const lower = feedback.toLowerCase()
+  return signals.some((s) => lower.includes(s))
+}
+
 function normalizeProviderEvaluation(value: unknown, taskType?: Exclude<WritingTaskType, 'mock'>) {
   if (!isRecord(value)) return value
 
@@ -629,19 +638,22 @@ function normalizeProviderEvaluation(value: unknown, taskType?: Exclude<WritingT
   if (newParsed.success) {
     const data = newParsed.data
     const scores = data.scores
-    const firstCriterion = scores.TA
-      ? { taskAchievement: normalizeNewCriterionToLegacy(scores.TA) }
-      : scores.TR
-        ? { taskAchievement: normalizeNewCriterionToLegacy(scores.TR) }
-        : {}
-    const secondCriterion = scores.TR
-      ? { taskResponse: normalizeNewCriterionToLegacy(scores.TR) }
-      : scores.TA
-        ? { taskResponse: normalizeNewCriterionToLegacy(scores.TA) }
-        : {}
+    const ta = scores.TA ? normalizeNewCriterionToLegacy(scores.TA) : undefined
+    const tr = scores.TR ? normalizeNewCriterionToLegacy(scores.TR) : undefined
+    let mapped: Record<string, unknown>
+    if (taskType === 'task1') {
+      const candidate = ta ?? tr
+      const isValidFallback = ta ? true : (tr ? matchesRubricContent(tr.feedback, TASK1_RUBRIC_SIGNALS) : false)
+      mapped = { taskAchievement: isValidFallback ? candidate : undefined }
+    } else if (taskType === 'task2') {
+      const candidate = tr ?? ta
+      const isValidFallback = tr ? true : (ta ? matchesRubricContent(ta.feedback, TASK2_RUBRIC_SIGNALS) : false)
+      mapped = { taskResponse: isValidFallback ? candidate : undefined }
+    } else {
+      mapped = { taskAchievement: ta, taskResponse: tr }
+    }
     return {
-      ...firstCriterion,
-      ...secondCriterion,
+      ...mapped,
       coherenceCohesion: normalizeNewCriterionToLegacy(scores.CC),
       lexicalResource: normalizeNewCriterionToLegacy(scores.LR),
       grammaticalRangeAccuracy: normalizeNewCriterionToLegacy(scores.GRA),
@@ -658,14 +670,31 @@ function normalizeProviderEvaluation(value: unknown, taskType?: Exclude<WritingT
   }
 
   const criteria = isRecord(value.criteria) ? value.criteria : {}
-
   const rawAnnotations = Array.isArray(value.annotations) ? value.annotations : []
-  const ta = value.taskAchievement ?? criteria.taskAchievement
-  const tr = value.taskResponse ?? criteria.taskResponse
+  const ta = (value.taskAchievement ?? criteria.taskAchievement) as Record<string, unknown> | undefined
+  const tr = (value.taskResponse ?? criteria.taskResponse) as Record<string, unknown> | undefined
+  const taFeedback = typeof ta?.feedback === 'string' ? ta.feedback : undefined
+  const trFeedback = typeof tr?.feedback === 'string' ? tr.feedback : undefined
+  let mappedTA: unknown
+  let mappedTR: unknown
+  if (taskType === 'task1') {
+    const candidate = ta ?? tr
+    const isValidFallback = ta ? true : (tr ? matchesRubricContent(trFeedback, TASK1_RUBRIC_SIGNALS) : false)
+    mappedTA = isValidFallback ? candidate : undefined
+    mappedTR = undefined
+  } else if (taskType === 'task2') {
+    const candidate = tr ?? ta
+    const isValidFallback = tr ? true : (ta ? matchesRubricContent(taFeedback, TASK2_RUBRIC_SIGNALS) : false)
+    mappedTR = isValidFallback ? candidate : undefined
+    mappedTA = undefined
+  } else {
+    mappedTA = ta
+    mappedTR = tr
+  }
   return {
     ...value,
-    taskAchievement: ta ?? tr,
-    taskResponse: tr ?? ta,
+    taskAchievement: mappedTA,
+    taskResponse: mappedTR,
     coherenceCohesion: value.coherenceCohesion ?? criteria.coherenceCohesion,
     lexicalResource: value.lexicalResource ?? criteria.lexicalResource,
     grammaticalRangeAccuracy: value.grammaticalRangeAccuracy ?? criteria.grammaticalRangeAccuracy,

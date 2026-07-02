@@ -127,6 +127,11 @@ export function ScoreSummary({
   const isMock = record.taskType === 'mock'
   const task1Component = record.components?.task1
   const task2Component = record.components?.task2
+  const t1Ready = Boolean(task1Component?.evaluation?.overallBand || task1Component?.evaluation?.bandEstimate)
+    && Boolean(task1Component?.evaluation?.taskAchievement || task1Component?.evaluation?.criteria?.taskAchievement)
+  const t2Ready = Boolean(task2Component?.evaluation?.overallBand || task2Component?.evaluation?.bandEstimate)
+    && Boolean(task2Component?.evaluation?.taskResponse || task2Component?.evaluation?.criteria?.taskResponse)
+  const mockComplete = t1Ready && t2Ready
   const activeComponent = isMock ? (mockTask === 'task1' ? task1Component : task2Component) : undefined
   const activeEvaluation = activeComponent?.evaluation
 
@@ -137,12 +142,17 @@ export function ScoreSummary({
 
   const displayCriteria = isMock ? mockCriteria : criteria
   const displayOverall = isMock
-    ? (activeEvaluation ? formatBand(activeEvaluation.overallBand || activeEvaluation.bandEstimate) : '—')
+    ? (mockComplete ? overall : (activeEvaluation ? formatBand(activeEvaluation.overallBand || activeEvaluation.bandEstimate) : '—'))
     : overall
   const displaySummary = isMock
-    ? (activeEvaluation?.summary || activeEvaluation?.overallFeedback || '本次未返回该项具体说明。')
+    ? (mockComplete
+      ? (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
+      : (activeEvaluation?.summary || activeEvaluation?.overallFeedback || '本次未返回该项具体说明。'))
     : (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
   const taskLabel = isMock ? (mockTask === 'task1' ? 'Task 1' : 'Task 2') : null
+  const mockPartialMessage = isMock && !mockComplete
+    ? (t1Ready ? 'Task 2 批改尚未完成' : 'Task 1 批改尚未完成')
+    : null
 
   const handleCardClick = useCallback((criterion: CriterionSummary) => {
     setActiveCriterion(criterion)
@@ -169,11 +179,16 @@ export function ScoreSummary({
 
         <div className="score-summary-heading">
           <div className="score-summary-hero">
-            <span className="ui-label">{taskLabel ? `${taskLabel} Band Score` : 'Overall Band Score'}</span>
+            <span className="ui-label">{isMock && mockComplete ? 'Overall Band Score' : taskLabel ? `${taskLabel} Band Score` : 'Overall Band Score'}</span>
             <strong>{displayOverall}</strong>
             <p className="ui-body-md">
-              {isMock ? (activeEvaluation ? `${taskLabel} 评分` : `${taskLabel} 批改未完成`) : '雅思写作模拟评分'}
+              {isMock
+                ? (mockComplete ? 'Task 2 加权综合评分' : (activeEvaluation ? `${taskLabel} 评分` : `${taskLabel} 批改未完成`))
+                : '雅思写作模拟评分'}
             </p>
+            {mockPartialMessage && (
+              <p className="ui-label" style={{ color: 'var(--warning, #d06b00)', marginTop: 4 }}>{mockPartialMessage}</p>
+            )}
           </div>
 
           <div className="score-summary-overview">

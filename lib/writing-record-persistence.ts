@@ -47,8 +47,8 @@ export function prepareWritingRecordForServer(userId: string, record: WritingRec
   if (normalized.taskType === 'mock' && normalized.components) {
     const t1 = normalized.components.task1?.evaluation
     const t2 = normalized.components.task2?.evaluation
-    const t1Done = Boolean(t1?.overallBand || t1?.bandEstimate)
-    const t2Done = Boolean(t2?.overallBand || t2?.bandEstimate)
+    const t1Done = Boolean(t1?.overallBand || t1?.bandEstimate) && Boolean(t1?.taskAchievement || t1?.criteria?.taskAchievement)
+    const t2Done = Boolean(t2?.overallBand || t2?.bandEstimate) && Boolean(t2?.taskResponse || t2?.criteria?.taskResponse)
     if (t1Done && t2Done) {
       processingStatus = failedBlockIds.length > 0 ? 'partial' : 'complete'
     } else if (t1Done || t2Done) {

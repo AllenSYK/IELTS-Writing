@@ -1121,15 +1121,19 @@ export default function WritePage() {
       } else if (task1Evaluation) {
         evaluation = {
           ...task1Evaluation,
-          summary: `Task 1 批改完成（${task1Evaluation.overallBand || task1Evaluation.bandEstimate || '—'}）。Task 2 批改失败：${task2Error}。`,
-          overallFeedback: `Task 1 批改完成。Task 2 批改失败，请重试 Task 2。`,
+          overallBand: '',
+          bandEstimate: '',
+          summary: task1Evaluation.summary || task1Evaluation.overallFeedback || '',
+          overallFeedback: task1Evaluation.summary || task1Evaluation.overallFeedback || '',
           annotationWarnings: [`Task 2 批改失败：${task2Error}`]
         }
       } else {
         evaluation = {
           ...task2Evaluation!,
-          summary: `Task 2 批改完成（${task2Evaluation!.overallBand || task2Evaluation!.bandEstimate || '—'}）。Task 1 批改失败：${task1Error}。`,
-          overallFeedback: `Task 2 批改完成。Task 1 批改失败，请重试 Task 1。`,
+          overallBand: '',
+          bandEstimate: '',
+          summary: task2Evaluation!.summary || task2Evaluation!.overallFeedback || '',
+          overallFeedback: task2Evaluation!.summary || task2Evaluation!.overallFeedback || '',
           annotationWarnings: [`Task 1 批改失败：${task1Error}`]
         }
       }
