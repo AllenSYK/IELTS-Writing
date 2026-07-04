@@ -54,7 +54,7 @@ export default function ActivatePage() {
           return
         }
         setMessage(`激活成功，到期时间：${data.expiresAt ? new Date(data.expiresAt).toLocaleString('zh-CN') : '未知'}`)
-        window.setTimeout(() => router.replace('/dashboard'), 700)
+        window.setTimeout(() => router.replace('/practice'), 700)
       } catch (caught) {
         setError(caught instanceof DOMException && caught.name === 'AbortError' ? '激活请求超时，请重试。' : '激活失败，请稍后重试。')
       } finally {

@@ -69,7 +69,8 @@ test('settings and support pages use browser services only', async () => {
   for (const source of [settingsPage, supportPage]) {
     assert.doesNotMatch(source, /desktopApp|desktopLicense|desktopUpdater|nativeBridge/i)
   }
-  assert.match(settingsPage, /settings-account-card/)
+  // Settings page now redirects to dashboard
+  assert.match(settingsPage, /redirect/)
 })
 
 test('Stored legacy evaluations normalize into the new result shape', () => {
@@ -119,7 +120,7 @@ test('Admin and ordinary login redirects remain separate', () => {
   )
   assert.equal(
     resolveAuthRedirect({ pathname: '/login', isAuthenticated: true, role: 'user', licenseActive: true }),
-    '/dashboard'
+    '/practice'
   )
 })
 
@@ -131,9 +132,9 @@ test('User Home navigation targets the account center without a client redirect 
     readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
   ])
 
-  assert.match(nextConfig, /source:\s*['"]\/['"][\s\S]*?destination:\s*['"]\/dashboard['"][\s\S]*?permanent:\s*false/)
+  assert.match(nextConfig, /source:\s*['"]\/['"][\s\S]*?destination:\s*['"]\/practice['"][\s\S]*?permanent:\s*false/)
+  assert.match(sidebar, /id:\s*['"]ielts['"],\s*href:\s*['"]\/practice['"]/)
   assert.match(sidebar, /id:\s*['"]home['"],\s*href:\s*['"]\/dashboard['"]/)
-  assert.match(commandPalette, /id:\s*['"]home['"][\s\S]*?href:\s*['"]\/dashboard['"]/)
   assert.doesNotMatch(appShell, /写作概览/)
 })
 
@@ -149,7 +150,7 @@ test('shared app header keeps one aligned title and removes duplicate creation c
   assert.match(header, /<h1 className="app-header-title">/)
   assert.match(header, /className="app-header-inner"/)
   assert.match(header, /MaterialIcon name="share"/)
-  assert.match(header, /MaterialIcon name="settings"/)
+  assert.match(header, /MaterialIcon name="manage_accounts"/)
   assert.doesNotMatch(header, /ProfileAvatar|useUserProfile/)
   assert.match(shell, /<AppHeader title=\{meta\.title\} \/>/)
   assert.match(shell, /useLayoutEffect/)
@@ -282,18 +283,17 @@ test('registration card uses a compact responsive width without fixed height cli
 })
 
 test('settings profile exposes account identity and a confirmed cache-safe logout', async () => {
-  const [settings, logout, session, dashboard, css] = await Promise.all([
-    readFile(new URL('../app/settings/page.tsx', import.meta.url), 'utf8'),
+  const [logout, session, dashboard, accountSettings, css] = await Promise.all([
     readFile(new URL('../app/dashboard/LogoutButton.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/auth/UserSessionProvider.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/dashboard/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/dashboard/AccountSettings.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
-  assert.match(settings, /settings-account-row/)
-  assert.match(settings, /settings-display-name/)
-  assert.match(settings, /settings-logout-row[\s\S]*?<LogoutButton \/>/)
-  assert.equal((settings.match(/<LogoutButton \/>/g) || []).length, 1)
+  assert.match(accountSettings, /<LogoutButton \/>/)
+  assert.equal((accountSettings.match(/<LogoutButton \/>/g) || []).length, 1)
+  assert.match(accountSettings, /账号设置/)
   assert.match(session, /accountDisplayName/)
   assert.match(logout, /CenteredDialog/)
   assert.match(logout, /确定要退出当前账号吗？/)

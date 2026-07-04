@@ -19,8 +19,8 @@ export function AppHeader({ title }: { title: string }) {
           >
             <MaterialIcon name="share" />
           </a>
-          <Link className="ui-icon-button" href="/settings" aria-label="打开设置" title="设置">
-            <MaterialIcon name="settings" />
+          <Link className="ui-icon-button" href="/dashboard" aria-label="账号中心" title="账号中心">
+            <MaterialIcon name="manage_accounts" />
           </Link>
         </div>
       </div>

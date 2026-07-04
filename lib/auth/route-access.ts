@@ -105,7 +105,7 @@ export function resolveAuthRedirect({
     if (role === 'admin') {
       return '/admin/licenses'
     }
-    return licenseActive ? '/dashboard' : '/activate'
+    return licenseActive ? '/practice' : '/activate'
   }
 
   // 以下路由需要登录
@@ -122,7 +122,7 @@ export function resolveAuthRedirect({
 
   // 激活页：已有许可证则跳转到仪表板
   if (pathname === '/activate' && licenseActive) {
-    return '/dashboard'
+    return '/practice'
   }
 
   // 需要许可证的路由：没有许可证则跳转到激活页

@@ -16,6 +16,11 @@ const WritingActivityHeatmap = dynamic(
   }
 )
 
+const AccountSettings = dynamic(
+  () => import('@/components/dashboard/AccountSettings').then((m) => ({ default: m.AccountSettings })),
+  { loading: () => null }
+)
+
 function formatDate(value?: string | null) {
   if (!value) return '暂无'
   return new Date(value).toLocaleString('zh-CN')
@@ -69,6 +74,8 @@ export default async function DashboardPage() {
         </section>
 
         <WritingActivityHeatmap userId={user.id} />
+
+        <AccountSettings />
       </section>
     </main>
   )

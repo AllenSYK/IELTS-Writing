@@ -19,13 +19,12 @@ type SidebarItem = {
 }
 
 const mainItems: SidebarItem[] = [
-  { id: 'home', href: '/dashboard', label: '账号中心', icon: 'home', match: (pathname) => pathname === '/' || pathname === '/dashboard' },
-  { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', match: (pathname) => pathname.startsWith('/study-plan') },
-  { id: 'error-notebook', href: '/study-plan/errors', label: '错误本', icon: 'bug_report', match: (pathname) => pathname.startsWith('/study-plan/errors') },
   { id: 'ielts', href: '/practice', label: '写作练习', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') || pathname.startsWith('/write') },
+  { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', match: (pathname) => pathname.startsWith('/study-plan') && !pathname.startsWith('/study-plan/errors') },
+  { id: 'error-notebook', href: '/study-plan/errors', label: '错题本', icon: 'bug_report', match: (pathname) => pathname.startsWith('/study-plan/errors') },
   { id: 'history', href: '/history', label: '历史记录', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
   { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
-  { id: 'settings', href: '/settings', label: '设置', icon: 'settings', match: (pathname) => pathname.startsWith('/settings') }
+  { id: 'home', href: '/dashboard', label: '账号中心', icon: 'manage_accounts', match: (pathname) => pathname === '/dashboard' || pathname.startsWith('/settings') }
 ]
 
 const supportItems: SidebarItem[] = [
@@ -70,7 +69,7 @@ export function Sidebar() {
     <aside className="sidebar" aria-label="应用导航">
       <Link
         className="sidebar-logo"
-        href="/dashboard"
+        href="/practice"
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
         onPointerEnter={() => prefetchItem(mainItems[0])}
