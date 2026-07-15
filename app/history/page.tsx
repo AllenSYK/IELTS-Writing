@@ -63,7 +63,7 @@ const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { 
           <span className="task-badge">{taskLabel}</span>
           {record.processingStatus && record.processingStatus !== 'complete' ? (
             <span className={`task-badge ${record.processingStatus === 'partial' ? '' : 'is-custom'}`}>
-              {record.processingStatus === 'failed' ? '批改失败' : record.processingStatus === 'partial' ? '部分批注待补充' : '处理中'}
+              {record.processingStatus === 'failed' ? '批改失败' : record.processingStatus === 'partial' ? '批注生成中' : '处理中'}
             </span>
           ) : null}
           {record.studyPlanTaskId ? (

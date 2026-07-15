@@ -2641,6 +2641,28 @@ img {
   padding-left: 18px;
 }
 
+.annotation-generating-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(0, 88, 188, 0.18);
+  border-radius: 14px;
+  background: rgba(0, 88, 188, 0.06);
+  color: var(--primary);
+  padding: 12px 16px;
+  font-size: 13px;
+  animation: pulse-gentle 2s ease-in-out infinite;
+}
+
+.annotation-generating-status strong {
+  color: var(--primary);
+}
+
+@keyframes pulse-gentle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 .annotated-essay {
   color: var(--on-surface);
   white-space: pre-wrap;

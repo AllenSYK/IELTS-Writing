@@ -149,6 +149,7 @@ export default function ResultPage() {
   const [mistakeSaved, setMistakeSaved] = useState(false)
   const [rewriting, setRewriting] = useState(false)
   const [mockAnnotationTask, setMockAnnotationTask] = useState<'task1' | 'task2'>('task2')
+  const [isPollingAnnotations, setIsPollingAnnotations] = useState(false)
 
   useEffect(() => {
     if (!userId) return
@@ -173,6 +174,69 @@ export default function ResultPage() {
     })
     return () => { cancelled = true }
   }, [userId])
+
+  useEffect(() => {
+    if (!userId || !record) return
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+    const uid = userId
+
+    function checkAnnotationCompleteness() {
+      if (!record) return false
+      const evalData = record.evaluation
+      if (!evalData) return false
+      const annotations = evalData.annotations ?? []
+      const hasWarnings = evalData.annotationWarnings && evalData.annotationWarnings.length > 0
+      return annotations.length > 0 && !hasWarnings
+    }
+
+    async function pollForAnnotations() {
+      if (checkAnnotationCompleteness() || cancelled) {
+        setIsPollingAnnotations(false)
+        return
+      }
+
+      setIsPollingAnnotations(true)
+      const maxAttempts = 10
+      let attempts = 0
+      const currentRecordId = record?.id
+      if (!currentRecordId) {
+        setIsPollingAnnotations(false)
+        return
+      }
+
+      while (attempts < maxAttempts && !cancelled) {
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+        if (cancelled) break
+
+        try {
+          const freshRecord = await getWritingRecordFromServer(uid, currentRecordId as string)
+          if (cancelled) break
+          if (freshRecord) {
+            setRecord(freshRecord)
+            const evalData = freshRecord.evaluation
+            const annotations = evalData.annotations ?? []
+            const hasWarnings = evalData.annotationWarnings && evalData.annotationWarnings.length > 0
+            if (annotations.length > 0 && !hasWarnings) {
+              setIsPollingAnnotations(false)
+              return
+            }
+          }
+        } catch {
+          // Continue polling
+        }
+        attempts++
+      }
+      setIsPollingAnnotations(false)
+    }
+
+    pollTimer = setTimeout(pollForAnnotations, 2000)
+
+    return () => {
+      cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [userId, record?.id])
 
   useEffect(() => {
     if (record && userId) window.localStorage.setItem(userScopedStorageKey(`ielts-writing-result-tab-${record.id}`, userId), tab)
@@ -532,11 +596,12 @@ export default function ResultPage() {
                       {acceptedChanges.length > 0 && <span>已接受 {acceptedChanges.length} 处</span>}
                       {ignoredIds.size > 0 && <span>已忽略 {ignoredIds.size} 处</span>}
                     </div>
-                    {evaluation.annotationWarnings && evaluation.annotationWarnings.length > 0 ? (
-                      <div className="annotation-warning-list" role="status">
-                        <strong>部分批注暂未生成，整体评分不受影响</strong>
+                    {isPollingAnnotations && (
+                      <div className="annotation-generating-status" role="status">
+                        <MaterialIcon name="hourglass_top" size={18} />
+                        <strong>批注正在生成中，请稍候…</strong>
                       </div>
-                    ) : null}
+                    )}
                     {allAnnotations.length > 0 && visibleAnnotations.length === 0 ? (
                       <div className="annotation-inline-empty">
                         <MaterialIcon name="filter_alt_off" size={18} />

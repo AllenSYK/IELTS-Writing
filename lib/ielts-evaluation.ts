@@ -16,6 +16,8 @@ import {
   isResolvedAnnotation,
   locateAnnotationInBlock,
   splitEssayIntoBlocks,
+  validateAnnotationIntegrity,
+  type EssayTextBlock,
 } from '@/lib/essay-annotations'
 import {
   normalizeAnnotationBlockResponse,
@@ -868,7 +870,6 @@ function sentenceErrorFromAnnotation(annotation: EssayAnnotation): SentenceError
 function createEvaluationResult({
   scoring,
   annotations,
-  annotationWarnings,
   config,
   taskType,
   essay,
@@ -876,7 +877,6 @@ function createEvaluationResult({
 }: {
   scoring: AiScoringResult
   annotations: EssayAnnotation[]
-  annotationWarnings: string[]
   config: Pick<AiConfig, 'provider' | 'model'>
   taskType: Exclude<WritingTaskType, 'mock'>
   essay: string
@@ -902,6 +902,17 @@ function createEvaluationResult({
 
   const overallBand = formatBandNumber(overall)
   const sentenceErrors = annotations.map(sentenceErrorFromAnnotation)
+
+  const integrityCheck = validateAnnotationIntegrity(annotations, essay, { allowEmpty: essay.length < 100 })
+  if (!integrityCheck.valid) {
+    console.warn('[annotation-integrity-check]', {
+      requestId,
+      taskType,
+      issues: integrityCheck.issues,
+      annotationCount: annotations.length
+    })
+  }
+
   return {
     overallBand,
     bandEstimate: overallBand,
@@ -925,7 +936,7 @@ function createEvaluationResult({
     revisedEssay: '',
     modelEssay: '',
     nextSteps: [],
-    annotationWarnings,
+    annotationWarnings: [],
     feedback: [scoring.summary, ...scoring.weaknesses].filter(Boolean),
     provider: config.provider,
     model: config.model,
@@ -946,7 +957,6 @@ function quickEvaluation(
   const result = createEvaluationResult({
     scoring,
     annotations,
-    annotationWarnings: [],
     config,
     taskType,
     essay,
@@ -973,39 +983,47 @@ async function requestScoring(config: AiConfig, input: EssayEvaluationInput, req
 
 async function requestAnnotations(config: AiConfig, input: EssayEvaluationInput, requestId: string) {
   const blocks = splitEssayIntoBlocks(input.essay).filter((block) => block.text.trim())
-  const settled = await Promise.allSettled(
-    blocks.map(async (block) => {
-      const response = await requestValidatedJson({
-        config,
-        messages: [
-          { role: 'system', content: AnnotationSystemPrompt },
-          { role: 'user', content: buildAnnotationPrompt(input, block) }
-        ],
-        maxTokens: MAX_ANNOTATION_TOKENS,
-        requestId: `${requestId}-block-${block.index}`,
-        stage: `annotation-block-${block.index + 1}`,
-        validate: (value) => {
-          const normalized = normalizeAnnotationBlockResponse(value)
-          const validated = validateBlockAnnotationResponse(normalized, block)
-          if (!validated.success) {
-            throw new AiResponseError(
-              'AI 返回的文本块批注格式不正确。',
-              'ai_annotation_schema_error',
-              validated.details
-            )
-          }
-          return validated.data
+  const MAX_RETRY_ATTEMPTS = 3
+
+  async function requestBlockAnnotations(block: EssayTextBlock, attempt: number): Promise<EssayAnnotation[]> {
+    const response = await requestValidatedJson({
+      config,
+      messages: [
+        {
+          role: 'system',
+          content: attempt > 1
+            ? AnnotationSystemPrompt + '\n\n严格只返回 JSON，不要任何解释文字。确保返回完整有效的 JSON 对象。'
+            : AnnotationSystemPrompt
+        },
+        { role: 'user', content: buildAnnotationPrompt(input, block) }
+      ],
+      maxTokens: MAX_ANNOTATION_TOKENS,
+      requestId: `${requestId}-block-${block.index}${attempt > 1 ? `-retry-${attempt}` : ''}`,
+      stage: `annotation-block-${block.index + 1}${attempt > 1 ? `-retry-${attempt}` : ''}`,
+      validate: (value) => {
+        const normalized = normalizeAnnotationBlockResponse(value)
+        const validated = validateBlockAnnotationResponse(normalized, block)
+        if (!validated.success) {
+          throw new AiResponseError(
+            'AI 返回的文本块批注格式不正确。',
+            'ai_annotation_schema_error',
+            validated.details
+          )
         }
-      })
-      return response.annotations.map((annotation) =>
-        locateAnnotationInBlock(annotation as BlockAnnotationDraft, block, input.taskType)
-      )
+        return validated.data
+      }
     })
+    return response.annotations.map((annotation) =>
+      locateAnnotationInBlock(annotation as BlockAnnotationDraft, block, input.taskType)
+    )
+  }
+
+  const settled = await Promise.allSettled(
+    blocks.map((block) => requestBlockAnnotations(block, 1))
   )
 
   const annotations: EssayAnnotation[] = []
-  const warnings: string[] = []
-  const failedBlocks: Array<{ block: typeof blocks[number]; error: unknown }> = []
+  const failedBlocks: Array<{ block: EssayTextBlock; error: unknown }> = []
 
   settled.forEach((result, index) => {
     if (result.status === 'fulfilled') {
@@ -1016,55 +1034,36 @@ async function requestAnnotations(config: AiConfig, input: EssayEvaluationInput,
   })
 
   if (failedBlocks.length > 0) {
-    const retryResults = await Promise.allSettled(
-      failedBlocks.map(async ({ block }) => {
-        const response = await requestValidatedJson({
-          config,
-          messages: [
-            { role: 'system', content: AnnotationSystemPrompt + '\n\n严格只返回 JSON，不要任何解释文字。' },
-            { role: 'user', content: buildAnnotationPrompt(input, block) }
-          ],
-          maxTokens: MAX_ANNOTATION_TOKENS,
-          requestId: `${requestId}-block-${block.index}-retry`,
-          stage: `annotation-block-${block.index + 1}-retry`,
-          validate: (value) => {
-            const normalized = normalizeAnnotationBlockResponse(value)
-            const validated = validateBlockAnnotationResponse(normalized, block)
-            if (!validated.success) {
-              throw new AiResponseError(
-                'AI 返回的文本块批注格式不正确。',
-                'ai_annotation_schema_error',
-                validated.details
-              )
-            }
-            return validated.data
-          }
-        })
-        return response.annotations.map((annotation) =>
-          locateAnnotationInBlock(annotation as BlockAnnotationDraft, block, input.taskType)
-        )
-      })
-    )
+    let remainingFailedBlocks = [...failedBlocks]
 
-    retryResults.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        annotations.push(...result.value)
-      } else {
-        const block = failedBlocks[index].block
-        warnings.push(`第 ${block.index + 1} 个文本块检查失败（blockId: ${block.id}）`)
-        console.warn('[ai-annotation-block-retry-failed]', {
-          requestId,
-          blockId: block.id,
-          blockIndex: block.index,
-          code: result.reason instanceof AiResponseError ? result.reason.code : 'ai_annotation_failed'
-        })
-      }
-    })
+    for (let attempt = 2; attempt <= MAX_RETRY_ATTEMPTS && remainingFailedBlocks.length > 0; attempt++) {
+      const retryResults = await Promise.allSettled(
+        remainingFailedBlocks.map(async ({ block }) => requestBlockAnnotations(block, attempt))
+      )
+
+      const nextFailedBlocks: Array<{ block: EssayTextBlock; error: unknown }> = []
+      retryResults.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          annotations.push(...result.value)
+        } else {
+          nextFailedBlocks.push({ block: remainingFailedBlocks[index].block, error: result.reason })
+        }
+      })
+      remainingFailedBlocks = nextFailedBlocks
+    }
+
+    if (remainingFailedBlocks.length > 0) {
+      console.warn('[ai-annotation-blocks-failed-after-retries]', {
+        requestId,
+        failedCount: remainingFailedBlocks.length,
+        failedBlockIndices: remainingFailedBlocks.map(({ block }) => block.index)
+      })
+    }
   }
 
   return {
     annotations: dedupeAndSortAnnotations(annotations),
-    warnings
+    failedBlockCount: failedBlocks.length
   }
 }
 
@@ -1109,7 +1108,7 @@ export async function evaluateEssayWithAi(
       return result
     }
 
-    const [scoring, { annotations, warnings }] = await Promise.all([
+    const [scoring, { annotations }] = await Promise.all([
       requestScoring(config, input, requestId),
       requestAnnotations(config, input, requestId)
     ])
@@ -1117,7 +1116,6 @@ export async function evaluateEssayWithAi(
     const result = createEvaluationResult({
       scoring,
       annotations,
-      annotationWarnings: warnings,
       config,
       taskType: input.taskType,
       essay: input.essay,

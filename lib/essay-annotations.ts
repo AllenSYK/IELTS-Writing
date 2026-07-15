@@ -254,3 +254,60 @@ export function applyAcceptedAnnotationChanges(
       originalEssay
     )
 }
+
+export function validateAnnotationIntegrity(
+  annotations: EssayAnnotation[],
+  essay: string,
+  options: { minAnnotations?: number; allowEmpty?: boolean } = {}
+): { valid: boolean; issues: string[] } {
+  const issues: string[] = []
+  const { minAnnotations = 1, allowEmpty = false } = options
+
+  if (!Array.isArray(annotations)) {
+    issues.push('annotations is not an array')
+    return { valid: false, issues }
+  }
+
+  if (annotations.length === 0 && !allowEmpty) {
+    issues.push('annotations array is empty')
+    return { valid: false, issues }
+  }
+
+  if (annotations.length < minAnnotations && !allowEmpty) {
+    issues.push(`annotations count (${annotations.length}) is below minimum (${minAnnotations})`)
+  }
+
+  for (const annotation of annotations) {
+    if (!annotation.id || typeof annotation.id !== 'string') {
+      issues.push('annotation missing valid id')
+    }
+
+    if (typeof annotation.start !== 'number' || typeof annotation.end !== 'number') {
+      issues.push(`annotation ${annotation.id} missing start/end`)
+    } else if (annotation.start < 0 || annotation.end <= annotation.start) {
+      issues.push(`annotation ${annotation.id} has invalid range: ${annotation.start}-${annotation.end}`)
+    } else if (annotation.end > essay.length) {
+      issues.push(`annotation ${annotation.id} end (${annotation.end}) exceeds essay length (${essay.length})`)
+    }
+
+    if (!annotation.category || typeof annotation.category !== 'string') {
+      issues.push(`annotation ${annotation.id} missing category`)
+    }
+
+    if (!annotation.explanationZh || typeof annotation.explanationZh !== 'string') {
+      issues.push(`annotation ${annotation.id} missing explanationZh`)
+    }
+
+    if (!annotation.originalText || typeof annotation.originalText !== 'string') {
+      issues.push(`annotation ${annotation.id} missing originalText`)
+    }
+
+    if (annotation.blockId && typeof annotation.blockId === 'string') {
+      if (annotation.blockId.includes('AI') || annotation.blockId.includes('错误') || annotation.blockId.includes('error')) {
+        issues.push(`annotation ${annotation.id} has polluted blockId: ${annotation.blockId}`)
+      }
+    }
+  }
+
+  return { valid: issues.length === 0, issues }
+}
