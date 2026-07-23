@@ -398,8 +398,9 @@ test('grading pipeline parallelizes annotation blocks and leaves essays on deman
   ])
 
   assert.match(pipeline, /Promise\.allSettled/)
-  assert.match(pipeline, /requestId:\s*`\$\{requestId\}-block-\$\{block\.index\}`/)
-  assert.match(pipeline, /blockId:\s*block\.id/)
+  assert.match(pipeline, /requestId:\s*`\$\{requestId\}-block-\$\{block\.index\}\$\{/)
+  assert.match(pipeline, /attempt > 1 \? `-retry-\$\{attempt\}` : ''/)
+  assert.match(pipeline, /validateBlockAnnotationResponse\(normalized,\s*block\)/)
   assert.doesNotMatch(pipeline, /requestRewrite\(config/)
   assert.match(provider, /enable_thinking:\s*false/)
   assert.match(provider, /modelEnv:\s*'QWEN_GRADING_MODEL'/)
