@@ -1,13 +1,10 @@
 'use client'
 
+import { useState, useEffect } from 'react'
+
 export function PastPaperSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div
-      className="past-paper-skeleton-grid"
-      role="status"
-      aria-live="polite"
-      aria-label="正在加载题库"
-    >
+    <div className="past-paper-skeleton-grid">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="past-paper-skeleton-card">
           <div className="past-paper-skeleton-header">
@@ -30,7 +27,20 @@ export function PastPaperSkeleton({ count = 6 }: { count?: number }) {
           </div>
         </div>
       ))}
-      <span className="sr-only">正在加载题库数据</span>
+    </div>
+  )
+}
+
+export function QuestionBankLoadingStatus({ message = '正在加载题库…' }: { message?: string }) {
+  return (
+    <div className="question-bank-loading-status" role="status" aria-live="polite">
+      <div className="question-bank-loading-row">
+        <span className="question-bank-spinner" />
+        <span>{message}</span>
+      </div>
+      <div className="question-bank-progress">
+        <div className="question-bank-progress-bar" />
+      </div>
     </div>
   )
 }
@@ -56,6 +66,17 @@ export function PastPaperFilterSkeleton() {
 }
 
 export function PastPaperPageSkeleton() {
+  const [message, setMessage] = useState('正在连接题库…')
+
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setMessage('正在读取题目…'), 1000),
+      setTimeout(() => setMessage('正在整理题库内容…'), 3000),
+      setTimeout(() => setMessage('加载时间较长，正在重试…'), 8000)
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [])
+
   return (
     <main className="ui-page" data-main-content tabIndex={-1} aria-busy="true" aria-label="正在加载题库页面">
       <section className="analytics-main" style={{ paddingTop: 40 }}>
@@ -70,12 +91,9 @@ export function PastPaperPageSkeleton() {
           <PastPaperFilterSkeleton />
         </div>
 
-        <PastPaperSkeleton count={6} />
+        <QuestionBankLoadingStatus message={message} />
 
-        <div className="past-paper-skeleton-loading-hint">
-          <span className="past-paper-skeleton-spinner" />
-          <span>正在加载题库…</span>
-        </div>
+        <PastPaperSkeleton count={6} />
 
         <span className="sr-only" role="status" aria-live="polite">正在加载题库数据</span>
       </section>

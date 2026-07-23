@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
-import { PastPaperPageSkeleton, PastPaperSkeleton } from '@/components/loading/PastPaperSkeleton'
+import { PastPaperPageSkeleton, PastPaperSkeleton, QuestionBankLoadingStatus } from '@/components/loading/PastPaperSkeleton'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import type { PastPaperListItem, PastPaperFrequencyLevel, ExamSession, ExamMode, QuestionCompleteness } from '@/lib/past-paper-types'
 import {
@@ -375,17 +375,14 @@ export default function PastPapersPage() {
 
         {isLoading ? (
           <>
+            <QuestionBankLoadingStatus message={loadingHint || '正在加载题库…'} />
             <PastPaperSkeleton count={6} />
-            {loadingHint && (
-              <div className="past-paper-loading-hint">
-                <span className="past-paper-skeleton-spinner" />
-                <p>{loadingHint}</p>
-                {loadingHint.includes('重试') && (
-                  <button className="ui-secondary-button" type="button" onClick={() => void mutate()}>
-                    <MaterialIcon name="refresh" size={18} />
-                    手动重试
-                  </button>
-                )}
+            {loadingHint && loadingHint.includes('重试') && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+                <button className="ui-secondary-button" type="button" onClick={() => void mutate()}>
+                  <MaterialIcon name="refresh" size={18} />
+                  手动重试
+                </button>
               </div>
             )}
           </>
@@ -463,7 +460,8 @@ function getFrequencyDisplay(item: PastPaperListItem): { label: string; source: 
 
 function getSessionDisplay(item: PastPaperListItem): { label: string; isSynthetic: boolean } | null {
   if (item.examSessionLabel) {
-    const isSynthetic = item.examSessionSource === 'synthetic' || item.examSessionSource === 'unknown'
+    // If we have a label, check if it's a synthetic session
+    const isSynthetic = !item.examSession || item.examSession === 'unknown'
     return { label: item.examSessionLabel, isSynthetic }
   }
   if (item.examSession && item.examSession !== 'unknown') {

@@ -9930,6 +9930,28 @@ body.is-resizing-editor * {
 }
 
 /* Past Paper Skeleton Styles */
+@keyframes question-bank-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.question-bank-skeleton {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
+  border: 1px solid rgba(121, 154, 198, 0.14);
+}
+
 .past-paper-skeleton-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -9939,15 +9961,16 @@ body.is-resizing-editor * {
 .past-paper-skeleton-card {
   padding: 20px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.56);
-  box-shadow: var(--shadow-level-1);
+  background: rgba(230, 237, 248, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   display: grid;
   gap: 12px;
+  border: 1px solid rgba(121, 154, 198, 0.18);
 }
 
 .past-paper-skeleton-header {
   display: flex;
-  gap: 6;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -9955,9 +9978,16 @@ body.is-resizing-editor * {
   width: 64px;
   height: 22px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-badge-secondary {
@@ -9974,10 +10004,17 @@ body.is-resizing-editor * {
   width: 100px;
   height: 14px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.1s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-meta-item-short {
@@ -9988,20 +10025,34 @@ body.is-resizing-editor * {
   width: min(280px, 80%);
   height: 24px;
   border-radius: 12px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.2s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-text {
   width: 100%;
   height: 16px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.3s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-text-short {
@@ -10024,10 +10075,17 @@ body.is-resizing-editor * {
   width: 48px;
   height: 20px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.4s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-tag-short {
@@ -10038,10 +10096,17 @@ body.is-resizing-editor * {
   width: 80px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.5s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-filter-skeleton {
@@ -10062,19 +10127,33 @@ body.is-resizing-editor * {
   width: 36px;
   height: 16px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-sort-select {
   width: 100px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.1s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-filter-row {
@@ -10088,10 +10167,17 @@ body.is-resizing-editor * {
   width: 100px;
   height: 52px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.2s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-search-row {
@@ -10103,45 +10189,133 @@ body.is-resizing-editor * {
   flex: 1;
   height: 36px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.3s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-search-button {
   width: 64px;
   height: 36px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.4s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-panel {
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.56);
-  box-shadow: var(--shadow-level-1);
+  background: rgba(230, 237, 248, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(121, 154, 198, 0.18);
 }
 
 .past-paper-skeleton-back-button {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
+  border: 1px solid rgba(121, 154, 198, 0.14);
 }
 
 .past-paper-skeleton-page-title {
   width: 120px;
   height: 32px;
   border-radius: 12px;
-  background: linear-gradient(90deg, rgba(225, 231, 240, 0.65) 25%, rgba(245, 248, 252, 0.95) 50%, rgba(225, 231, 240, 0.65) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(207, 218, 234, 0.72) 20%,
+      rgba(242, 247, 253, 0.98) 50%,
+      rgba(207, 218, 234, 0.72) 80%
+    );
+  background-size: 220% 100%;
+  animation: question-bank-shimmer 1.25s linear infinite;
   animation-delay: 0.1s;
+  border: 1px solid rgba(121, 154, 198, 0.14);
+}
+
+/* Question Bank Loading Status */
+.question-bank-loading-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 16px;
+  margin-bottom: 16px;
+  background: rgba(230, 237, 248, 0.6);
+  border-radius: 16px;
+  border: 1px solid rgba(121, 154, 198, 0.18);
+}
+
+.question-bank-loading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #4a6fa5;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.question-bank-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(121, 154, 198, 0.3);
+  border-top-color: #4a6fa5;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.question-bank-progress {
+  width: min(360px, 72vw);
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(121, 154, 198, 0.15);
+}
+
+.question-bank-progress-bar {
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, #4a6fa5, #7ba3d4);
+  border-radius: 999px;
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
 }
 
 .past-paper-skeleton-loading-hint {
@@ -10150,15 +10324,15 @@ body.is-resizing-editor * {
   justify-content: center;
   gap: 10px;
   padding: 20px 0;
-  color: var(--on-surface-variant);
+  color: #4a6fa5;
   font-size: 14px;
 }
 
 .past-paper-skeleton-spinner {
   width: 20px;
   height: 20px;
-  border: 2px solid var(--outline-variant);
-  border-top-color: var(--primary);
+  border: 2px solid rgba(121, 154, 198, 0.3);
+  border-top-color: #4a6fa5;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -10181,8 +10355,9 @@ body.is-resizing-editor * {
 
 .past-paper-loading-hint p {
   margin: 0;
-  color: var(--on-surface-variant);
+  color: #4a6fa5;
   font-size: 14px;
+  font-weight: 500;
 }
 
 .past-paper-loading-hint .ui-secondary-button {
@@ -10203,14 +10378,21 @@ body.is-resizing-editor * {
   .past-paper-skeleton-search-input,
   .past-paper-skeleton-search-button,
   .past-paper-skeleton-back-button,
-  .past-paper-skeleton-page-title {
+  .past-paper-skeleton-page-title,
+  .question-bank-skeleton {
     animation: none;
-    background: rgba(225, 231, 240, 0.65);
+    background: rgba(207, 218, 234, 0.72);
   }
 
-  .past-paper-skeleton-spinner {
+  .past-paper-skeleton-spinner,
+  .question-bank-spinner {
     animation: none;
-    border-top-color: var(--outline-variant);
+    border-top-color: rgba(121, 154, 198, 0.3);
+  }
+
+  .question-bank-progress-bar {
+    animation: none;
+    transform: translateX(50%);
   }
 }
 
@@ -10226,6 +10408,14 @@ body.is-resizing-editor * {
 
   .past-paper-skeleton-filter-item {
     width: 100%;
+  }
+
+  .question-bank-loading-status {
+    padding: 16px 12px;
+  }
+
+  .question-bank-loading-row {
+    font-size: 13px;
   }
 }
 
