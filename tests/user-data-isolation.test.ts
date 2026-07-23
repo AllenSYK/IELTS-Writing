@@ -9,6 +9,7 @@ import {
 } from '../lib/writing-records'
 import {
   UserRouteCacheKeys,
+  userWritingRecordListCacheKey,
   userWritingRecordsCacheKey
 } from '../lib/user-route-cache'
 import {
@@ -123,9 +124,13 @@ test('user cache keys include the authenticated identity', () => {
   const first = userWritingRecordsCacheKey(UserRouteCacheKeys.history, 'user-a')
   const second = userWritingRecordsCacheKey(UserRouteCacheKeys.history, 'user-b')
   const analytics = userWritingRecordsCacheKey(UserRouteCacheKeys.analytics, 'user-a')
+  const firstList = userWritingRecordListCacheKey('user-a')
+  const secondList = userWritingRecordListCacheKey('user-b')
   assert.notDeepEqual(first, second)
+  assert.notDeepEqual(firstList, secondList)
   assert.deepEqual(first, ['user-writing-records', 'question_history', 'user-a'])
   assert.deepEqual(analytics, ['user-writing-records', 'question_analytics', 'user-a'])
+  assert.deepEqual(firstList, ['writing-records-lightweight-list', 'user-a'])
 })
 
 test('logout cleanup removes only the active user ephemeral state', () => {

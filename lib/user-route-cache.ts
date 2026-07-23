@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 import useSWR from 'swr'
 import {
   WritingRecordsUpdatedEvent,
@@ -30,9 +30,14 @@ const recordCacheKeys = [
 
 const cachedRecords = new Map<string, WritingRecord[]>()
 const pendingRecords = new Map<string, Promise<WritingRecord[]>>()
+const pendingRecordLists = new Map<string, Promise<WritingRecordListItem[]>>()
 
 export function userWritingRecordsCacheKey(key: UserRouteCacheKey, userId: string) {
   return ['user-writing-records', key, userId] as const
+}
+
+export function userWritingRecordListCacheKey(userId: string) {
+  return ['writing-records-lightweight-list', userId] as const
 }
 
 function loadRecordsOnce(userId: string) {
@@ -73,10 +78,12 @@ export function clearUserRouteMemoryCaches(userId?: string) {
   if (userId) {
     cachedRecords.delete(userId)
     pendingRecords.delete(userId)
+    pendingRecordLists.delete(userId)
     return
   }
   cachedRecords.clear()
   pendingRecords.clear()
+  pendingRecordLists.clear()
 }
 
 export function useUserWritingRecords(
@@ -111,22 +118,21 @@ export function subscribeToWritingRecordChanges(listener: (userId: string) => vo
   return () => window.removeEventListener(WritingRecordsUpdatedEvent, handler)
 }
 
-const lightweightListKey = ['writing-records-lightweight-list'] as const
+function loadRecordListOnce(userId: string) {
+  let pending = pendingRecordLists.get(userId)
+  if (!pending) {
+    pending = loadWritingRecordsLightweight().finally(() => {
+      pendingRecordLists.delete(userId)
+    })
+    pendingRecordLists.set(userId, pending)
+  }
+  return pending
+}
 
-export function useWritingRecordList() {
-  const isFetchingRef = useRef(false)
-
+export function useWritingRecordList(userId: string | null) {
   const result = useSWR<WritingRecordListItem[]>(
-    lightweightListKey,
-    async () => {
-      if (isFetchingRef.current) return [] as WritingRecordListItem[]
-      isFetchingRef.current = true
-      try {
-        return await loadWritingRecordsLightweight()
-      } finally {
-        isFetchingRef.current = false
-      }
-    },
+    userId ? userWritingRecordListCacheKey(userId) : null,
+    () => loadRecordListOnce(userId as string),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
@@ -136,19 +142,14 @@ export function useWritingRecordList() {
   )
 
   const refreshList = useCallback(async () => {
-    if (isFetchingRef.current) return
-    isFetchingRef.current = true
-    try {
-      const records = await loadWritingRecordsLightweight()
-      await result.mutate(records, { revalidate: false })
-    } finally {
-      isFetchingRef.current = false
-    }
-  }, [result.mutate])
+    if (!userId) return
+    const records = await loadRecordListOnce(userId)
+    await result.mutate(records, { revalidate: false })
+  }, [result.mutate, userId])
 
   return {
     records: result.data ?? [],
-    isLoading: !result.data && result.isLoading,
+    isLoading: !userId || (!result.data && result.isLoading),
     refreshList
   }
 }

@@ -50,18 +50,19 @@ export async function GET(request: Request) {
 
   dbQuery = dbQuery.range(offset, offset + query.limit - 1)
 
-  const { data, error, count } = await dbQuery
+  const [{ data, error, count }, { data: statsData }] = await Promise.all([
+    dbQuery,
+    service
+      .from('writing_error_patterns')
+      .select('status')
+      .eq('user_id', userId)
+  ])
 
   if (error) {
     return json({ success: false, message: error.message }, { status: 500 })
   }
 
   const patterns = (data ?? []).map(rowToPattern)
-
-  const { data: statsData } = await service
-    .from('writing_error_patterns')
-    .select('status')
-    .eq('user_id', userId)
 
   const stats = {
     total: statsData?.length ?? 0,

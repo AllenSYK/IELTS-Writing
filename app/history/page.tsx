@@ -105,7 +105,7 @@ const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { 
 export default function HistoryPage() {
   const { pushToast } = useToast()
   const { userId } = useUserSession()
-  const { records, isLoading, refreshList } = useWritingRecordList()
+  const { records, isLoading, refreshList } = useWritingRecordList(userId)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
