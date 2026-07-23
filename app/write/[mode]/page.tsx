@@ -75,6 +75,7 @@ import {
   type ManagedDraftData,
   type SingleDraftData
 } from '@/lib/writing-drafts'
+import { toUserFacingError, toUserFacingMessage } from '@/lib/error-utils'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
@@ -251,6 +252,7 @@ export default function WritePage() {
   const [layoutWidth, setLayoutWidth] = useState(1440)
   const [isResizing, setIsResizing] = useState(false)
   const [error, setError] = useState('')
+  const [errorType, setErrorType] = useState<'submit' | 'load' | null>(null)
   const [promptSelection, setPromptSelection] = useState<PromptSelection>(DefaultPromptSelection)
   const [promptGenerationNotice, setPromptGenerationNotice] = useState('')
   const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
@@ -606,7 +608,14 @@ export default function WritePage() {
               }
             } catch (caught) {
               if (cancelled) return
-              setError(caught instanceof Error ? caught.message : '真题读取失败')
+              // 404 is normal for past papers - no error to show
+              if (caught instanceof Error && (caught.message.includes('404') || caught.message.includes('Not found'))) {
+                console.error('[past-paper-load] 404:', pastPaperId)
+              } else {
+                // Non-core error: show toast instead of blocking banner
+                const userError = toUserFacingError(caught, 'past-paper-load')
+                pushToast({ kind: 'warning', title: userError.title, message: userError.message })
+              }
             }
           }
           if (!question && uploadedTaskId) {
@@ -618,7 +627,11 @@ export default function WritePage() {
               if (!response.ok || !data.success) throw new Error(data.message || '自定义题目读取失败')
               question = normalizeGeneratedQuestion(data.question)
             } catch (caught) {
-              setError(caught instanceof Error ? caught.message : '自定义题目读取失败')
+              // Log technical error but don't block writing
+              console.error('[custom-task-load]', caught)
+              // Non-core error: show toast instead of blocking banner
+              const userError = toUserFacingError(caught, 'custom-task-load')
+              pushToast({ kind: 'warning', title: userError.title, message: userError.message })
             }
           }
           if (!question) question = questionFromDraftTask(singleDraft.task, taskType)
@@ -989,6 +1002,7 @@ export default function WritePage() {
         pushToast({ kind: 'info', ...presentation })
       } else {
         setError(presentation.message)
+        setErrorType('submit')
         setSubmitStatus('error')
         pushToast({ kind: 'error', ...presentation })
       }
@@ -1241,6 +1255,7 @@ export default function WritePage() {
         pushToast({ kind: 'info', ...presentation })
       } else {
         setError(presentation.message)
+        setErrorType('submit')
         setSubmitStatus('error')
         pushToast({ kind: 'error', ...presentation })
       }
@@ -1459,6 +1474,9 @@ export default function WritePage() {
                       if (taskType !== activeMockTask) {
                         void saveAllDrafts(false, { activeTask: taskType })
                         setActiveMockTask(taskType)
+                        // Clear error when switching tasks
+                        setError('')
+                        setErrorType(null)
                       }
                     }}
                   >
@@ -1614,10 +1632,14 @@ export default function WritePage() {
                 </button>
               </div>
             ) : null}
-            {error ? (
+            {error && errorType === 'submit' ? (
               <div className="editor-error" role="alert">
                 <span>{error}</span>
-                <button className="toast-action" type="button" onClick={() => void submitCurrent()}>
+                <button className="toast-action" type="button" onClick={() => {
+                  setError('')
+                  setErrorType(null)
+                  void submitCurrent()
+                }}>
                   重新批改
                 </button>
               </div>

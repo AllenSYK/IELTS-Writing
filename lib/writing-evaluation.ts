@@ -74,8 +74,18 @@ export function evaluationErrorMessage(error: unknown) {
     'rate-limit': { title: '请求限制', message: '请求过于频繁，请等待一分钟后重试。' },
     service: { title: '服务繁忙', message: '批改服务繁忙，请稍后重试。' },
     'invalid-response': { title: '格式异常', message: '批改结果解析失败，请重新提交。' },
-    unknown: { title: '批改失败', message: error.message || '批改失败，请稍后重试。' }
+    unknown: { title: '批改失败', message: '批改失败，请稍后重试。' }
   }
+  
+  // Log technical error for debugging
+  if (error.kind === 'unknown') {
+    console.error('[evaluation-error]', {
+      kind: error.kind,
+      message: error.message,
+      name: error.name,
+    })
+  }
+  
   return messages[error.kind]
 }
 
