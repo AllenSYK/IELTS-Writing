@@ -19,8 +19,8 @@ type SidebarItem = {
 }
 
 const mainItems: SidebarItem[] = [
-  { id: 'ielts', href: '/practice', label: '写作练习', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') || pathname.startsWith('/write') },
   { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', match: (pathname) => pathname.startsWith('/study-plan') && !pathname.startsWith('/study-plan/errors') },
+  { id: 'ielts', href: '/practice', label: '写作练习', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') || pathname.startsWith('/write') },
   { id: 'error-notebook', href: '/study-plan/errors', label: '错题本', icon: 'bug_report', match: (pathname) => pathname.startsWith('/study-plan/errors') },
   { id: 'history', href: '/history', label: '历史记录', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
   { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
