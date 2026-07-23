@@ -1,5 +1,5 @@
-import { PageSkeleton } from '@/components/loading/PageSkeleton'
+import { PastPaperPageSkeleton } from '@/components/loading/PastPaperSkeleton'
 
 export default function PastPapersLoading() {
-  return <PageSkeleton />
+  return <PastPaperPageSkeleton />
 }

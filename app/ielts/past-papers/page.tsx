@@ -1,10 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
-import { PageSkeleton } from '@/components/loading/PageSkeleton'
+import { PastPaperPageSkeleton, PastPaperSkeleton } from '@/components/loading/PastPaperSkeleton'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import type { PastPaperListItem, PastPaperFrequencyLevel, ExamSession, ExamMode, QuestionCompleteness } from '@/lib/past-paper-types'
 import {
@@ -85,6 +85,8 @@ export default function PastPapersPage() {
   const [availableYears, setAvailableYears] = useState<number[]>([])
   const [sort, setSort] = useState<SortMode>('random')
   const [seed, setSeed] = useState<string>(() => generateSeed())
+  const [loadingHint, setLoadingHint] = useState<string>('')
+  const loadingStartTimeRef = useRef<number>(0)
 
   const pageSize = 12
 
@@ -105,6 +107,9 @@ export default function PastPapersPage() {
   // Stable SWR key includes seed for random sort
   const swrKey = userId ? `past-papers-${sort}-${seed}-${page}-${JSON.stringify(filters)}` : null
   const { data, error, isLoading, mutate } = useSWR(swrKey, async (): Promise<PapersResponse> => {
+    loadingStartTimeRef.current = Date.now()
+    setLoadingHint('')
+
     const params = new URLSearchParams()
     params.set('page', String(page))
     params.set('pageSize', String(pageSize))
@@ -123,12 +128,57 @@ export default function PastPapersPage() {
     if (filters.completeness !== 'all') params.set('completeness', filters.completeness)
     if (filters.examDateFrom) params.set('examDateFrom', filters.examDateFrom)
     if (filters.examDateTo) params.set('examDateTo', filters.examDateTo)
-    const res = await fetch(`/api/past-papers?${params}`)
-    if (!res.ok) {
-      throw new Error(`请求失败（${res.status}）`)
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+    try {
+      const res = await fetch(`/api/past-papers?${params}`, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (!res.ok) {
+        throw new Error(`请求失败（${res.status}）`)
+      }
+      return res.json()
+    } catch (err) {
+      clearTimeout(timeoutId)
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error('请求超时，请检查网络后重试')
+      }
+      throw err
     }
-    return res.json()
-  }, { revalidateOnFocus: false, shouldRetryOnError: false })
+  }, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+    dedupingInterval: 2000,
+    errorRetryCount: 1,
+    errorRetryInterval: 3000
+  })
+
+  // Loading hint timer
+  useEffect(() => {
+    if (!isLoading) {
+      return
+    }
+
+    const startTime = Date.now()
+    loadingStartTimeRef.current = startTime
+
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      if (elapsed > 8000) {
+        setLoadingHint('加载时间较长，正在重试…')
+      } else if (elapsed > 3000) {
+        setLoadingHint('题库数据较多，正在继续加载…')
+      } else {
+        setLoadingHint('正在加载题库…')
+      }
+    }, 1000)
+
+    return () => {
+      clearInterval(timer)
+      setLoadingHint('')
+    }
+  }, [isLoading])
 
   const items = data?.items ?? []
   const total = data?.total ?? 0
@@ -165,20 +215,33 @@ export default function PastPapersPage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
-  if (sessionStatus === 'loading') return <PageSkeleton />
-  if (!userId) return <PageSkeleton />
+  if (sessionStatus === 'loading' || !userId) return <PastPaperPageSkeleton />
 
   if (error) {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="analytics-main" style={{ paddingTop: 40 }}>
+          <header className="page-section-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Link href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
+                <MaterialIcon name="arrow_back" size={18} />
+              </Link>
+              <h1 className="ui-title-display">雅思真题</h1>
+            </div>
+          </header>
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
             <MaterialIcon name="error" size={28} />
-            <h2 className="ui-title-md" style={{ marginTop: 16 }}>真题加载失败</h2>
-            <p className="ui-body-md">请稍后重试。</p>
-            <button className="ui-primary-button" type="button" style={{ marginTop: 16 }} onClick={() => void mutate()}>
-              重新加载
-            </button>
+            <h2 className="ui-title-md" style={{ marginTop: 16 }}>题库暂时加载失败</h2>
+            <p className="ui-body-md">请检查网络后重试</p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
+              <button className="ui-primary-button" type="button" onClick={() => void mutate()}>
+                <MaterialIcon name="refresh" size={18} />
+                重新加载
+              </button>
+              <Link href="/practice" className="ui-secondary-button">
+                返回练习
+              </Link>
+            </div>
           </GlassPanel>
         </section>
       </main>
@@ -311,9 +374,21 @@ export default function PastPapersPage() {
         </GlassPanel>
 
         {isLoading ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="skeleton-card" style={{ height: 200, borderRadius: 12 }} />)}
-          </div>
+          <>
+            <PastPaperSkeleton count={6} />
+            {loadingHint && (
+              <div className="past-paper-loading-hint">
+                <span className="past-paper-skeleton-spinner" />
+                <p>{loadingHint}</p>
+                {loadingHint.includes('重试') && (
+                  <button className="ui-secondary-button" type="button" onClick={() => void mutate()}>
+                    <MaterialIcon name="refresh" size={18} />
+                    手动重试
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         ) : items.length === 0 ? (
           <GlassPanel level={2} className="empty-state">
             <MaterialIcon name="inbox" size={28} />
