@@ -12,8 +12,8 @@
 
 主要收益：
 
-- 学习规划匿名首载请求数由 54 降至 26，下降 51.9%；总传输量由 1,157,664 B 降至 858,709 B，下降 25.8%。
-- 真题页匿名首载请求数由 57 降至 28，下降 50.9%；总传输量由 1,325,379 B 降至 965,976 B，下降 27.1%。
+- 学习规划匿名首载请求数由 54 降至 28，下降 48.1%；总传输量由 1,157,664 B 降至 862,333 B，下降 25.5%。
+- 真题页匿名首载请求数由 57 降至 30，下降 47.4%；总传输量由 1,325,379 B 降至 968,699 B，下降 26.9%。
 - 五个字体文件的磁盘总量由 2,261,632 B 降至 763,948 B；浏览器实测字体传输量下降约 29%。
 - 多数业务页面不再无条件请求 `/api/profile`。
 - 历史记录轻量列表改为用户级缓存键和 single-flight，请求重叠时复用同一个 Promise，不再用空数组占位污染缓存。
@@ -23,36 +23,42 @@
 
 ## 2. 测量口径与限制
 
-优化前使用生产站点 `https://www.ieltswriting.online`，优化后使用同一代码的本地 production build，均采用 Lighthouse 12.8.2 的移动端性能配置。
+优化前使用生产站点 `https://www.ieltswriting.online`，优化后使用 Vercel Preview，均采用 Lighthouse 12.8.2 的移动端性能配置。
 
-当前没有可用于测试的普通用户或管理员凭据，因此生产端只能测匿名路径、重定向与登录页；没有创建测试账号，也没有修改生产数据。受 Vercel Preview 环境变量缺失影响，优化后暂时无法完成远端 Preview 的同口径复测。下表的优化后数据明确属于本地 production build，不等同于生产实测。
+当前没有可用于测试的普通用户或管理员凭据，因此只能测匿名路径、重定向、登录页和无需服务端登录即可返回页面框架的路径；没有创建测试账号，也没有修改生产数据。Preview 使用 Vercel Authentication 保护，Lighthouse 通过限时访问链接进入，因此登录页请求数包含额外的保护层请求。
 
 ## 3. 前后对比
 
-| 页面 | 指标 | 优化前：生产 | 优化后：本地 production | 变化 |
+| 页面 | 指标 | 优化前：生产 | 优化后：Preview | 变化 |
 |---|---:|---:|---:|---:|
-| 登录 | FCP | 2,580 ms | 2,132 ms | -17.4% |
-| 登录 | 总传输 | 684,109 B | 561,505 B | -17.9% |
-| 登录 | 字体传输 | 319,277 B | 221,670 B | -30.6% |
-| 学习规划 | Performance | 61 | 69 | +8 |
-| 学习规划 | FCP | 5,286 ms | 3,984 ms | -24.6% |
-| 学习规划 | LCP | 6,330 ms | 5,867 ms | -7.3% |
-| 学习规划 | 请求数 | 54 | 26 | -51.9% |
-| 学习规划 | 总传输 | 1,157,664 B | 858,709 B | -25.8% |
-| 学习规划 | JS 传输 | 313,615 B | 268,984 B | -14.2% |
-| 学习规划 | 字体传输 | 759,257 B | 541,515 B | -28.7% |
-| 真题页 | Performance | 60 | 66 | +6 |
-| 真题页 | FCP | 5,769 ms | 4,573 ms | -20.7% |
-| 真题页 | LCP | 7,309 ms | 6,571 ms | -10.1% |
-| 真题页 | 请求数 | 57 | 28 | -50.9% |
-| 真题页 | 总传输 | 1,325,379 B | 965,976 B | -27.1% |
-| 真题页 | JS 传输 | 321,949 B | 263,480 B | -18.2% |
-| 真题页 | 字体传输 | 920,165 B | 653,452 B | -29.0% |
+| 登录 | Performance | 66 | 70 | +4 |
+| 登录 | FCP | 2,580 ms | 2,596 ms | +0.6% |
+| 登录 | LCP | 4,133 ms | 3,956 ms | -4.3% |
+| 登录 | TBT | 157 ms | 59 ms | -62.4% |
+| 登录 | 总传输 | 684,109 B | 563,065 B | -17.7% |
+| 登录 | 字体传输 | 319,277 B | 221,360 B | -30.7% |
+| 学习规划 | Performance | 61 | 98 | +37 |
+| 学习规划 | FCP | 5,286 ms | 1,389 ms | -73.7% |
+| 学习规划 | LCP | 6,330 ms | 2,289 ms | -63.8% |
+| 学习规划 | TBT | 170 ms | 39 ms | -77.1% |
+| 学习规划 | 请求数 | 54 | 28 | -48.1% |
+| 学习规划 | 总传输 | 1,157,664 B | 862,333 B | -25.5% |
+| 学习规划 | JS 传输 | 313,615 B | 270,093 B | -13.9% |
+| 学习规划 | 字体传输 | 759,257 B | 541,221 B | -28.7% |
+| 真题页 | Performance | 60 | 64 | +4 |
+| 真题页 | FCP | 5,769 ms | 5,295 ms | -8.2% |
+| 真题页 | LCP | 7,309 ms | 6,649 ms | -9.0% |
+| 真题页 | TBT | 145 ms | 10 ms | -93.1% |
+| 真题页 | 请求数 | 57 | 30 | -47.4% |
+| 真题页 | 总传输 | 1,325,379 B | 968,699 B | -26.9% |
+| 真题页 | JS 传输 | 321,949 B | 263,951 B | -18.0% |
+| 真题页 | 字体传输 | 920,165 B | 653,055 B | -29.0% |
 
 备注：
 
-- 本地与远端的网络、CPU 和 CDN 条件不同，FCP/LCP 只用于趋势判断；请求数和传输量更适合直接对比本次改动。
-- 登录页三次并行 Lighthouse 中 LCP/TBT 波动较大，因此不把这两项作为本次收益结论。
+- 两次测试使用不同 Vercel 部署 URL，CDN 热度和瞬时网络仍会影响 FCP/LCP；请求数和传输量更适合直接判断本次改动。
+- 学习规划的 FCP/LCP 提升同时受 Preview 静态资源缓存命中影响，不把 98 分解读为稳定生产满分。
+- 登录页请求数受 Preview Authentication 保护层影响，不用于评价应用自身预取策略。
 - CLS 没有因优化发生实质变化。
 
 ## 4. 具体改动
@@ -116,6 +122,12 @@
   - 页面无横向溢出。
   - 关键匿名路由的状态码和登录重定向保持原样。
   - WOFF2 静态文件均返回 `200 font/woff2`。
+- Vercel Preview：
+  - 构建、TypeScript、89 个静态页面生成和部署均成功。
+  - `/`、`/login`、主要登录重定向、学习规划、错题本、真题页和设置页响应符合现状。
+  - 五条 `@font-face` 全部引用 WOFF2，旧 TTF 引用为 0。
+  - 登录页最终可见结构和表单完整，页面无横向溢出。
+  - 最近 30 分钟的 Preview runtime error/fatal 日志为 0。
 
 为使 `npm test` 恢复全绿，只更新了一个过时的源码断言：它现在验证现有的 annotation block 重试后缀和校验函数；没有修改批改实现。
 
@@ -126,25 +138,32 @@
 Preview：
 
 - 分支：`codex/performance-optimization`
-- 部署 ID：`dpl_HtcpnjxEEQFwmxnvgvxREebyETdR`
-- 状态：`ERROR`
-- 失败点：静态生成 `/admin/bindings`
-- 原因：Vercel Preview 环境没有 Supabase 公共配置，抛出 `Supabase public configuration is missing.`
+- 验收提交：`cfe1c44fe3ee93896b0b7b61e3121121a3f56c97`
+- 部署 ID：`dpl_NJeCAsxCbSCE6YezHGpkBEdC5DRF`
+- 状态：`READY`
+- 框架：Next.js 16.2.9
+- 构建结果：成功
 
 生产：
 
-- 当前生产部署 ID：`dpl_8MaEGuNtBzev5U3vDYuJiNa6qgmy`
+- 当前生产部署 ID：`dpl_7aMhua9nhoEEsz1mXSZdnwLKcCt1`
 - 当前状态：`READY`
 - 当前提交：`d46a6f911af4252a8350d9682293251aa669f755`
 - 本次优化没有推送到 `main`，生产站点未被替换。
 
-## 8. 上线前唯一阻塞项
+## 8. 前后截图与已知限制
 
-需要在 Vercel 项目的 Preview 环境配置至少补齐：
+Lighthouse 最终帧：
 
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` 或 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- 登录页：[优化前](performance-artifacts/login-before.png) / [Preview](performance-artifacts/login-after-preview.png)
+- 学习规划：[优化前](performance-artifacts/study-plan-before.png) / [Preview](performance-artifacts/study-plan-after-preview.png)
+- 真题页：[优化前](performance-artifacts/past-papers-before.png) / [Preview](performance-artifacts/past-papers-after-preview.png)
 
-若要在 Preview 完整验证登录后 API，建议使用独立的 Preview Supabase 项目及相应服务端变量；不要未经评估直接把生产 service-role、AI 密钥或管理员密钥复制到 Preview。
+前后最终帧的结构、文案、字体和布局一致。学习规划和真题页在匿名状态下展示原有 loading skeleton。
 
-补齐后重新部署该分支，完成登录后关键路径与 Lighthouse 复测，再决定是否合并或提升到生产。
+仍未完成的部分：
+
+- 没有测试账号，无法对登录后的历史记录、分析、写作、批改结果、Full Test、账号中心和管理后台进行真实数据计时。
+- Lighthouse 合成测试不提供真实用户 INP；需要后续使用 Vercel Web Analytics/Speed Insights 的现场数据观察。
+- Material Symbols 完整 WOFF2 仍为约 319 KB；进一步子集化可能遗漏动态 icon ligature，本次为保持视觉一致没有冒险裁剪。
+- 生产仍运行原提交；在合并或提升 Preview 前应由负责人确认是否上线。
