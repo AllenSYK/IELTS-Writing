@@ -140,12 +140,13 @@ export function useWritingRecordList(userId: string | null) {
       dedupingInterval: 60_000
     }
   )
+  const mutateList = result.mutate
 
   const refreshList = useCallback(async () => {
     if (!userId) return
     const records = await loadRecordListOnce(userId)
-    await result.mutate(records, { revalidate: false })
-  }, [result.mutate, userId])
+    await mutateList(records, { revalidate: false })
+  }, [mutateList, userId])
 
   return {
     records: result.data ?? [],

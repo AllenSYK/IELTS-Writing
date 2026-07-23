@@ -70,10 +70,11 @@ export function Sidebar() {
       <Link
         className="sidebar-logo"
         href="/practice"
+        prefetch={false}
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
-        onPointerEnter={() => prefetchItem(mainItems[0])}
-        onFocus={() => prefetchItem(mainItems[0])}
+        onPointerEnter={() => router.prefetch('/practice')}
+        onFocus={() => router.prefetch('/practice')}
       >
         <BrandLogo size="md" showName />
       </Link>
@@ -84,7 +85,7 @@ export function Sidebar() {
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
-            prefetch
+            prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
             onPointerEnter={() => prefetchItem(item)}
             onFocus={() => prefetchItem(item)}
@@ -110,6 +111,7 @@ export function Sidebar() {
               key={item.id}
               className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
               href={item.href}
+              prefetch={false}
               aria-current={activeId === item.id ? 'page' : undefined}
             >
               <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />

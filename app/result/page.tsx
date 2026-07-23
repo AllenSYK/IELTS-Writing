@@ -492,7 +492,7 @@ export default function ResultPage() {
               返回学习计划
             </Link>
           )}
-          <Link className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="基于原题重写一篇新作文">
+          <Link className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} prefetch={false} title="基于原题重写一篇新作文">
             <MaterialIcon name="edit_note" size={18} />
             基于原题重写
           </Link>
@@ -500,7 +500,7 @@ export default function ResultPage() {
             <MaterialIcon name="auto_fix_high" size={18} />
             {rewriting ? '创建中…' : '根据反馈重写'}
           </button>
-          <Link className="ui-secondary-button" href={`/write/${record.taskType}`}>
+          <Link className="ui-secondary-button" href={`/write/${record.taskType}`} prefetch={false}>
             <MaterialIcon name="replay" size={18} />
             重新练习
           </Link>

@@ -45,7 +45,7 @@ export function PracticePlan({ recommendations }: { recommendations: PracticeRec
                     <dd>0%</dd>
                   </div>
                 </dl>
-                <Link className="ui-primary-button" href={item.href}>
+                <Link className="ui-primary-button" href={item.href} prefetch={false}>
                   开始练习
                   <MaterialIcon name="arrow_forward" size={16} />
                 </Link>

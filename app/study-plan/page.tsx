@@ -1431,7 +1431,7 @@ function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectT
               {task.status === 'completed' ? (
                 <MaterialIcon name="check_circle" size={20} />
               ) : writable && writeMode ? (
-                <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} style={{ fontSize: 12, padding: '4px 10px' }}>
+                <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} prefetch={false} style={{ fontSize: 12, padding: '4px 10px' }}>
                   开始
                 </Link>
               ) : (
@@ -1956,10 +1956,10 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
             <button className="ui-secondary-button" type="button" onClick={handleSkip}>跳过</button>
           )}
           {task.status === 'completed' && task.writingRecordId && (
-            <Link className="ui-primary-button" href={`/result?id=${task.writingRecordId}`}>查看结果</Link>
+            <Link className="ui-primary-button" href={`/result?id=${task.writingRecordId}`} prefetch={false}>查看结果</Link>
           )}
           {task.status !== 'completed' && writable && writeMode && (
-            <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`}>开始写作</Link>
+            <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} prefetch={false}>开始写作</Link>
           )}
         </div>
       }

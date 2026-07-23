@@ -90,7 +90,7 @@ const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { 
           ))}
         </div>
         <div className="history-buttons">
-          <Link className="ui-primary-button" href={`/result?id=${record.id}`}>
+          <Link className="ui-primary-button" href={`/result?id=${record.id}`} prefetch={false}>
             查看详情
           </Link>
           <button className="danger-link history-delete" type="button" aria-label="删除记录" onClick={() => onDelete(record)}>

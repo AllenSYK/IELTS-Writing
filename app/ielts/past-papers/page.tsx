@@ -87,22 +87,27 @@ export default function PastPapersPage() {
   const [seed, setSeed] = useState<string>(() => generateSeed())
   const [loadingHint, setLoadingHint] = useState<string>('')
   const loadingStartTimeRef = useRef<number>(0)
+  const activeRequestRef = useRef<{ controller: AbortController; timedOut: boolean } | null>(null)
 
   const pageSize = 12
 
   useEffect(() => {
     if (!userId) return
-    let cancelled = false
-    void fetch('/api/past-papers/years')
+    const controller = new AbortController()
+    void fetch('/api/past-papers/years', { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (!cancelled && data.success && Array.isArray(data.years)) {
+        if (!controller.signal.aborted && data.success && Array.isArray(data.years)) {
           setAvailableYears(data.years)
         }
       })
       .catch(() => {})
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [userId])
+
+  useEffect(() => () => {
+    activeRequestRef.current?.controller.abort()
+  }, [])
 
   // Stable SWR key includes seed for random sort
   const swrKey = userId ? `past-papers-${sort}-${seed}-${page}-${JSON.stringify(filters)}` : null
@@ -129,22 +134,30 @@ export default function PastPapersPage() {
     if (filters.examDateFrom) params.set('examDateFrom', filters.examDateFrom)
     if (filters.examDateTo) params.set('examDateTo', filters.examDateTo)
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    activeRequestRef.current?.controller.abort()
+    const request = { controller: new AbortController(), timedOut: false }
+    activeRequestRef.current = request
+    const timeoutId = setTimeout(() => {
+      request.timedOut = true
+      request.controller.abort()
+    }, 15000)
 
     try {
-      const res = await fetch(`/api/past-papers?${params}`, { signal: controller.signal })
-      clearTimeout(timeoutId)
+      const res = await fetch(`/api/past-papers?${params}`, { signal: request.controller.signal })
       if (!res.ok) {
         throw new Error(`请求失败（${res.status}）`)
       }
       return res.json()
     } catch (err) {
-      clearTimeout(timeoutId)
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError' && request.timedOut) {
         throw new Error('请求超时，请检查网络后重试')
       }
       throw err
+    } finally {
+      clearTimeout(timeoutId)
+      if (activeRequestRef.current === request) {
+        activeRequestRef.current = null
+      }
     }
   }, {
     revalidateOnFocus: false,
@@ -543,7 +556,7 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
           )}
         </div>
         {canPractice ? (
-          <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
+          <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} prefetch={false} style={{ fontSize: 13, padding: '6px 14px' }}>
             开始练习
           </Link>
         ) : (

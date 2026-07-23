@@ -139,7 +139,7 @@ export function AdminOverviewClient() {
           {loading ? <AdminTableSkeleton columns={4} rows={5} /> : data?.recentLicenses.length ? (
             <div className="admin-compact-list">
               {data.recentLicenses.map((license) => (
-                <Link key={license.id} href={`/admin/licenses?licenseId=${license.id}`}>
+                <Link key={license.id} href={`/admin/licenses?licenseId=${license.id}`} prefetch={false}>
                   <span className="admin-list-icon"><KeyRound size={17} /></span>
                   <span><strong>{license.code_prefix}-••••-••••</strong><small>{license.plan} · {formatAdminDate(license.created_at)}</small></span>
                   <span>{license.activation_count}/{license.max_activations}</span>
@@ -161,7 +161,7 @@ export function AdminOverviewClient() {
               {data.recentBindings.map((binding) => {
                 const license = Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes
                 return (
-                  <Link key={binding.id} href={`/admin/bindings?userId=${binding.user_id}`}>
+                  <Link key={binding.id} href={`/admin/bindings?userId=${binding.user_id}`} prefetch={false}>
                     <span className="admin-list-icon"><Link2 size={17} /></span>
                     <span><strong>{binding.email}</strong><small>{license?.code_prefix || '未知激活码'} · {formatAdminDate(binding.activated_at)}</small></span>
                     <span>{license?.plan || '—'}</span>

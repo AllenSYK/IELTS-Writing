@@ -46,7 +46,7 @@ export function AdminSidebar({
       />
       <aside className={`admin-sidebar ${open ? 'is-open' : ''}`} aria-label="管理后台导航">
         <div className="admin-sidebar-brand">
-          <Link className="admin-sidebar-brand-link" href="/admin" aria-label={`返回 ${BRAND_NAME} 管理中心`} title={BRAND_NAME} onClick={onClose}>
+          <Link className="admin-sidebar-brand-link" href="/admin" prefetch={false} aria-label={`返回 ${BRAND_NAME} 管理中心`} title={BRAND_NAME} onClick={onClose}>
             <BrandLogo size="md" showName />
             <span className="admin-sidebar-context">管理中心</span>
           </Link>
@@ -64,6 +64,7 @@ export function AdminSidebar({
                 key={item.href}
                 className={`admin-sidebar-item ${active ? 'is-active' : ''}`}
                 href={item.href}
+                prefetch={false}
                 aria-current={active ? 'page' : undefined}
                 onClick={onClose}
               >
@@ -75,7 +76,7 @@ export function AdminSidebar({
         </nav>
 
         <div className="admin-sidebar-bottom">
-          <Link className="admin-user-card" href="/">
+          <Link className="admin-user-card" href="/" prefetch={false}>
             <span className="admin-user-avatar">{(adminEmail || 'A').slice(0, 1).toUpperCase()}</span>
             <span>
               <strong>{adminEmail || '管理员账号'}</strong>
