@@ -54,7 +54,10 @@ import {
   type PromptSelection
 } from '@/lib/writing-options'
 import { userScopedStorageKey } from '@/lib/user-storage'
-import { convertVisualDataToSpecs } from '@/lib/task1-chart-schema'
+import {
+  writingQuestionFromPastPaper,
+  type PastPaperPracticeSource
+} from '@/lib/past-paper-practice'
 import {
   clampWritingEditorSplitRatio,
   defaultWritingEditorSplitRatio,
@@ -99,6 +102,74 @@ function normalizeMode(value: string | string[] | undefined): WritingTaskType {
   const mode = Array.isArray(value) ? value[0] : value
   if (mode === 'task1' || mode === 'task2' || mode === 'mock') return mode
   return 'task2'
+}
+
+function practiceQuestionPayload(value: unknown): PastPaperPracticeSource {
+  if (!value || typeof value !== 'object') throw new Error('题库返回的数据格式不正确。')
+  const source = value as Record<string, unknown>
+  if (
+    typeof source.id !== 'string'
+    || typeof source.taskType !== 'string'
+    || typeof source.title !== 'string'
+    || typeof source.questionText !== 'string'
+  ) {
+    throw new Error('题库返回的数据不完整。')
+  }
+  return {
+    id: source.id,
+    taskType: source.taskType,
+    title: source.title,
+    questionText: source.questionText,
+    task1VisualTypes: Array.isArray(source.task1VisualTypes)
+      ? source.task1VisualTypes.filter((item): item is string => typeof item === 'string')
+      : null,
+    task1VisualData: source.task1VisualData && typeof source.task1VisualData === 'object'
+      ? source.task1VisualData as Record<string, unknown>
+      : null,
+    task2QuestionType: typeof source.task2QuestionType === 'string'
+      ? source.task2QuestionType
+      : null
+  }
+}
+
+async function loadAssignedPracticeQuestion({
+  studyPlanTaskId,
+  pastPaperId,
+  mode
+}: {
+  studyPlanTaskId: string | null
+  pastPaperId: string | null
+  mode: WritingTaskType
+}): Promise<WritingQuestion | null> {
+  if (!studyPlanTaskId && !pastPaperId) return null
+
+  const endpoint = studyPlanTaskId
+    ? `/api/study-plan/tasks/${encodeURIComponent(studyPlanTaskId)}/question`
+    : `/api/past-papers/${encodeURIComponent(pastPaperId!)}`
+  const response = await fetch(endpoint, {
+    method: studyPlanTaskId ? 'POST' : 'GET',
+    cache: 'no-store'
+  })
+  const data = await response.json().catch(() => null) as {
+    success?: boolean
+    task?: { questionSource?: string }
+    question?: unknown
+    message?: string
+  } | null
+
+  if (!response.ok || !data?.success) {
+    throw new Error(data?.message || '后台题库中的指定题目读取失败。')
+  }
+  if (!data.question) {
+    if (studyPlanTaskId && data.task?.questionSource !== 'question_bank') return null
+    throw new Error('学习规划没有返回已绑定的后台题目。')
+  }
+
+  const question = writingQuestionFromPastPaper(practiceQuestionPayload(data.question))
+  if (mode !== 'mock' && question.taskType !== mode) {
+    throw new Error('后台题目类型与当前写作任务不一致。')
+  }
+  return question
 }
 
 function formatTime(seconds: number) {
@@ -426,6 +497,19 @@ export default function WritePage() {
         const studyPlanTaskId = searchParams.get('studyPlanTaskId')
         setCustomTaskId(uploadedTaskId)
         setStudyPlanTaskId(studyPlanTaskId)
+        const assignedQuestionPromise = loadAssignedPracticeQuestion({
+          studyPlanTaskId,
+          pastPaperId,
+          mode
+        })
+          .then((question) => ({ question, error: null as Error | null }))
+          .catch((caught) => ({
+            question: null,
+            error: caught instanceof Error ? caught : new Error('后台题库中的指定题目读取失败。')
+          }))
+        const sourceRecordPromise = recordId
+          ? getWritingRecordFromServer(userId, recordId).catch(() => null)
+          : Promise.resolve(null)
         let currentDraftId = searchParams.get('draft') || ''
         let managedDraft: ManagedDraftData | null = null
 
@@ -456,8 +540,20 @@ export default function WritePage() {
         if (cancelled) return
         setDraftId(currentDraftId)
         const selection = managedDraft?.selection || requestedSelection
-        const sourceRecord = recordId ? await getWritingRecordFromServer(userId, recordId) : null
+        const [sourceRecord, assignedQuestionResult] = await Promise.all([
+          sourceRecordPromise,
+          assignedQuestionPromise
+        ])
         if (cancelled) return
+        if (assignedQuestionResult.error) {
+          notifyInitialRestore({
+            kind: 'error',
+            title: studyPlanTaskId ? '无法读取学习规划中的题目' : '无法读取题库题目',
+            message: assignedQuestionResult.error.message
+          })
+          router.replace(studyPlanTaskId ? '/study-plan' : '/ielts/past-papers')
+          return
+        }
         setPromptSelection(selection)
 
         if (mode === 'mock') {
@@ -550,7 +646,7 @@ export default function WritePage() {
             ? managedDraft
             : initialManagedDraft(mode, selection) as SingleDraftData
           const restoredEssay = sourceRecord?.essay || singleDraft.task.essay
-          let question: WritingQuestion | null = null
+          let question: WritingQuestion | null = assignedQuestionResult.question
 
           if (sourceRecord) {
             question = restoreQuestionFromRecord(sourceRecord)
@@ -565,56 +661,6 @@ export default function WritePage() {
                   image: bankQuestion.image || question.image,
                   imageAlt: bankQuestion.imageAlt || question.imageAlt
                 }
-              }
-            }
-          }
-          if (!question && pastPaperId) {
-            try {
-              const response = await fetch(`/api/past-papers/${encodeURIComponent(pastPaperId)}`, { cache: 'no-store' })
-              const data = await response.json() as {
-                success?: boolean
-                question?: {
-                  id: string
-                  taskType: string
-                  title: string
-                  questionText: string
-                  task1VisualTypes?: string[]
-                  task1VisualData?: Record<string, unknown>
-                  task2QuestionType?: string
-                }
-                message?: string
-              }
-              if (!response.ok || !data.success || !data.question) throw new Error(data.message || '真题读取失败')
-              const pp = data.question
-              const specs = pp.task1VisualTypes
-                ? convertVisualDataToSpecs(pp.task1VisualTypes, pp.task1VisualData ?? null, pp.title)
-                : { questionType: 'unknown' }
-              const promptLead = pp.questionText.split('\n').find((l) => l.trim().length > 0) || pp.title
-              const promptDetail = pp.questionText.split('\n').slice(1).join('\n').trim() || 'Summarise the information by selecting and reporting the main features, and make comparisons where relevant.'
-              question = {
-                id: pp.id,
-                taskType: (pp.taskType?.includes('task1') ? 'task1' : 'task2') as 'task1' | 'task2',
-                title: pp.title,
-                promptLead,
-                promptDetail,
-                durationMinutes: pp.taskType?.includes('task1') ? 20 : 40,
-                wordTarget: pp.taskType?.includes('task1') ? 150 : 250,
-                questionType: specs.questionType as WritingQuestion['questionType'],
-                trainingType: 'academic',
-                generatedSource: 'static-bank',
-                chartSpec: specs.chartSpec,
-                processSpec: specs.processSpec,
-                mapSpec: specs.mapSpec
-              }
-            } catch (caught) {
-              if (cancelled) return
-              // 404 is normal for past papers - no error to show
-              if (caught instanceof Error && (caught.message.includes('404') || caught.message.includes('Not found'))) {
-                console.error('[past-paper-load] 404:', pastPaperId)
-              } else {
-                // Non-core error: show toast instead of blocking banner
-                const userError = toUserFacingError(caught, 'past-paper-load')
-                pushToast({ kind: 'warning', title: userError.title, message: userError.message })
               }
             }
           }

@@ -556,7 +556,7 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
           )}
         </div>
         {canPractice ? (
-          <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} prefetch={false} style={{ fontSize: 13, padding: '6px 14px' }}>
+          <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
             开始练习
           </Link>
         ) : (

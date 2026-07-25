@@ -24,9 +24,9 @@ import {
   PlanPhaseLabels,
   QuestionSourceLabels,
   ShortCriterionLabels,
-  isWritableTaskType,
-  taskTypeToWriteMode
+  isWritableTaskType
 } from '@/lib/study-plan-types'
+import { studyPlanWritingHref } from '@/lib/study-plan-writing'
 
 type PlanData = {
   success?: boolean
@@ -1399,8 +1399,7 @@ function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectT
         {tasks.map((task) => {
           const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
           const title = task.title || typeLabel
-          const writable = isWritableTaskType(task.taskType)
-          const writeMode = taskTypeToWriteMode(task.taskType)
+          const writingHref = studyPlanWritingHref(task)
 
           return (
             <div key={task.id} style={styles.todayTaskRow}>
@@ -1414,8 +1413,8 @@ function TodayTasks({ tasks, onSelectTask }: { tasks: StudyPlanTask[]; onSelectT
               </div>
               {task.status === 'completed' ? (
                 <MaterialIcon name="check_circle" size={20} />
-              ) : writable && writeMode ? (
-                <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} prefetch={false} style={{ fontSize: 12, padding: '4px 10px' }}>
+              ) : writingHref ? (
+                <Link className="ui-primary-button" href={writingHref} style={{ fontSize: 12, padding: '4px 10px' }}>
                   开始
                 </Link>
               ) : (
@@ -1918,9 +1917,15 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
   const statusLabel = StudyPlanTaskStatusLabels[task.status] ?? task.status
   const title = task.title || typeLabel
   const writable = isWritableTaskType(task.taskType)
-  const writeMode = taskTypeToWriteMode(task.taskType)
+  const writingHref = studyPlanWritingHref(task)
   const sourceLabel = task.questionSource === 'ai_generated' ? 'AI 个性化生成' : '平台题库'
   const isAi = task.questionSource === 'ai_generated'
+  const missingBankQuestion = writable
+    && task.questionSource === 'question_bank'
+    && !writingHref
+  const missingBankQuestionMessage = task.taskType === 'full_test'
+    ? '这个完整测试没有保存成对的 Task 1 和 Task 2 后台题目，请重新生成学习规划后再开始。'
+    : '这个题库任务没有绑定后台题目，请重新生成学习规划后再开始。'
 
   const handleSkip = async () => {
     try {
@@ -1948,8 +1953,8 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
           {task.status === 'completed' && task.writingRecordId && (
             <Link className="ui-primary-button" href={`/result?id=${task.writingRecordId}`} prefetch={false}>查看结果</Link>
           )}
-          {task.status !== 'completed' && writable && writeMode && (
-            <Link className="ui-primary-button" href={`/write/${writeMode}?studyPlanTaskId=${task.id}`} prefetch={false}>开始写作</Link>
+          {task.status !== 'completed' && writingHref && (
+            <Link className="ui-primary-button" href={writingHref}>开始写作</Link>
           )}
         </div>
       }
@@ -1976,6 +1981,11 @@ function TaskDetailDialog({ task, onClose, onMutate }: {
           </span>
         </div>
         {task.description && <p className="ui-body-md">{task.description}</p>}
+        {missingBankQuestion && (
+          <p className="ui-label" role="alert" style={{ color: 'var(--error)' }}>
+            {missingBankQuestionMessage}
+          </p>
+        )}
         {task.generatedReason && (
           <p className="ui-label" style={{ color: 'var(--text-secondary)' }}>原因：{task.generatedReason}</p>
         )}

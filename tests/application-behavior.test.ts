@@ -18,6 +18,8 @@ import {
   studyPlanAdjustmentMonthRange,
   studyPlanAdjustmentQuota
 } from '../lib/study-plan-adjustments'
+import { writingQuestionFromPastPaper } from '../lib/past-paper-practice'
+import { studyPlanWritingHref } from '../lib/study-plan-writing'
 
 test('Word count handles punctuation and contractions', () => {
   assert.equal(countWords("It's a well-developed, high-scoring essay."), 5)
@@ -40,6 +42,51 @@ test('study plan adjustments reset monthly with three chances per account', () =
     remainingCount: 1,
     limit: 3
   })
+})
+
+test('study plan question-bank tasks open the exact assigned backend question', async () => {
+  const task = {
+    id: 'plan-task-1',
+    taskType: 'task2' as const,
+    questionId: 'backend-question-42',
+    questionSource: 'question_bank' as const
+  }
+  assert.equal(
+    studyPlanWritingHref(task),
+    '/write/task2?studyPlanTaskId=plan-task-1&pastPaper=backend-question-42'
+  )
+  assert.equal(
+    studyPlanWritingHref({ ...task, questionId: null }),
+    '/write/task2?studyPlanTaskId=plan-task-1'
+  )
+
+  const question = writingQuestionFromPastPaper({
+    id: 'backend-question-42',
+    taskType: 'task2',
+    title: '后台题库原题',
+    questionText: 'Some people think public transport should be free. To what extent do you agree or disagree?',
+    task2QuestionType: 'agree_disagree'
+  })
+  assert.equal(question.id, 'backend-question-42')
+  assert.equal(question.promptLead, 'Some people think public transport should be free. To what extent do you agree or disagree?')
+  assert.equal(question.promptDetail, '')
+  assert.equal(question.questionType, 'agree_disagree')
+  assert.equal(question.generatedSource, 'static-bank')
+
+  const [assignedQuestionRoute, writingPage, studyPlanPage] = await Promise.all([
+    readFile(new URL('../app/api/study-plan/tasks/[id]/question/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/write/[mode]/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
+  ])
+  assert.match(assignedQuestionRoute, /\.eq\('user_id', check\.user\.id\)/)
+  assert.match(assignedQuestionRoute, /export async function POST/)
+  assert.match(assignedQuestionRoute, /\.update\(\{ question_id: candidate\.id \}\)/)
+  assert.match(assignedQuestionRoute, /\.eq\('id', questionId\)/)
+  assert.match(assignedQuestionRoute, /\.eq\('status', 'published'\)/)
+  assert.match(writingPage, /loadAssignedPracticeQuestion/)
+  assert.match(writingPage, /let question: WritingQuestion \| null = assignedQuestionResult\.question/)
+  assert.match(writingPage, /router\.replace\(studyPlanTaskId \? '\/study-plan' : '\/ielts\/past-papers'\)/)
+  assert.match(studyPlanPage, /studyPlanWritingHref\(task\)/)
 })
 
 test('account average override is persisted and learning analytics applies half-band rounding', async () => {
