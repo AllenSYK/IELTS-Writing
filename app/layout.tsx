@@ -35,6 +35,29 @@ export const metadata: Metadata = {
     description: BRAND_DESCRIPTION,
     images: [BRAND_OG_IMAGE],
   },
+  icons: {
+    icon: [
+      {
+        url: '/brand/kongyumeng-tab-icon-20260725-v2.png',
+        type: 'image/png',
+        sizes: '64x64',
+      },
+      {
+        url: '/brand/kongyumeng-app-icon-20260725.png',
+        type: 'image/png',
+        sizes: '512x512',
+      },
+    ],
+    shortcut: {
+      url: '/brand/kongyumeng-tab-icon-20260725-v2.png',
+      type: 'image/png',
+    },
+    apple: {
+      url: '/brand/kongyumeng-apple-icon-20260725.png',
+      type: 'image/png',
+      sizes: '180x180',
+    },
+  },
   appleWebApp: {
     title: BRAND_SHORT_NAME,
     capable: true,
