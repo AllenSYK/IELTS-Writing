@@ -1,6 +1,22 @@
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { pastPaperPracticeReadiness } from '@/lib/past-paper-readiness'
+
+const questionFields = 'id, task_type, title, question_text, task1_visual_types, task1_visual_data, task2_question_type'
+
+function questionIsReady(question: Record<string, unknown>, taskType: string) {
+  const typeMatches =
+    (taskType === 'task1' && question.task_type === 'task1_academic')
+    || (taskType === 'task2' && question.task_type === 'task2')
+  if (!typeMatches) return false
+  return pastPaperPracticeReadiness({
+    taskType: question.task_type as string,
+    questionText: question.question_text as string,
+    task1VisualTypes: question.task1_visual_types as string[] | null,
+    task1VisualData: question.task1_visual_data as Record<string, unknown> | null
+  }).ready
+}
 
 export async function POST(
   _request: Request,
@@ -44,17 +60,32 @@ export async function POST(
     }, { status: 409 })
   }
 
-  let questionId = task.question_id as string | null
-  if (!questionId) {
+  let question: Record<string, unknown> | null = null
+  if (task.question_id) {
+    const currentResult = await service
+      .from('past_paper_questions')
+      .select(questionFields)
+      .eq('id', task.question_id)
+      .eq('status', 'published')
+      .eq('is_visible', true)
+      .maybeSingle()
+    const current = currentResult.data as Record<string, unknown> | null
+    if (!currentResult.error && current && questionIsReady(current, task.task_type)) {
+      question = current
+    }
+  }
+
+  if (!question) {
     const expectedTaskType = task.task_type === 'task1' ? 'task1_academic' : 'task2'
     const [candidateResult, usedResult] = await Promise.all([
       service
         .from('past_paper_questions')
-        .select('id')
+        .select(questionFields)
         .eq('status', 'published')
+        .eq('is_visible', true)
         .eq('task_type', expectedTaskType)
         .order('published_at', { ascending: false })
-        .limit(50),
+        .limit(100),
       service
         .from('study_plan_tasks')
         .select('question_id')
@@ -75,25 +106,23 @@ export async function POST(
         .map((row) => row.question_id)
         .filter((value): value is string => typeof value === 'string')
     )
-    const candidates = candidateResult.data ?? []
-    const candidate = candidates.find((item) => !usedQuestionIds.has(item.id)) ?? candidates[0]
+    const candidates = ((candidateResult.data ?? []) as unknown as Record<string, unknown>[])
+      .filter((item) => questionIsReady(item, task.task_type))
+    question = candidates.find((item) => !usedQuestionIds.has(item.id as string)) ?? candidates[0] ?? null
 
-    if (!candidate) {
+    if (!question) {
       return json({
         success: false,
         code: 'STUDY_PLAN_QUESTION_BANK_EMPTY',
-        message: '后台正式题库中没有可用的对应题型，请先补充并发布题目。'
+        message: '后台正式题库中没有数据完整的对应题型，请先补充并发布题目。'
       }, { status: 409 })
     }
 
-    const { data: updatedTask, error: updateError } = await service
+    const { error: updateError } = await service
       .from('study_plan_tasks')
-      .update({ question_id: candidate.id })
+      .update({ question_id: question.id })
       .eq('id', task.id)
       .eq('user_id', check.user.id)
-      .is('question_id', null)
-      .select('question_id')
-      .maybeSingle()
 
     if (updateError) {
       return json({
@@ -102,54 +131,9 @@ export async function POST(
         message: '后台题目绑定失败，请稍后重试。'
       }, { status: 500 })
     }
-
-    if (updatedTask?.question_id) {
-      questionId = updatedTask.question_id
-    } else {
-      const { data: refreshedTask } = await service
-        .from('study_plan_tasks')
-        .select('question_id')
-        .eq('id', task.id)
-        .eq('user_id', check.user.id)
-        .maybeSingle()
-      questionId = refreshedTask?.question_id ?? null
-    }
   }
 
-  if (!questionId) {
-    return json({
-      success: false,
-      code: 'STUDY_PLAN_QUESTION_ASSIGNMENT_FAILED',
-      message: '学习任务未能绑定后台题目，请稍后重试。'
-    }, { status: 500 })
-  }
-
-  const { data: question, error: questionError } = await service
-    .from('past_paper_questions')
-    .select('id, task_type, title, question_text, task1_visual_types, task1_visual_data, task2_question_type')
-    .eq('id', questionId)
-    .eq('status', 'published')
-    .maybeSingle()
-
-  if (questionError || !question) {
-    return json({
-      success: false,
-      code: 'STUDY_PLAN_QUESTION_NOT_AVAILABLE',
-      message: '学习规划绑定的后台题目已不可用，请联系管理员检查题库。'
-    }, { status: 409 })
-  }
-
-  const taskMatchesQuestion =
-    (task.task_type === 'task1' && question.task_type.includes('task1'))
-    || (task.task_type === 'task2' && question.task_type === 'task2')
-
-  if (!taskMatchesQuestion) {
-    return json({
-      success: false,
-      code: 'STUDY_PLAN_QUESTION_TYPE_MISMATCH',
-      message: '学习任务与后台题目类型不一致，请联系管理员检查题库。'
-    }, { status: 409 })
-  }
+  const questionId = question.id as string
 
   return json({
     success: true,
@@ -161,7 +145,7 @@ export async function POST(
       questionSource: task.question_source
     },
     question: {
-      id: question.id,
+      id: questionId,
       taskType: question.task_type,
       title: question.title,
       questionText: question.question_text,

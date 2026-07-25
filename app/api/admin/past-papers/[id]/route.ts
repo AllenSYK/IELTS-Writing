@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { logAdminAudit, extractAuditInfo } from '@/lib/admin/audit-log'
+import { pastPaperPracticeReadiness } from '@/lib/past-paper-readiness'
 
 const UpdateSchema = z.object({
   title: z.string().min(1).max(500).optional(),
@@ -18,6 +19,7 @@ const UpdateSchema = z.object({
   topics: z.array(z.string().max(50)).max(20).optional(),
   keywords: z.array(z.string().max(50)).max(30).optional(),
   task1VisualTypes: z.array(z.string()).nullable().optional(),
+  task1VisualData: z.record(z.string(), z.unknown()).nullable().optional(),
   task2QuestionType: z.string().max(100).nullable().optional(),
   showSourceImage: z.boolean().optional(),
   status: z.enum(['draft', 'review_pending', 'published', 'unpublished', 'archived']).optional(),
@@ -83,6 +85,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (fields.topics !== undefined) updates.topics = fields.topics
   if (fields.keywords !== undefined) updates.keywords = fields.keywords
   if (fields.task1VisualTypes !== undefined) updates.task1_visual_types = fields.task1VisualTypes
+  if (fields.task1VisualData !== undefined) updates.task1_visual_data = fields.task1VisualData
   if (fields.task2QuestionType !== undefined) updates.task2_question_type = fields.task2QuestionType
   if (fields.showSourceImage !== undefined) updates.show_source_image = fields.showSourceImage
   if (fields.status !== undefined) updates.status = fields.status
@@ -119,6 +122,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   updates.updated_by = user.id
+
+  const { data: currentQuestion, error: currentQuestionError } = await service
+    .from('past_paper_questions')
+    .select('task_type, question_text, task1_visual_types, task1_visual_data, status, is_visible')
+    .eq('id', id)
+    .maybeSingle()
+  if (currentQuestionError || !currentQuestion) {
+    return json({ success: false, message: 'Question not found', requestId }, { status: 404 })
+  }
+
+  const nextStatus = (updates.status ?? currentQuestion.status) as string
+  const nextVisible = (updates.is_visible ?? currentQuestion.is_visible) as boolean
+  if (nextStatus === 'published' && nextVisible) {
+    const readiness = pastPaperPracticeReadiness({
+      taskType: (updates.task_type ?? currentQuestion.task_type) as string,
+      questionText: (updates.question_text ?? currentQuestion.question_text) as string,
+      task1VisualTypes: (updates.task1_visual_types ?? currentQuestion.task1_visual_types) as string[] | null,
+      task1VisualData: (updates.task1_visual_data ?? currentQuestion.task1_visual_data) as Record<string, unknown> | null
+    })
+    if (!readiness.ready) {
+      return json({ success: false, code: readiness.code, message: readiness.message, requestId }, { status: 409 })
+    }
+  }
 
   if (expectedUpdatedAt) {
     const { data: existing, error: fetchError } = await service

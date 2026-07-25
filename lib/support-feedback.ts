@@ -75,13 +75,13 @@ export const SupportFaqs: SupportFaq[] = [
   {
     title: '作文没有保存怎么办？',
     category: '作文保存问题',
-    steps: ['先打开 History 页面检查是否已经生成记录。', '重新打开应用后回到对应 Task 页面查看草稿。', '不要清除应用数据。', '提交反馈时说明题型、提交时间和是否看到批改结果。'],
-    actions: [{ label: '打开 History', href: '/history' }, { label: '提交保存问题', kind: 'feedback' }]
+    steps: ['先打开历史记录页面检查是否已经生成记录。', '重新打开应用后回到对应 Task 页面查看草稿。', '不要清除应用数据。', '提交反馈时说明题型、提交时间和是否看到批改结果。'],
+    actions: [{ label: '打开历史记录', href: '/history' }, { label: '提交保存问题', kind: 'feedback' }]
   },
   {
-    title: 'History 出现重复记录怎么办？',
+    title: '历史记录出现重复怎么办？',
     category: '历史记录重复',
-    steps: ['刷新 History 页面后再次查看。', '确认是否确实提交了两次独立作文。', '如果同一次提交出现两条相同记录，请提交反馈。', '管理员会检查 record ID、submissionId 和本地合并记录。'],
+    steps: ['刷新历史记录页面后再次查看。', '确认是否确实提交了两次独立作文。', '如果同一次提交出现两条相同记录，请提交反馈。', '管理员会检查记录编号、提交编号和本地合并记录。'],
     actions: [{ label: '提交历史记录反馈', kind: 'feedback' }]
   },
   {

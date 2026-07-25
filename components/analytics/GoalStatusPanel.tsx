@@ -26,7 +26,7 @@ export function GoalStatusPanel({
       <div className="goal-status-header">
         <div>
           <span className="ui-label">目标状态</span>
-          <h2 className="ui-title-md">当前进度 {status.progressPercent}%</h2>
+          <h2 className="ui-title-md">目标分达成度 {status.progressPercent}%</h2>
         </div>
         <span className="goal-progress-ring" style={{ '--goal-progress': `${status.progressPercent}%` } as CSSProperties}>
           <strong>{formatBandNumber(status.targetOverall)}</strong>

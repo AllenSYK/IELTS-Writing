@@ -5,6 +5,7 @@ import {
 } from '@/lib/ielts-questions'
 import { convertVisualDataToSpecs } from '@/lib/task1-chart-schema'
 import { normalizeTask1ChartType } from '@/lib/writing-options'
+import { pastPaperPracticeReadiness } from '@/lib/past-paper-readiness'
 
 export type PastPaperPracticeSource = {
   id: string
@@ -51,6 +52,9 @@ function promptParts(source: PastPaperPracticeSource, isTask1: boolean) {
 }
 
 export function writingQuestionFromPastPaper(source: PastPaperPracticeSource): WritingQuestion {
+  const readiness = pastPaperPracticeReadiness(source)
+  if (!readiness.ready) throw new Error(readiness.message)
+
   const isTask1 = source.taskType.includes('task1')
   const parts = promptParts(source, isTask1)
 
@@ -73,7 +77,10 @@ export function writingQuestionFromPastPaper(source: PastPaperPracticeSource): W
     source.title
   )
   const normalizedType = normalizeTask1ChartType(specs.questionType)
-  const questionType = (normalizedType === 'random' ? 'line_chart' : normalizedType) as Task1QuestionType
+  if (normalizedType === 'random') {
+    throw new Error('题库中的 Task 1 图表类型无法识别，请联系管理员修正题目。')
+  }
+  const questionType = normalizedType as Task1QuestionType
 
   return {
     id: source.id,

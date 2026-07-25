@@ -2,6 +2,7 @@ import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { studyPlanAdjustmentMonthRange, studyPlanAdjustmentQuota } from '@/lib/study-plan-adjustments'
+import { buildLiveStudyPlanAnalysis, type StudyPlanAnalysisRow } from '@/lib/study-plan-live-analysis'
 
 export async function GET() {
   const check = await requireActiveWebLicense()
@@ -13,7 +14,7 @@ export async function GET() {
   const userId = check.user.id
   const adjustmentMonth = studyPlanAdjustmentMonthRange()
 
-  const [planResult, profileResult, quotaResult] = await Promise.all([
+  const [planResult, profileResult, quotaResult, recordsResult, accountProfileResult] = await Promise.all([
     service
       .from('study_plans')
       .select('id, user_id, version, status, current_phase, period_start, period_end, diagnosis, preferences_snapshot, goals_snapshot, ai_model, generated_at, created_at')
@@ -32,8 +33,27 @@ export async function GET() {
       .eq('job_type', 'replan')
       .in('status', ['queued', 'running', 'completed'])
       .gte('created_at', adjustmentMonth.startsAt)
-      .lt('created_at', adjustmentMonth.endsAt)
+      .lt('created_at', adjustmentMonth.endsAt),
+    service
+      .from('writing_records')
+      .select('task_type, submitted_at, evaluation')
+      .eq('user_id', userId)
+      .in('processing_status', ['complete', 'completed', 'partial'])
+      .order('submitted_at', { ascending: false })
+      .limit(100),
+    service
+      .from('profiles')
+      .select('manual_average_score')
+      .eq('id', userId)
+      .maybeSingle()
   ])
+
+  const liveAnalysis = buildLiveStudyPlanAnalysis(
+    (recordsResult.data ?? []) as StudyPlanAnalysisRow[],
+    accountProfileResult.data?.manual_average_score == null
+      ? null
+      : Number(accountProfileResult.data.manual_average_score)
+  )
 
   let tasks: unknown[] = []
   if (planResult.data) {
@@ -48,7 +68,7 @@ export async function GET() {
   return json({
     success: true,
     plan: planResult.data ? mapPlan(planResult.data, tasks) : null,
-    profile: profileResult.data ? mapProfile(profileResult.data) : null,
+    profile: profileResult.data ? mapProfile(profileResult.data, liveAnalysis) : null,
     quota: studyPlanAdjustmentQuota(quotaResult.count ?? 0)
   })
 }
@@ -104,7 +124,19 @@ function mapTask(row: Record<string, unknown>) {
   }
 }
 
-function mapProfile(row: Record<string, unknown>) {
+function mapProfile(
+  row: Record<string, unknown>,
+  liveAnalysis: ReturnType<typeof buildLiveStudyPlanAnalysis>
+) {
+  const storedSnapshot = row.analysis_snapshot && typeof row.analysis_snapshot === 'object'
+    ? row.analysis_snapshot as Record<string, unknown>
+    : {}
+  const analysisSnapshot = {
+    ...storedSnapshot,
+    counts: liveAnalysis.counts,
+    scores: liveAnalysis.scores,
+    updatedAt: liveAnalysis.updatedAt
+  }
   return {
     userId: row.user_id,
     overallTarget: row.overall_target,
@@ -126,9 +158,9 @@ function mapProfile(row: Record<string, unknown>) {
     currentLevel: row.current_level,
     questionBankRatio: row.question_bank_ratio ?? 80,
     aiGeneratedRatio: row.ai_generated_ratio ?? 20,
-    analysisSnapshot: row.analysis_snapshot,
-    analysisUpdatedAt: row.analysis_updated_at,
-    analysisSourceRecordCount: row.analysis_source_record_count ?? 0,
-    analysisLatestRecordAt: row.analysis_latest_record_at
+    analysisSnapshot,
+    analysisUpdatedAt: liveAnalysis.updatedAt,
+    analysisSourceRecordCount: liveAnalysis.recordCount,
+    analysisLatestRecordAt: liveAnalysis.latestRecordAt
   }
 }

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { PastPaperSourceFilterValues } from '@/lib/past-paper-types'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -83,7 +84,9 @@ export async function GET(request: Request) {
     else if (taskType === 'full_test') query = query.eq('task_type', 'full_test')
   }
   if (frequencyLevel && frequencyLevel !== 'all') query = query.eq('frequency_level', frequencyLevel)
-  if (sourceType && sourceType !== 'all') query = query.eq('source_type', sourceType)
+  if (sourceType && sourceType !== 'all') {
+    query = query.in('source_type', PastPaperSourceFilterValues[sourceType] ?? [sourceType])
+  }
   if (task1VisualType && task1VisualType !== 'all') query = query.contains('task1_visual_types', [task1VisualType])
   if (task2QuestionType && task2QuestionType !== 'all') query = query.eq('task2_question_type', task2QuestionType)
   if (topic && topic !== 'all') query = query.or(`topics.cs.{${topic}},primary_topic.eq.${topic}`)
@@ -115,7 +118,9 @@ export async function GET(request: Request) {
       else if (taskType === 'full_test') idQuery = idQuery.eq('task_type', 'full_test')
     }
     if (frequencyLevel && frequencyLevel !== 'all') idQuery = idQuery.eq('frequency_level', frequencyLevel)
-    if (sourceType && sourceType !== 'all') idQuery = idQuery.eq('source_type', sourceType)
+    if (sourceType && sourceType !== 'all') {
+      idQuery = idQuery.in('source_type', PastPaperSourceFilterValues[sourceType] ?? [sourceType])
+    }
     if (task1VisualType && task1VisualType !== 'all') idQuery = idQuery.contains('task1_visual_types', [task1VisualType])
     if (task2QuestionType && task2QuestionType !== 'all') idQuery = idQuery.eq('task2_question_type', task2QuestionType)
     if (topic && topic !== 'all') idQuery = idQuery.or(`topics.cs.{${topic}},primary_topic.eq.${topic}`)

@@ -10,6 +10,7 @@ import type { PastPaperListItem, PastPaperFrequencyLevel, ExamSession, ExamMode,
 import {
   PastPaperFrequencyLabels,
   PastPaperSourceTypeLabels,
+  PastPaperSourceFilterOptions,
   Task1VisualTypeLabels,
   Task2QuestionTypeLabels,
   PastPaperTopicLabels,
@@ -312,7 +313,7 @@ export default function PastPapersPage() {
               options={[{ value: 'all', label: '全部' }, ...Object.entries(PastPaperFrequencyLabels).map(([k, v]) => ({ value: k, label: v }))]} />
 
             <FilterSelect label="来源" value={filters.sourceType} onChange={(v) => updateFilter('sourceType', v)}
-              options={[{ value: 'all', label: '全部' }, ...Object.entries(PastPaperSourceTypeLabels).map(([k, v]) => ({ value: k, label: v }))]} />
+              options={[{ value: 'all', label: '全部' }, ...PastPaperSourceFilterOptions]} />
 
             <FilterSelect label="场次" value={filters.examSession} onChange={(v) => updateFilter('examSession', v)}
               options={[{ value: 'all', label: '全部场次' }, ...Object.entries(ExamSessionLabels).map(([k, v]) => ({ value: k, label: v }))]} />

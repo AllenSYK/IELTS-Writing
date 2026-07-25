@@ -1,6 +1,7 @@
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { pastPaperPracticeReadiness } from '@/lib/past-paper-readiness'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -14,7 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { data: question, error: fetchError } = await service
     .from('past_paper_questions')
-    .select('id, status')
+    .select('id, status, task_type, question_text, task1_visual_types, task1_visual_data')
     .eq('id', id)
     .single()
 
@@ -24,6 +25,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (question.status === 'published') {
     return json({ success: false, message: 'Already published' }, { status: 400 })
+  }
+
+  const readiness = pastPaperPracticeReadiness({
+    taskType: question.task_type,
+    questionText: question.question_text,
+    task1VisualTypes: question.task1_visual_types,
+    task1VisualData: question.task1_visual_data as Record<string, unknown> | null
+  })
+  if (!readiness.ready) {
+    return json({ success: false, code: readiness.code, message: readiness.message }, { status: 409 })
   }
 
   const { error } = await service

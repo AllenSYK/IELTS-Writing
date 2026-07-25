@@ -1,4 +1,4 @@
-import type { ErrorCategory } from './error-notebook-types'
+import { ErrorCategoryLabels, type ErrorCategory } from './error-notebook-types'
 import type { WritingRecord, EssayAnnotation, SentenceError } from './writing-record-types'
 
 export type ExtractedError = {
@@ -26,18 +26,25 @@ const CategoryMapping: Record<string, ErrorCategory> = {
   'prepositions': 'preposition',
   '介词': 'preposition',
   'sentence_structure': 'sentence_structure',
+  'sentence-structure': 'sentence_structure',
   '句子结构': 'sentence_structure',
   'punctuation': 'punctuation',
   '标点': 'punctuation',
   'spelling': 'spelling',
   '拼写': 'spelling',
   'word_choice': 'word_choice',
+  'vocabulary': 'word_choice',
+  'style': 'word_choice',
+  'repetition': 'word_choice',
   '用词': 'word_choice',
   'collocation': 'collocation',
   '搭配': 'collocation',
   'cohesion': 'cohesion',
+  'coherence': 'cohesion',
+  'unclear_expression': 'cohesion',
   '衔接': 'cohesion',
   'task_response': 'task_response',
+  'task-response': 'task_response',
   'task_achievement': 'task_response',
   '任务回应': 'task_response',
   'idea_development': 'idea_development',
@@ -61,14 +68,32 @@ export function normalizeErrorCategory(raw: string): ErrorCategory {
   return CategoryMapping[key] ?? 'other'
 }
 
-export function buildNormalizedKey(category: ErrorCategory, title: string): string {
-  const titleKey = title.toLowerCase().trim().replace(/\s+/g, '_').slice(0, 60)
-  return `${category}:${titleKey}`
+function normalizedText(value: string | null | undefined) {
+  return (value ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[“”‘’'"`]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, '_')
+    .slice(0, 180)
+}
+
+export function buildNormalizedKey(
+  category: ErrorCategory,
+  title: string,
+  exampleWrong?: string | null,
+  exampleCorrect?: string | null
+): string {
+  const contentKey = [normalizedText(exampleWrong), normalizedText(exampleCorrect)]
+    .filter(Boolean)
+    .join('=>')
+  return `${category}:${contentKey || normalizedText(title) || 'unknown'}`
 }
 
 function extractFromAnnotation(ann: EssayAnnotation): ExtractedError | null {
   const category = normalizeErrorCategory(ann.category)
-  const title = ann.category.replace(/-/g, ' ')
+  const title = ErrorCategoryLabels[category]
   const excerpt = ann.originalText ? truncateExcerpt(ann.originalText) : null
   return {
     category,
@@ -105,7 +130,7 @@ export function extractErrorsFromRecord(record: WritingRecord): ExtractedError[]
     for (const ann of eval_.annotations) {
       const extracted = extractFromAnnotation(ann)
       if (!extracted) continue
-      const key = buildNormalizedKey(extracted.category, extracted.title)
+      const key = buildNormalizedKey(extracted.category, extracted.title, extracted.exampleWrong, extracted.exampleCorrect)
       if (seen.has(key)) continue
       seen.add(key)
       errors.push(extracted)
@@ -116,7 +141,7 @@ export function extractErrorsFromRecord(record: WritingRecord): ExtractedError[]
     for (const err of eval_.sentenceErrors) {
       const extracted = extractFromSentenceError(err)
       if (!extracted) continue
-      const key = buildNormalizedKey(extracted.category, extracted.title)
+      const key = buildNormalizedKey(extracted.category, extracted.title, extracted.exampleWrong, extracted.exampleCorrect)
       if (seen.has(key)) continue
       seen.add(key)
       errors.push(extracted)
@@ -127,7 +152,7 @@ export function extractErrorsFromRecord(record: WritingRecord): ExtractedError[]
     for (const err of eval_.sentenceAnnotations) {
       const extracted = extractFromSentenceError(err)
       if (!extracted) continue
-      const key = buildNormalizedKey(extracted.category, extracted.title)
+      const key = buildNormalizedKey(extracted.category, extracted.title, extracted.exampleWrong, extracted.exampleCorrect)
       if (seen.has(key)) continue
       seen.add(key)
       errors.push(extracted)

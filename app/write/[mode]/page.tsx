@@ -349,9 +349,16 @@ export default function WritePage() {
   )
   const totalMockWords = mockWordCounts.task1 + mockWordCounts.task2
   const loading = submitStatus !== 'idle' && submitStatus !== 'error' && submitStatus !== 'success'
+  const fixedBankChoiceSummary = activeQuestion?.generatedSource === 'static-bank'
+    ? activeQuestion.taskType === 'task1'
+      ? `题库 · ${Task1ChartLabels[normalizeTask1ChartType(activeQuestion.questionType)]}`
+      : `题库 · ${Task2EssayLabels[normalizeTask2EssayType(activeQuestion.questionType)]}`
+    : null
   const promptChoiceSummary =
     customTaskId
       ? '自定义题目'
+      : fixedBankChoiceSummary
+        ? fixedBankChoiceSummary
       : mode === 'task1'
       ? Task1ChartLabels[promptSelection.task1ChartType]
       : mode === 'task2'
@@ -533,7 +540,12 @@ export default function WritePage() {
             title: '无法打开写作草稿',
             message: DraftErrorMessages[code] || (caught instanceof Error ? caught.message : '请返回 IELTS 页面重试。')
           })
-          router.replace('/practice?drafts=1')
+          const draftTab = code === 'DRAFT_LIMIT_REACHED_TASK2'
+            ? 'task2'
+            : code === 'DRAFT_LIMIT_REACHED_FULL_TEST'
+              ? 'mock'
+              : mode
+          router.replace(`/practice?drafts=1&draftTab=${draftTab}`)
           return
         }
 
@@ -1451,7 +1463,7 @@ export default function WritePage() {
           </span>
           <button className="exam-exit" type="button" onClick={() => setShowExitConfirm(true)}>
             <MaterialIcon name="logout" size={16} />
-            Exit
+            退出
           </button>
         </div>
       </header>
@@ -1529,8 +1541,8 @@ export default function WritePage() {
             <div className="exam-section-header">
               <h1 className="ui-title-headline">{activeQuestion.title}</h1>
               <p className="ui-body-md">
-                You should spend about {activeQuestion.durationMinutes} minutes on this task.
-                {mode === 'mock' ? ' The full test timer remains 60 minutes.' : ''}
+                建议在 {activeQuestion.durationMinutes} 分钟内完成本题。
+                {mode === 'mock' ? ' 完整测试的总计时仍为 60 分钟。' : ''}
               </p>
             </div>
 
@@ -1642,7 +1654,7 @@ export default function WritePage() {
           <div className="editor-toolbar">
             <button className="spell-toggle" type="button" onClick={() => setSpellcheck((current) => !current)}>
               <MaterialIcon name="spellcheck" size={18} />
-              Spell Check: {spellcheck ? 'On' : 'Off'}
+              拼写检查：{spellcheck ? '开' : '关'}
             </button>
             <AsyncButton
               className="submit-essay-button"
@@ -1653,7 +1665,7 @@ export default function WritePage() {
               disabledReason={!activeEssay.trim() ? '请先输入作文内容。' : undefined}
               onClick={requestSubmit}
             >
-              {loading ? 'Analyzing...' : submitStatus === 'error' ? '重新批改' : mode === 'mock' ? 'Submit Test' : 'Submit Essay'}
+              {loading ? '正在批改…' : submitStatus === 'error' ? '重新批改' : mode === 'mock' ? '提交测试' : '提交作文'}
             </AsyncButton>
           </div>
 

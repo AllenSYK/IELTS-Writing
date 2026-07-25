@@ -202,7 +202,7 @@ export function ScoreSummary({
 
         <div className="score-summary-heading">
           <div className="score-summary-hero">
-            <span className="ui-label">{isMock && mockComplete ? 'Overall Band Score' : taskLabel ? `${taskLabel} Band Score` : 'Overall Band Score'}</span>
+            <span className="ui-label">{taskLabel ? `${taskLabel} 写作分数` : '写作总分'}</span>
             <strong>{displayOverall}</strong>
             <p className="ui-body-md">
               {isMock

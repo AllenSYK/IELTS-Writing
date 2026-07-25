@@ -90,12 +90,18 @@ function DraftCard({
   )
 }
 
-export function DraftManager({ initialOpen = false }: { initialOpen?: boolean }) {
+export function DraftManager({
+  initialOpen = false,
+  initialTab = 'task1'
+}: {
+  initialOpen?: boolean
+  initialTab?: DraftTab
+}) {
   const router = useRouter()
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const [open, setOpen] = useState(initialOpen)
-  const [activeTab, setActiveTab] = useState<DraftTab>('task1')
+  const [activeTab, setActiveTab] = useState<DraftTab>(initialTab)
   const [drafts, setDrafts] = useState<DraftListItem[]>([])
   const [quota, setQuota] = useState<DraftDeleteQuota>(emptyQuota)
   const [loading, setLoading] = useState(false)

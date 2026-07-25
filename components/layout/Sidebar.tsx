@@ -54,12 +54,27 @@ export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const online = useOnlineLabel()
+  const [mobileOpen, setMobileOpen] = useState(false)
   const activeId = useMemo(() => {
     const allItems = [...mainItems, ...supportItems]
     const matches = allItems.filter((item) => item.match(pathname))
     if (matches.length === 0) return null
     return matches.sort((a, b) => b.href.length - a.href.length)[0].id
   }, [pathname])
+
+  useEffect(() => {
+    if (!mobileOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileOpen])
 
   function prefetchItem(item: SidebarItem) {
     router.prefetch(item.href)
@@ -78,6 +93,17 @@ export function Sidebar() {
       >
         <BrandLogo size="md" showName />
       </Link>
+
+      <button
+        className="sidebar-mobile-menu"
+        type="button"
+        aria-label={mobileOpen ? '关闭主导航' : '打开主导航'}
+        aria-expanded={mobileOpen}
+        aria-controls="mobile-main-navigation"
+        onClick={() => setMobileOpen((value) => !value)}
+      >
+        <MaterialIcon name={mobileOpen ? 'close' : 'menu'} size={24} />
+      </button>
 
       <nav className="sidebar-nav" aria-label="主要页面" onKeyDown={handleRovingNavKeyDown}>
         {mainItems.map((item) => (
@@ -127,6 +153,66 @@ export function Sidebar() {
 
         <p className="sidebar-copyright">© 2026 {BRAND_NAME}</p>
       </div>
+
+      {mobileOpen ? (
+        <>
+          <button
+            className="sidebar-mobile-backdrop"
+            type="button"
+            aria-label="关闭主导航"
+            onClick={() => setMobileOpen(false)}
+          />
+          <div
+            id="mobile-main-navigation"
+            className="sidebar-mobile-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="页面导航"
+          >
+            <div className="sidebar-mobile-drawer-heading">
+              <strong>前往页面</strong>
+              <button type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)}>
+                <MaterialIcon name="close" size={22} />
+              </button>
+            </div>
+            <nav aria-label="移动端主要页面">
+              {mainItems.map((item) => (
+                <Link
+                  key={item.id}
+                  className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
+                  href={item.href}
+                  aria-label={item.label}
+                  aria-current={activeId === item.id ? 'page' : undefined}
+                  onClick={() => {
+                    setMobileOpen(false)
+                    if (item.id === 'ielts') {
+                      window.dispatchEvent(new Event('ielts-writing:practice-visited'))
+                    }
+                  }}
+                >
+                  <MaterialIcon name={item.icon} filled={activeId === item.id} />
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </nav>
+            <nav className="sidebar-mobile-support" aria-label="移动端支持与法律页面">
+              {supportItems.map((item) => (
+                <Link
+                  key={item.id}
+                  className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
+                  href={item.href}
+                  aria-label={item.label}
+                  aria-current={activeId === item.id ? 'page' : undefined}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </>
+      ) : null}
     </aside>
   )
 }

@@ -21,6 +21,7 @@ import type {
 import {
   StudyPlanTaskTypeLabels,
   StudyPlanTaskStatusLabels,
+  StudyPlanTaskSourceLabels,
   PlanPhaseLabels,
   QuestionSourceLabels,
   ShortCriterionLabels,
@@ -63,6 +64,13 @@ type ViewMode =
   | 'replanning'
   | 'loading-plan'
   | 'failed'
+
+function taskSourceLabel(task: StudyPlanTask) {
+  if (isWritableTaskType(task.taskType)) {
+    return QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
+  }
+  return StudyPlanTaskSourceLabels[task.source] ?? '学习活动'
+}
 
 type PageAction =
   | { type: 'BOOT_RESOLVED_WITH_PLAN'; plan: StudyPlan; profile: StudyPlanProfile | null }
@@ -1257,7 +1265,7 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
           {tasks.slice(0, 3).map((task) => {
             const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
             const shortTitle = task.title || typeLabel
-            const sourceLabel = QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
+            const sourceLabel = taskSourceLabel(task)
             const isAi = task.questionSource === 'ai_generated'
             return (
               <div key={task.id} style={{ ...styles.calendarTaskLine, alignItems: 'flex-start' }}>
@@ -1291,7 +1299,7 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
         </div>
 
         {totalCount > 0 && (
-          <span style={styles.calendarMinutes}>{totalMinutes}分</span>
+          <span style={styles.calendarMinutes}>{totalMinutes} 分钟</span>
         )}
         {completedCount === totalCount && totalCount > 0 && (
           <MaterialIcon name="check_circle" size={12} />
@@ -1320,7 +1328,7 @@ function TaskMiniCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () =>
   const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
   const statusLabel = StudyPlanTaskStatusLabels[task.status] ?? task.status
   const title = task.title || typeLabel
-  const sourceLabel = QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
+  const sourceLabel = taskSourceLabel(task)
   const isAi = task.questionSource === 'ai_generated'
 
   return (

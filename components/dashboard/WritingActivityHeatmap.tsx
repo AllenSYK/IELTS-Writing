@@ -106,6 +106,7 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
   const weeks = buildWeeks(days)
   const labels = monthLabels(weeks)
   const total = days.reduce((sum, day) => sum + day.count, 0)
+  const activeDays = days.filter((day) => day.count > 0).length
   const chartStyle = { '--activity-week-count': weeks.length } as CSSProperties
   const latestDate = days.at(-1)?.date || ''
 
@@ -119,7 +120,7 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
     <section className="dashboard-panel activity-panel" aria-labelledby="writing-activity-title">
       <header className="activity-panel-header">
         <div>
-          <p className="ui-label">Writing activity</p>
+          <p className="ui-label">写作活动</p>
           <h2 id="writing-activity-title">写作热力图</h2>
         </div>
         <div className="activity-header-actions">
@@ -143,8 +144,14 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
       {isLoading ? (
         <HeatmapSkeleton />
       ) : (
-        <div ref={scrollRef} className="activity-scroll" tabIndex={0} aria-label={`最近 ${range} 天写作活动，最新日期位于最右侧`}>
-          <div className="activity-chart" style={chartStyle}>
+        <div
+          ref={scrollRef}
+          className="activity-scroll"
+          tabIndex={0}
+          role="img"
+          aria-label={`最近 ${range} 天共完成 ${total} 次写作批改，活跃 ${activeDays} 天，最新日期位于最右侧`}
+        >
+          <div className="activity-chart" style={chartStyle} aria-hidden="true">
             <div className="activity-months" aria-hidden="true">
               {labels.map((label) => (
                 <span key={label.key}>{label.label}</span>
@@ -170,8 +177,6 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
                           <span
                             className={`activity-cell level-${day.level}`}
                             key={day.date}
-                            role="img"
-                            aria-label={formatTooltip(day.date, day.count)}
                             title={formatTooltip(day.date, day.count)}
                           />
                         ) : <span className="activity-cell is-placeholder" key={`${weekKey}-empty-${dayIndex}`} />

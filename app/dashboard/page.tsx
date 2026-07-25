@@ -30,6 +30,13 @@ function daysLeft(value: string) {
   return Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
 }
 
+const planLabels: Record<string, string> = {
+  standard: '标准版',
+  pro: '专业版',
+  premium: '高级版',
+  admin: '管理员版'
+}
+
 export default async function DashboardPage() {
   const user = await getCurrentSupabaseUser()
   if (!user) redirect('/login')
@@ -54,7 +61,7 @@ export default async function DashboardPage() {
           <article className="dashboard-card">
             <CalendarDays size={20} />
             <span>套餐</span>
-            <strong>{check.license.plan}</strong>
+            <strong>{planLabels[check.license.plan] ?? check.license.plan}</strong>
           </article>
           <article className="dashboard-card">
             <Clock3 size={20} />

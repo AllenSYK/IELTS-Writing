@@ -763,10 +763,10 @@ export function countWords(text: string) {
 }
 
 export function formatDate(isoDate: string) {
-  return new Intl.DateTimeFormat('en', {
-    month: 'short',
-    day: '2-digit',
-    year: 'numeric'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   }).format(new Date(isoDate))
 }
 

@@ -14,32 +14,32 @@ const modes = [
   {
     mode: 'task1',
     icon: 'bar_chart',
-    minutes: '20 mins',
+    minutes: '20 分钟',
     title: 'Task 1',
-    subtitle: 'Academic / General',
-    words: '150+ words',
-    action: 'Start',
+    subtitle: '学术类 / 培训类',
+    words: '至少 150 词',
+    action: '开始',
     focuses: ['task', 'lexical', 'cohesion'] as PracticeFocus[]
   },
   {
     mode: 'task2',
     icon: 'edit_document',
-    minutes: '40 mins',
+    minutes: '40 分钟',
     title: 'Task 2',
-    subtitle: 'Essay Writing',
-    words: '250+ words',
-    action: 'Start',
+    subtitle: '议论文写作',
+    words: '至少 250 词',
+    action: '开始',
     primary: true,
     focuses: ['grammar', 'lexical', 'cohesion', 'task'] as PracticeFocus[]
   },
   {
     mode: 'mock',
     icon: 'timer',
-    minutes: '60 mins',
+    minutes: '60 分钟',
     title: '完整测试',
     subtitle: 'Task 1 + Task 2',
-    words: '400+ words',
-    action: 'Start Test',
+    words: '至少 400 词',
+    action: '开始测试',
     featured: true,
     focuses: ['grammar', 'lexical', 'cohesion', 'task'] as PracticeFocus[]
   }
@@ -48,7 +48,7 @@ const modes = [
 export default async function PracticePage({
   searchParams
 }: {
-  searchParams?: Promise<{ focus?: string; drafts?: string }>
+  searchParams?: Promise<{ focus?: string; drafts?: string; draftTab?: string }>
 }) {
   const params = searchParams ? await searchParams : {}
   const focus = params.focus && params.focus in focusLabels ? (params.focus as PracticeFocus) : null
@@ -71,6 +71,7 @@ export default async function PracticePage({
 
         <WritingModeSelector
           initialDraftsOpen={params.drafts === '1'}
+          initialDraftTab={params.draftTab === 'task2' || params.draftTab === 'mock' ? params.draftTab : 'task1'}
           modes={modes.map((mode) => ({ ...mode, recommended: Boolean(focus && mode.focuses.includes(focus)) }))}
         />
       </section>

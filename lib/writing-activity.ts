@@ -3,7 +3,7 @@ export type WritingActivityDay = {
   count: number
 }
 
-type UsageTimestamp = {
+type WritingRecordTimestamp = {
   created_at: string
 }
 
@@ -28,7 +28,7 @@ function addUtcDays(dateKey: string, amount: number) {
 }
 
 export function buildWritingActivity(
-  rows: UsageTimestamp[],
+  rows: WritingRecordTimestamp[],
   options: { today?: Date; days?: number; timeZone?: string } = {}
 ) {
   const days = options.days ?? WritingActivityDays
@@ -61,23 +61,22 @@ export async function loadWritingActivityForUser(
   const queryStart = `${startKey}T00:00:00+08:00`
   const queryEnd = `${addUtcDays(todayKey, 1)}T00:00:00+08:00`
 
-  const rows: UsageTimestamp[] = []
+  const rows: WritingRecordTimestamp[] = []
   const pageSize = 1000
 
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await service
-      .from('usage_records')
-      .select('created_at')
+      .from('writing_records')
+      .select('submitted_at')
       .eq('user_id', userId)
-      .eq('action', 'evaluate')
-      .eq('success', true)
-      .gte('created_at', queryStart)
-      .lt('created_at', queryEnd)
-      .order('created_at', { ascending: true })
+      .in('processing_status', ['complete', 'completed', 'partial'])
+      .gte('submitted_at', queryStart)
+      .lt('submitted_at', queryEnd)
+      .order('submitted_at', { ascending: true })
       .range(offset, offset + pageSize - 1)
 
     if (error) throw error
-    const page = (data ?? []) as UsageTimestamp[]
+    const page = (data ?? []).map((row) => ({ created_at: row.submitted_at as string }))
     rows.push(...page)
     if (page.length < pageSize) break
   }

@@ -115,7 +115,15 @@ function PracticeSettingRow({
   )
 }
 
-export function WritingModeSelector({ modes, initialDraftsOpen = false }: { modes: ModeCard[]; initialDraftsOpen?: boolean }) {
+export function WritingModeSelector({
+  modes,
+  initialDraftsOpen = false,
+  initialDraftTab = 'task1'
+}: {
+  modes: ModeCard[]
+  initialDraftsOpen?: boolean
+  initialDraftTab?: WritingTaskType
+}) {
   const router = useRouter()
   const { userId } = useUserSession()
   const { pushToast } = useToast()
@@ -171,6 +179,16 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
       router.push(`/write/${mode}?${params.toString()}`)
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+      const limitTab = code === 'DRAFT_LIMIT_REACHED_TASK2'
+        ? 'task2'
+        : code === 'DRAFT_LIMIT_REACHED_FULL_TEST'
+          ? 'mock'
+          : code === 'DRAFT_LIMIT_REACHED_TASK1'
+            ? 'task1'
+            : null
+      if (limitTab) {
+        router.push(`/practice?drafts=1&draftTab=${limitTab}`)
+      }
       pushToast({
         kind: 'error',
         title: '暂时无法创建草稿',
@@ -247,7 +265,7 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
         <MaterialIcon name="arrow_forward" size={18} />
       </button>
 
-      <DraftManager initialOpen={initialDraftsOpen} />
+      <DraftManager initialOpen={initialDraftsOpen} initialTab={initialDraftTab} />
 
       <GlassPanel level={2} className="prompt-choice-panel">
         <div className="settings-section-header">

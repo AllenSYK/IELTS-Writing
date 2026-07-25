@@ -102,7 +102,7 @@ export async function POST() {
       }
 
       for (const err of extractedErrors) {
-        const normalizedKey = buildNormalizedKey(err.category, err.title)
+        const normalizedKey = buildNormalizedKey(err.category, err.title, err.exampleWrong, err.exampleCorrect)
 
         const { data: existing } = await service
           .from('writing_error_patterns')

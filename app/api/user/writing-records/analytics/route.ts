@@ -117,7 +117,7 @@ function extractAnnotations(
   return safeParseAnnotations(rowAnnotations)
 }
 
-const COMPLETED_STATUSES = ['complete', 'completed']
+const COMPLETED_STATUSES = ['complete', 'completed', 'partial']
 
 function buildAnalyticsRecord(row: Record<string, unknown>): AnalyticsRecord | null {
   if (!COMPLETED_STATUSES.includes(row.processing_status as string)) return null
@@ -176,7 +176,7 @@ export async function GET() {
     .select('id, task_type, submitted_at, processing_status, evaluation, annotations')
     .eq('user_id', user.id)
     .in('processing_status', ['complete', 'completed', 'partial'])
-    .order('submitted_at', { ascending: true })
+    .order('submitted_at', { ascending: false })
     .limit(50)
 
   if (error) {

@@ -235,6 +235,24 @@ export const PastPaperSourceTypeLabels: Record<PastPaperSourceType, string> = {
   other: '其他'
 }
 
+export const PastPaperSourceFilterOptions = [
+  { value: 'official', label: '官方材料' },
+  { value: 'published', label: '出版题集' },
+  { value: 'recalled', label: '考试回忆' },
+  { value: 'curated', label: '平台整理' },
+  { value: 'user_submitted', label: '用户投稿' },
+  { value: 'other', label: '其他' }
+] as const
+
+export const PastPaperSourceFilterValues: Record<string, PastPaperSourceType[]> = {
+  official: ['official', 'official_public'],
+  published: ['published_collection', 'published_book'],
+  recalled: ['recalled', 'exam_recall'],
+  curated: ['curated', 'platform_curated'],
+  user_submitted: ['user_submitted'],
+  other: ['other']
+}
+
 export const PastPaperFrequencyLabels: Record<PastPaperFrequencyLevel, string> = {
   high: '高频',
   medium_high: '次高频',
