@@ -89,6 +89,19 @@ test('study plan question-bank tasks open the exact assigned backend question', 
   assert.match(studyPlanPage, /studyPlanWritingHref\(task\)/)
 })
 
+test('past-paper detail query uses only deployed columns and distinguishes database failures from missing questions', async () => {
+  const route = await readFile(
+    new URL('../app/api/past-papers/[id]/route.ts', import.meta.url),
+    'utf8'
+  )
+
+  assert.doesNotMatch(route, /task2_topic/)
+  assert.doesNotMatch(route, /\btags\b/)
+  assert.match(route, /\.maybeSingle\(\)/)
+  assert.match(route, /if \(error\)[\s\S]*status: 500/)
+  assert.match(route, /if \(!data\)[\s\S]*status: 404/)
+})
+
 test('account average override is persisted and learning analytics applies half-band rounding', async () => {
   const [profileRoute, accountSettings, analyticsPage, scoring] = await Promise.all([
     readFile(new URL('../app/api/profile/route.ts', import.meta.url), 'utf8'),

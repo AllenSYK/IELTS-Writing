@@ -13,13 +13,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const { data, error } = await service
     .from('past_paper_questions')
-    .select('id, status, task_type, title, question_text, summary, source_type, source_name, source_year, frequency_level, difficulty, task1_visual_types, task1_visual_data, task2_question_type, task2_topic, exam_date, exam_session, tags, topics, keywords, show_source_image, created_at')
+    .select('id, status, task_type, title, question_text, summary, source_type, source_name, source_year, frequency_level, difficulty, task1_visual_types, task1_visual_data, task2_question_type, exam_date, exam_session, topics, keywords, show_source_image, created_at')
     .eq('id', id)
     .eq('status', 'published')
-    .single()
+    .maybeSingle()
 
-  if (error || !data) {
-    return json({ success: false, message: 'Not found' }, { status: 404 })
+  if (error) {
+    console.error('[past-paper-detail]', {
+      questionId: id,
+      code: error.code,
+      message: error.message
+    })
+    return json({ success: false, message: '题库读取失败，请稍后重试。' }, { status: 500 })
+  }
+
+  if (!data) {
+    return json({ success: false, message: '这道题目不存在或尚未发布。' }, { status: 404 })
   }
 
   return json({
