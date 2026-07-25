@@ -10,13 +10,15 @@ import type { WritingRecord } from '@/lib/writing-records'
 export function GoalStatusPanel({
   records,
   profile,
+  currentAverageOverride,
   compact = false
 }: {
   records: WritingRecord[]
   profile: UserProfile
+  currentAverageOverride?: number | null
   compact?: boolean
 }) {
-  const status = buildGoalStatus(records, profile)
+  const status = buildGoalStatus(records, profile, { currentAverageOverride })
   const hasData = status.currentAverage !== null
 
   return (
@@ -39,7 +41,10 @@ export function GoalStatusPanel({
           <dl className="goal-status-grid">
             <div>
               <dt>当前平均分</dt>
-              <dd>{formatBandNumber(status.currentAverage)}</dd>
+              <dd>
+                {formatBandNumber(status.currentAverage)}
+                {currentAverageOverride !== null && currentAverageOverride !== undefined ? <small className="manual-score-mark">已调整</small> : null}
+              </dd>
             </div>
             <div>
               <dt>目标分</dt>

@@ -15,7 +15,7 @@ import {
   buildPracticeRecommendations,
   buildRadarMetrics
 } from '@/lib/learning-analytics'
-import { averageTaskBand } from '@/lib/ielts-scoring'
+import { averageTaskBand, roundToHalfBand } from '@/lib/ielts-scoring'
 import {
   averageScore,
   scoreValue,
@@ -164,7 +164,7 @@ function AnalyticsSkeleton() {
 
 export default function AnalyticsPage() {
   const { userId } = useUserSession()
-  const { profile } = useUserProfile()
+  const { profile, manualAverageScore } = useUserProfile()
 
   const cachedRecords = useMemo(() => readCachedRecords(), [])
   const [records, setRecords] = useState<WritingRecord[]>(cachedRecords)
@@ -248,9 +248,16 @@ export default function AnalyticsPage() {
     return records.filter((record) => new Date(record.submittedAt).getTime() >= cutoff)
   }, [now, range, records])
 
-  const average = useMemo(() => averageScore(scopedRecords), [scopedRecords])
-  const task1Average = useMemo(() => averageTaskBand(scopedRecords, 'task1'), [scopedRecords])
-  const task2Average = useMemo(() => averageTaskBand(scopedRecords, 'task2'), [scopedRecords])
+  const calculatedAverage = useMemo(() => averageScore(scopedRecords), [scopedRecords])
+  const average = manualAverageScore ?? (calculatedAverage === null ? null : roundToHalfBand(calculatedAverage))
+  const task1Average = useMemo(() => {
+    const value = averageTaskBand(scopedRecords, 'task1')
+    return value === null ? null : roundToHalfBand(value)
+  }, [scopedRecords])
+  const task2Average = useMemo(() => {
+    const value = averageTaskBand(scopedRecords, 'task2')
+    return value === null ? null : roundToHalfBand(value)
+  }, [scopedRecords])
   const trend = useMemo(() => buildTrend(scopedRecords), [scopedRecords])
   const radarMetrics = useMemo(() => buildRadarMetrics(scopedRecords, profile), [profile, scopedRecords])
   const weakest = useMemo(
@@ -311,8 +318,8 @@ export default function AnalyticsPage() {
               <strong>{average === null ? '—' : average.toFixed(1)}</strong>
               <span className="ui-label">
                 {scopedRecords.length > 0
-                  ? `T1 ${task1Average === null ? '—' : task1Average.toFixed(1)} · T2 ${task2Average === null ? '—' : task2Average.toFixed(1)}`
-                  : '暂无数据'}
+                  ? `${manualAverageScore !== null ? '已手动调整 · ' : ''}T1 ${task1Average === null ? '—' : task1Average.toFixed(1)} · T2 ${task2Average === null ? '—' : task2Average.toFixed(1)}`
+                  : manualAverageScore !== null ? '账号手动设置' : '暂无数据'}
               </span>
             </div>
           </GlassPanel>
@@ -341,7 +348,7 @@ export default function AnalyticsPage() {
         </section>
 
         <GlassPanel className="target-analytics-card ui-hover-glow">
-          <GoalStatusPanel records={scopedRecords} profile={profile} />
+          <GoalStatusPanel records={scopedRecords} profile={profile} currentAverageOverride={manualAverageScore} />
         </GlassPanel>
 
         <section className="charts-grid">

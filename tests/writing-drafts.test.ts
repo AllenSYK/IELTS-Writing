@@ -7,6 +7,7 @@ import {
   draftRemainingSeconds,
   draftTotalWords,
   initialManagedDraft,
+  managedDraftHasContent,
   normalizeManagedDraftData,
   type DraftRecord
 } from '../lib/writing-drafts'
@@ -35,6 +36,20 @@ test('full-test drafts keep two independent responses, one active task, and one 
   assert.equal(draft.selection.task1ChartType, 'bar_chart')
   assert.equal(draft.selection.task2EssayType, 'agree_disagree')
   assert.equal(draft.selection.task2Topic, 'education')
+})
+
+test('empty writing sessions do not become visible drafts until the user writes content', () => {
+  const single = initialManagedDraft('task1')
+  const fullTest = initialManagedDraft('mock')
+
+  assert.equal(managedDraftHasContent(single, 'task1'), false)
+  assert.equal(managedDraftHasContent(fullTest, 'mock'), false)
+
+  if (single.kind === 'single') single.task.essay = '  A real response.  '
+  if (fullTest.kind === 'full_test') fullTest.task2.essay = 'Task 2 content'
+
+  assert.equal(managedDraftHasContent(single, 'task1'), true)
+  assert.equal(managedDraftHasContent(fullTest, 'mock'), true)
 })
 
 test('draft display totals add both full-test tasks and never return negative time', () => {
@@ -97,11 +112,13 @@ test('draft API authenticates users and delegates limits and deletion to atomic 
 })
 
 test('practice page exposes a centered draft manager and complete-test configuration', async () => {
-  const [selector, manager, editor, history] = await Promise.all([
+  const [selector, manager, editor, history, loading, css] = await Promise.all([
     readFile(new URL('../components/practice/WritingModeSelector.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/practice/DraftManager.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/write/[mode]/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/history/page.tsx', import.meta.url), 'utf8')
+    readFile(new URL('../app/history/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/loading/PageSkeleton.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
   assert.match(selector, /<DraftManager/)
@@ -114,6 +131,13 @@ test('practice page exposes a centered draft manager and complete-test configura
   assert.match(manager, /今日还可删除/)
   assert.match(manager, /继续写作/)
   assert.match(manager, /确认删除/)
+  assert.match(manager, /draft-loading-spinner/)
+  assert.match(manager, /ielts-writing:practice-visited/)
+  assert.match(selector, /确认开始/)
+  assert.match(selector, /practice-launch-progress/)
+  assert.match(loading, /正在准备写作练习/)
+  assert.match(css, /\.draft-loading-spinner\s*\{[\s\S]*?animation:/)
+  assert.match(css, /\.writing-route-progress span\s*\{[\s\S]*?animation:/)
   assert.match(editor, /kind: 'full_test'/)
   assert.match(editor, /activeTask:/)
   assert.doesNotMatch(editor, /总计：\{totalMockWords\}\/400/)

@@ -22,15 +22,18 @@ import {
 type ServerProfile = {
   displayName: string | null
   email: string | null
+  manualAverageScore: number | null
 }
 
 type UserProfileContextValue = {
   profile: UserProfile
   displayName: string
   email: string | null
+  manualAverageScore: number | null
   displayNameLoading: boolean
   saveProfile: (profile: UserProfile) => Promise<UserProfile>
   updateDisplayName: (name: string) => Promise<void>
+  updateManualAverageScore: (score: number | null) => Promise<void>
   reloadProfile: () => void
 }
 
@@ -43,6 +46,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile>(DefaultUserProfile)
   const [serverDisplayName, setServerDisplayName] = useState<string | null>(null)
   const [serverEmail, setServerEmail] = useState<string | null>(null)
+  const [manualAverageScore, setManualAverageScore] = useState<number | null>(null)
   const [serverFetched, setServerFetched] = useState(false)
   const fetchedRef = useRef(false)
 
@@ -53,6 +57,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       setServerFetched(false)
       setServerDisplayName(null)
       setServerEmail(null)
+      setManualAverageScore(null)
     })
   }, [userId])
 
@@ -111,6 +116,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
         if (data.success && data.profile) {
           setServerDisplayName(data.profile.displayName)
           setServerEmail(data.profile.email)
+          setManualAverageScore(data.profile.manualAverageScore)
 
           // Sync server displayName into localStorage cache
           if (data.profile.displayName !== null) {
@@ -170,6 +176,29 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     setProfile(updated)
   }, [userId])
 
+  const updateManualAverageScore = useCallback(async (score: number | null) => {
+    if (!userId) throw new Error('未登录')
+    if (
+      score !== null
+      && (!Number.isFinite(score) || score < 0 || score > 9 || !Number.isInteger(score * 2))
+    ) {
+      throw new Error('平均分必须是 0 到 9 之间的 0.5 分档')
+    }
+
+    const res = await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ manualAverageScore: score })
+    })
+    const data = await res.json() as { success?: boolean; profile?: ServerProfile; message?: string }
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || '保存失败')
+    }
+
+    setManualAverageScore(data.profile?.manualAverageScore ?? score)
+    window.dispatchEvent(new CustomEvent('ielts-writing:analytics-invalidated'))
+  }, [userId])
+
   const reloadProfile = useCallback(() => {
     fetchedRef.current = false
     setServerFetched(false)
@@ -181,12 +210,14 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       profile: profile || DefaultUserProfile,
       displayName,
       email: serverEmail,
+      manualAverageScore,
       displayNameLoading,
       saveProfile,
       updateDisplayName,
+      updateManualAverageScore,
       reloadProfile
     }),
-    [profile, displayName, serverEmail, displayNameLoading, saveProfile, updateDisplayName, reloadProfile]
+    [profile, displayName, serverEmail, manualAverageScore, displayNameLoading, saveProfile, updateDisplayName, updateManualAverageScore, reloadProfile]
   )
 
   return <UserProfileContext.Provider value={value}>{children}</UserProfileContext.Provider>

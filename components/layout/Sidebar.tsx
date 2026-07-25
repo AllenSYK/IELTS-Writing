@@ -89,6 +89,11 @@ export function Sidebar() {
             aria-current={activeId === item.id ? 'page' : undefined}
             onPointerEnter={() => prefetchItem(item)}
             onFocus={() => prefetchItem(item)}
+            onClick={() => {
+              if (item.id === 'ielts') {
+                window.dispatchEvent(new Event('ielts-writing:practice-visited'))
+              }
+            }}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>

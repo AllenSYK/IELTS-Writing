@@ -23,6 +23,7 @@ import { userScopedStorageKey } from '@/lib/user-storage'
 import { createDraftRequestId, createManagedDraft, DraftErrorMessages } from '@/lib/writing-drafts'
 import { UploadedTaskPanel } from '@/components/practice/UploadedTaskPanel'
 import { DraftManager } from '@/components/practice/DraftManager'
+import { CenteredDialog } from '@/components/ui/CenteredDialog'
 
 type ModeCard = {
   mode: WritingTaskType
@@ -130,6 +131,8 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [startingMode, setStartingMode] = useState<WritingTaskType | null>(null)
+  const [pendingMode, setPendingMode] = useState<WritingTaskType | null>(null)
+  const [launchProgress, setLaunchProgress] = useState(0)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
 
@@ -153,13 +156,18 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
     if (!userId || startingRef.current) return
     startingRef.current = true
     setStartingMode(mode)
+    setLaunchProgress(18)
+    let navigating = false
     try {
       const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
       startRequestIdsRef.current[mode] = requestId
       const payload = await createManagedDraft(mode, selection, requestId)
+      setLaunchProgress(62)
       delete startRequestIdsRef.current[mode]
       const params = searchParamsForSelection(mode, selection)
       params.set('draft', payload.draft.id)
+      setLaunchProgress(90)
+      navigating = true
       router.push(`/write/${mode}?${params.toString()}`)
     } catch (error) {
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
@@ -169,8 +177,11 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
         message: DraftErrorMessages[code] || (error instanceof Error ? error.message : '请稍后重试。')
       })
     } finally {
-      startingRef.current = false
-      setStartingMode(null)
+      if (!navigating) {
+        startingRef.current = false
+        setStartingMode(null)
+        setLaunchProgress(0)
+      }
     }
   }
 
@@ -265,7 +276,7 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
                   className="choice-chip choice-link"
                   type="button"
                   disabled={startingMode !== null}
-                  onClick={() => void startMode(mode.mode)}
+                  onClick={() => setPendingMode(mode.mode)}
                   onPointerEnter={() => prefetchMode(mode.mode)}
                   onFocus={() => prefetchMode(mode.mode)}
                 >
@@ -332,6 +343,64 @@ export function WritingModeSelector({ modes, initialDraftsOpen = false }: { mode
 
         <UploadedTaskPanel />
       </GlassPanel>
+
+      <CenteredDialog
+        open={pendingMode !== null}
+        title={`开始${pendingMode === 'mock' ? '完整测试' : pendingMode === 'task1' ? ' Task 1' : ' Task 2'}？`}
+        description="确认后将按当前练习设置准备题目。"
+        className="practice-start-confirm-dialog"
+        onClose={() => setPendingMode(null)}
+        footer={(
+          <>
+            <button className="ui-secondary-button" type="button" onClick={() => setPendingMode(null)}>
+              取消
+            </button>
+            <button
+              className="ui-primary-button"
+              type="button"
+              onClick={() => {
+                const mode = pendingMode
+                setPendingMode(null)
+                if (mode) void startMode(mode)
+              }}
+            >
+              确认开始
+            </button>
+          </>
+        )}
+      >
+        <div className="practice-start-summary">
+          <span>
+            <MaterialIcon name="schedule" size={18} />
+            {pendingMode === 'mock' ? '60 分钟' : pendingMode === 'task1' ? '20 分钟' : '40 分钟'}
+          </span>
+          <span>
+            <MaterialIcon name="description" size={18} />
+            {pendingMode === 'mock' ? 'Task 1 + Task 2' : pendingMode === 'task1' ? Task1ChartLabels[selection.task1ChartType] : Task2EssayLabels[selection.task2EssayType]}
+          </span>
+        </div>
+      </CenteredDialog>
+
+      {startingMode ? (
+        <div className="practice-launch-layer" role="status" aria-live="polite" aria-label="正在打开写作练习">
+          <section className="practice-launch-card">
+            <span className="practice-launch-spinner" aria-hidden="true" />
+            <strong>正在打开{startingMode === 'mock' ? '完整测试' : startingMode === 'task1' ? ' Task 1' : ' Task 2'}</strong>
+            <p>{launchProgress < 50 ? '正在建立练习…' : launchProgress < 80 ? '正在准备题目与草稿…' : '即将打开写作编辑器…'}</p>
+            <div
+              className="practice-launch-progress"
+              role="progressbar"
+              aria-label="练习加载进度"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={launchProgress}
+            >
+              <span style={{ width: `${launchProgress}%` }} />
+            </div>
+            <small>{launchProgress}%</small>
+          </section>
+        </div>
+      ) : null}
     </>
   )
 }

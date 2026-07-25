@@ -9,7 +9,7 @@ export async function GET() {
   const service = createSupabaseServiceRoleClient()
   const { data: profile, error } = await service
     .from('profiles')
-    .select('display_name, email')
+    .select('display_name, email, manual_average_score')
     .eq('id', check.user.id)
     .maybeSingle()
 
@@ -21,7 +21,10 @@ export async function GET() {
     success: true,
     profile: {
       displayName: profile?.display_name ?? null,
-      email: profile?.email ?? check.user.email ?? null
+      email: profile?.email ?? check.user.email ?? null,
+      manualAverageScore: profile?.manual_average_score === null || profile?.manual_average_score === undefined
+        ? null
+        : Number(profile.manual_average_score)
     }
   })
 }
@@ -37,21 +40,23 @@ export async function PATCH(request: Request) {
     return json({ success: false, message: '请求格式错误' }, { status: 400 })
   }
 
-  const raw = body && typeof body === 'object' && 'displayName' in body
-    ? (body as Record<string, unknown>).displayName
-    : undefined
+  const input = body && typeof body === 'object' ? body as Record<string, unknown> : {}
+  const hasDisplayName = Object.hasOwn(input, 'displayName')
+  const hasManualAverageScore = Object.hasOwn(input, 'manualAverageScore')
+  const raw = hasDisplayName ? input.displayName : undefined
+  const rawManualAverage = hasManualAverageScore ? input.manualAverageScore : undefined
 
-  if (raw === undefined) {
-    return json({ success: false, message: '缺少 displayName 字段' }, { status: 400 })
+  if (!hasDisplayName && !hasManualAverageScore) {
+    return json({ success: false, message: '没有可保存的个人资料字段' }, { status: 400 })
   }
 
-  if (raw !== null && typeof raw !== 'string') {
+  if (hasDisplayName && raw !== null && typeof raw !== 'string') {
     return json({ success: false, message: 'displayName 必须是字符串或 null' }, { status: 400 })
   }
 
-  const trimmed = raw === null ? null : raw.trim()
+  const trimmed = !hasDisplayName ? undefined : raw === null ? null : (raw as string).trim()
 
-  if (trimmed !== null) {
+  if (trimmed !== undefined && trimmed !== null) {
     if (trimmed.length === 0) {
       return json({ success: false, message: '昵称不能为空' }, { status: 400 })
     }
@@ -63,6 +68,23 @@ export async function PATCH(request: Request) {
     }
     if (/<[^>]/.test(trimmed)) {
       return json({ success: false, message: '昵称不能包含 HTML' }, { status: 400 })
+    }
+  }
+
+  let manualAverageScore: number | null | undefined
+  if (hasManualAverageScore) {
+    if (rawManualAverage === null) {
+      manualAverageScore = null
+    } else if (
+      typeof rawManualAverage === 'number'
+      && Number.isFinite(rawManualAverage)
+      && rawManualAverage >= 0
+      && rawManualAverage <= 9
+      && Number.isInteger(rawManualAverage * 2)
+    ) {
+      manualAverageScore = rawManualAverage
+    } else {
+      return json({ success: false, message: '平均分必须是 0 到 9 之间的 0.5 分档，或恢复为自动计算' }, { status: 400 })
     }
   }
 
@@ -79,29 +101,48 @@ export async function PATCH(request: Request) {
   }
 
   if (!existing) {
+    const insertPayload: Record<string, unknown> = { id: check.user.id, email: check.user.email }
+    if (trimmed !== undefined) insertPayload.display_name = trimmed
+    if (manualAverageScore !== undefined) insertPayload.manual_average_score = manualAverageScore
     const { error: insertError } = await service
       .from('profiles')
-      .insert({ id: check.user.id, email: check.user.email, display_name: trimmed })
+      .insert(insertPayload)
 
     if (insertError) {
       return apiError(insertError, '创建用户资料失败')
     }
   } else {
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (trimmed !== undefined) updates.display_name = trimmed
+    if (manualAverageScore !== undefined) updates.manual_average_score = manualAverageScore
     const { error: updateError } = await service
       .from('profiles')
-      .update({ display_name: trimmed, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq('id', check.user.id)
 
     if (updateError) {
-      return apiError(updateError, '保存昵称失败')
+      return apiError(updateError, '保存个人资料失败')
     }
+  }
+
+  const { data: savedProfile, error: savedProfileError } = await service
+    .from('profiles')
+    .select('display_name, email, manual_average_score')
+    .eq('id', check.user.id)
+    .maybeSingle()
+
+  if (savedProfileError) {
+    return apiError(savedProfileError, '读取已保存的个人资料失败')
   }
 
   return json({
     success: true,
     profile: {
-      displayName: trimmed,
-      email: check.user.email ?? null
+      displayName: savedProfile?.display_name ?? null,
+      email: savedProfile?.email ?? check.user.email ?? null,
+      manualAverageScore: savedProfile?.manual_average_score === null || savedProfile?.manual_average_score === undefined
+        ? null
+        : Number(savedProfile.manual_average_score)
     }
   })
 }

@@ -5805,6 +5805,90 @@ img {
   margin: 0;
 }
 
+.account-average-setting {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.account-average-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-setting-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: rgba(216, 226, 255, 0.66);
+  color: var(--primary);
+}
+
+.account-average-copy strong {
+  font-size: 14px;
+}
+
+.account-average-copy p,
+.account-average-note {
+  margin: 4px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-average-note {
+  margin-top: 10px;
+}
+
+.account-average-editor {
+  width: min(300px, 100%);
+  display: grid;
+  gap: 8px;
+}
+
+.account-average-editor label {
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-average-editor select {
+  min-height: 40px;
+  border: 1px solid var(--glass-border-1);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--on-surface);
+  padding: 7px 10px;
+  font: inherit;
+}
+
+.account-average-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.account-setting-error {
+  color: var(--error);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .account-average-setting {
+    flex-direction: column;
+  }
+
+  .account-average-editor {
+    width: 100%;
+  }
+}
+
 .activity-skeleton {
   overflow: hidden;
   min-height: 158px;
@@ -6555,6 +6639,18 @@ img {
   color: var(--on-surface);
   font-size: 18px;
   font-weight: 800;
+}
+
+.manual-score-mark {
+  display: inline-flex;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(216, 226, 255, 0.72);
+  color: var(--primary);
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  vertical-align: middle;
 }
 
 .goal-focus-box,
@@ -8243,6 +8339,149 @@ img {
   width: 126px;
 }
 
+.exam-page-skeleton {
+  position: relative;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(0, 112, 235, 0.12), transparent 34%),
+    linear-gradient(180deg, #f7faff 0%, var(--surface-bright) 100%);
+}
+
+.exam-page-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 64px 0 0;
+  background: rgba(246, 249, 255, 0.54);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  pointer-events: none;
+  z-index: 18;
+}
+
+.writing-route-loading-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(440px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px 16px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 24px;
+  box-shadow: 0 24px 80px rgba(24, 44, 78, 0.18);
+  z-index: 20;
+}
+
+.writing-route-loading-spinner,
+.practice-launch-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(0, 88, 188, 0.16);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: practice-progress-spin 850ms linear infinite;
+}
+
+.writing-route-loading-card strong {
+  display: block;
+  color: var(--on-surface);
+  font-size: 17px;
+}
+
+.writing-route-loading-card p {
+  margin: 4px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.writing-route-progress,
+.practice-launch-progress {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 88, 188, 0.11);
+}
+
+.writing-route-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), #6aa8ff);
+  animation: writing-route-progress 1.35s ease-in-out infinite;
+}
+
+.writing-route-stages {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.writing-route-stages li {
+  position: relative;
+  color: var(--outline);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.writing-route-stages li::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  display: block;
+  margin: 0 auto 6px;
+  border-radius: 50%;
+  background: rgba(193, 198, 215, 0.7);
+}
+
+.writing-route-stages li.is-done,
+.writing-route-stages li.is-active {
+  color: var(--primary);
+}
+
+.writing-route-stages li.is-done::before {
+  background: var(--primary);
+}
+
+.writing-route-stages li.is-active::before {
+  background: var(--primary);
+  box-shadow: 0 0 0 5px rgba(0, 88, 188, 0.12);
+  animation: practice-progress-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes writing-route-progress {
+  0% {
+    transform: translateX(-105%);
+  }
+  55% {
+    transform: translateX(90%);
+  }
+  100% {
+    transform: translateX(245%);
+  }
+}
+
+@keyframes practice-progress-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes practice-progress-pulse {
+  50% {
+    box-shadow: 0 0 0 8px rgba(0, 88, 188, 0.04);
+  }
+}
+
 .route-content-skeleton {
   min-height: 100%;
 }
@@ -9273,6 +9512,77 @@ body.is-resizing-editor * {
   outline-offset: 3px;
 }
 
+.practice-start-confirm-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.practice-start-summary {
+  display: grid;
+  gap: 10px;
+}
+
+.practice-start-summary span {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+  background: rgba(216, 226, 255, 0.38);
+  color: var(--on-surface-variant);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.practice-launch-layer {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(236, 242, 253, 0.74);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  z-index: 1200;
+}
+
+.practice-launch-card {
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 28px;
+  box-shadow: 0 24px 80px rgba(24, 44, 78, 0.2);
+  text-align: center;
+}
+
+.practice-launch-card strong {
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.practice-launch-card p,
+.practice-launch-card small {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+}
+
+.practice-launch-progress {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.practice-launch-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), #6aa8ff);
+  transition: width 240ms ease;
+}
+
 .draft-entry-button {
   width: 100%;
   min-height: 76px;
@@ -9501,8 +9811,20 @@ body.is-resizing-editor * {
   margin: 0;
 }
 
+.draft-loading-spinner {
+  animation: practice-progress-spin 850ms linear infinite;
+}
+
 .draft-dialog-state.is-error {
   color: var(--error);
+}
+
+.reduce-motion .writing-route-loading-spinner,
+.reduce-motion .practice-launch-spinner,
+.reduce-motion .draft-loading-spinner,
+.reduce-motion .writing-route-progress span,
+.reduce-motion .writing-route-stages li.is-active::before {
+  animation: none;
 }
 
 .draft-delete-dialog {

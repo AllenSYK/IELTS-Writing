@@ -13,6 +13,11 @@ import {
 import { readStorageValue } from '../lib/user-storage'
 import { accountDisplayName, maskPhone, normalizeMainlandPhone } from '../lib/phone-auth'
 import { LegalContactEmail, PrivacySections, TermsEffectiveDate, TermsSections } from '../lib/legal-content'
+import {
+  MonthlyStudyPlanAdjustmentLimit,
+  studyPlanAdjustmentMonthRange,
+  studyPlanAdjustmentQuota
+} from '../lib/study-plan-adjustments'
 
 test('Word count handles punctuation and contractions', () => {
   assert.equal(countWords("It's a well-developed, high-scoring essay."), 5)
@@ -21,6 +26,37 @@ test('Word count handles punctuation and contractions', () => {
 test('Expiry date parser rejects past licenses', () => {
   assert.equal(isExpiredAt('2026-01-01T00:00:00.000Z', new Date('2026-06-15T00:00:00.000Z').getTime()), true)
   assert.equal(isExpiredAt('2026-12-01T00:00:00.000Z', new Date('2026-06-15T00:00:00.000Z').getTime()), false)
+})
+
+test('study plan adjustments reset monthly with three chances per account', () => {
+  const range = studyPlanAdjustmentMonthRange(new Date('2026-12-15T08:00:00.000Z'))
+  assert.equal(MonthlyStudyPlanAdjustmentLimit, 3)
+  assert.equal(range.monthKey, '2026-12')
+  assert.equal(range.startsAt, '2026-12-01T00:00:00+08:00')
+  assert.equal(range.endsAt, '2027-01-01T00:00:00+08:00')
+  assert.deepEqual(studyPlanAdjustmentQuota(2, new Date('2026-12-15T08:00:00.000Z')), {
+    monthKey: '2026-12',
+    usedCount: 2,
+    remainingCount: 1,
+    limit: 3
+  })
+})
+
+test('account average override is persisted and learning analytics applies half-band rounding', async () => {
+  const [profileRoute, accountSettings, analyticsPage, scoring] = await Promise.all([
+    readFile(new URL('../app/api/profile/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../components/dashboard/AccountSettings.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/analytics/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/ielts-scoring.ts', import.meta.url), 'utf8')
+  ])
+
+  assert.match(profileRoute, /manual_average_score/)
+  assert.match(profileRoute, /manualAverageScore/)
+  assert.match(accountSettings, /调整平均分/)
+  assert.match(accountSettings, /保存并同步/)
+  assert.match(analyticsPage, /manualAverageScore \?\?/)
+  assert.match(analyticsPage, /roundToHalfBand\(calculatedAverage\)/)
+  assert.match(scoring, /fraction < 0\.25[\s\S]*?fraction < 0\.75/)
 })
 
 test('legacy browser storage values migrate without deleting the original value', () => {

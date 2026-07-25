@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import {
   DraftErrorMessages,
+  managedDraftHasContent,
   ManagedDraftDataSchema,
   normalizeManagedDraftData,
   type DraftDeleteQuota,
@@ -107,7 +108,7 @@ function draftError(code: string, status = errorStatus(code)) {
 
 function mapDraftRow(row: DraftRow): DraftRecord | null {
   const draftData = normalizeManagedDraftData(row.draft_data, row.task_type)
-  if (!draftData || draftData.completed) return null
+  if (!draftData || !managedDraftHasContent(draftData, row.task_type)) return null
   return {
     id: row.id,
     taskType: row.task_type,
@@ -144,9 +145,18 @@ export async function GET(request: Request) {
       .maybeSingle()
 
     if (error) return draftError('DRAFT_UPDATE_FAILED')
+    const draftData = data ? normalizeManagedDraftData((data as DraftRow).draft_data, (data as DraftRow).task_type) : null
     return json({
       success: true,
-      draft: data ? mapDraftRow(data as DraftRow) : null
+      draft: data && draftData && !draftData.completed
+        ? {
+            id: (data as DraftRow).id,
+            taskType: (data as DraftRow).task_type,
+            draftData,
+            createdAt: (data as DraftRow).created_at,
+            updatedAt: (data as DraftRow).updated_at
+          } satisfies DraftRecord
+        : null
     })
   }
 

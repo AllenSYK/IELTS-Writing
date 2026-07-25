@@ -242,28 +242,6 @@ export async function processGenerationJob(jobId: string, userId: string) {
       timestamp: new Date().toISOString()
     }))
 
-    // Award bonus points (best-effort)
-    try {
-      const { balance } = await ensureWallet(service, userId)
-      await service
-        .from('study_plan_adjustment_wallets')
-        .update({ balance: balance + 3, lifetime_earned: balance + 3, updated_at: new Date().toISOString() })
-        .eq('user_id', userId)
-
-      await service
-        .from('study_plan_adjustment_transactions')
-        .insert({
-          user_id: userId,
-          type: 'bonus',
-          amount: 3,
-          reason: 'plan_created',
-          idempotency_key: `plan_created_${userId}`,
-          balance_after: balance + 3
-        })
-    } catch {
-      // wallet bonus is best-effort
-    }
-
     clearInterval(heartbeatInterval)
   } catch (err) {
     clearInterval(heartbeatInterval)
@@ -295,22 +273,6 @@ export async function processGenerationJob(jobId: string, userId: string) {
       })
       .eq('id', jobId)
   }
-}
-
-async function ensureWallet(service: ReturnType<typeof createSupabaseServiceRoleClient>, userId: string) {
-  const { data } = await service
-    .from('study_plan_adjustment_wallets')
-    .select('balance')
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (data) return { balance: data.balance as number }
-
-  await service
-    .from('study_plan_adjustment_wallets')
-    .insert({ user_id: userId, balance: 0, lifetime_earned: 0, lifetime_spent: 0 })
-
-  return { balance: 0 }
 }
 
 function selectLearningDays(sessionsPerWeek: number, preferredDays: number[]): number[] {

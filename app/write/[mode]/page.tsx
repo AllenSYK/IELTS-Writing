@@ -977,10 +977,7 @@ export default function WritePage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ writingRecordId: record.id })
           })
-          const taskData = await taskRes.json() as { success?: boolean; reward?: { awarded?: boolean; amount?: number } | null }
-          if (taskData.reward?.awarded && taskData.reward.amount) {
-            pushToast({ kind: 'success', title: '任务完成', message: `获得 ${taskData.reward.amount} 个计划调整点` })
-          }
+          await taskRes.json().catch(() => null)
         } catch { /* non-critical, task completion is best-effort */ }
       }
       if (draftId) {
@@ -1226,10 +1223,7 @@ export default function WritePage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ writingRecordId: record.id })
           })
-          const taskData = await taskRes.json() as { success?: boolean; reward?: { awarded?: boolean; amount?: number } | null }
-          if (taskData.reward?.awarded && taskData.reward.amount) {
-            pushToast({ kind: 'success', title: '任务完成', message: `获得 ${taskData.reward.amount} 个计划调整点` })
-          }
+          await taskRes.json().catch(() => null)
         } catch { /* non-critical */ }
       }
       if (draftId) {

@@ -153,6 +153,15 @@ export function normalizeManagedDraftData(value: unknown, taskType?: WritingTask
   }
 }
 
+export function managedDraftHasContent(value: unknown, taskType?: WritingTaskType) {
+  const draft = normalizeManagedDraftData(value, taskType)
+  if (!draft || draft.completed) return false
+  if (draft.kind === 'full_test') {
+    return Boolean(draft.task1.essay.trim() || draft.task2.essay.trim())
+  }
+  return Boolean(draft.task.essay.trim())
+}
+
 export function emptyDraftTask(now = new Date().toISOString()): DraftTask {
   return {
     essay: '',

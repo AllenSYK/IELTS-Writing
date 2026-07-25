@@ -9,6 +9,7 @@ import { LogoutButton } from '@/app/dashboard/LogoutButton'
 
 const NICKNAME_MAX = 20
 const DEFAULT_NICKNAME = '雅思追梦人'
+const AVERAGE_SCORE_OPTIONS = Array.from({ length: 19 }, (_, index) => index / 2)
 
 function validateNickname(value: string): string | null {
   const trimmed = value.trim()
@@ -21,11 +22,22 @@ function validateNickname(value: string): string | null {
 
 export function AccountSettings() {
   const { userId, accountLabel } = useUserSession()
-  const { displayName, email, displayNameLoading, updateDisplayName } = useUserProfile()
+  const {
+    displayName,
+    email,
+    manualAverageScore,
+    displayNameLoading,
+    updateDisplayName,
+    updateManualAverageScore
+  } = useUserProfile()
   const [editing, setEditing] = useState(false)
   const [nicknameInput, setNicknameInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editingAverage, setEditingAverage] = useState(false)
+  const [averageInput, setAverageInput] = useState('auto')
+  const [averageSaving, setAverageSaving] = useState(false)
+  const [averageError, setAverageError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const display = displayName || DEFAULT_NICKNAME
@@ -79,6 +91,31 @@ export function AccountSettings() {
     if (e.key === 'Escape') cancelEditing()
     if (e.key === 'Enter') { e.preventDefault(); void handleSave() }
   }, [cancelEditing, handleSave])
+
+  const startAverageEditing = useCallback(() => {
+    setAverageInput(manualAverageScore === null ? 'auto' : String(manualAverageScore))
+    setAverageError(null)
+    setEditingAverage(true)
+  }, [manualAverageScore])
+
+  const saveAverage = useCallback(async () => {
+    if (averageSaving) return
+    const next = averageInput === 'auto' ? null : Number(averageInput)
+    if (next !== null && (!Number.isFinite(next) || next < 0 || next > 9 || !Number.isInteger(next * 2))) {
+      setAverageError('请选择 0 到 9 之间的 0.5 分档')
+      return
+    }
+    setAverageSaving(true)
+    setAverageError(null)
+    try {
+      await updateManualAverageScore(next)
+      setEditingAverage(false)
+    } catch (err) {
+      setAverageError(err instanceof Error ? err.message : '保存失败，请重试')
+    } finally {
+      setAverageSaving(false)
+    }
+  }, [averageInput, averageSaving, updateManualAverageScore])
 
   if (!userId) return null
 
@@ -134,6 +171,70 @@ export function AccountSettings() {
           )}
         </div>
       </div>
+
+      <div style={{ borderTop: '1px solid var(--glass-border-1)', margin: '16px 0' }} />
+
+      <div className="account-average-setting">
+        <div className="account-average-copy">
+          <span className="account-setting-icon">
+            <MaterialIcon name="monitoring" size={20} />
+          </span>
+          <div>
+            <strong>学习分析平均分</strong>
+            <p>
+              {manualAverageScore === null
+                ? '当前按真实批改记录自动计算'
+                : `当前手动设为 ${manualAverageScore.toFixed(1)} 分`}
+            </p>
+          </div>
+        </div>
+
+        {editingAverage ? (
+          <div className="account-average-editor">
+            <label htmlFor="manual-average-score">平均分显示方式</label>
+            <select
+              id="manual-average-score"
+              value={averageInput}
+              disabled={averageSaving}
+              onChange={(event) => {
+                setAverageInput(event.target.value)
+                setAverageError(null)
+              }}
+            >
+              <option value="auto">自动（跟随真实批改）</option>
+              {AVERAGE_SCORE_OPTIONS.map((score) => (
+                <option key={score} value={String(score)}>{score.toFixed(1)} 分</option>
+              ))}
+            </select>
+            {averageError ? <span className="account-setting-error" role="alert">{averageError}</span> : null}
+            <div className="account-average-actions">
+              <button
+                className="ui-secondary-button"
+                type="button"
+                disabled={averageSaving}
+                onClick={() => {
+                  setEditingAverage(false)
+                  setAverageError(null)
+                }}
+              >
+                取消
+              </button>
+              <button className="ui-primary-button" type="button" disabled={averageSaving} onClick={() => void saveAverage()}>
+                {averageSaving ? '同步中…' : '保存并同步'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button className="ui-secondary-button" type="button" onClick={startAverageEditing}>
+            <MaterialIcon name="tune" size={16} />
+            调整平均分
+          </button>
+        )}
+      </div>
+
+      <p className="account-average-note">
+        手动分数会同步到当前账号的学习分析；恢复“自动”后，将重新使用批改记录计算。
+      </p>
 
       <div style={{ borderTop: '1px solid var(--glass-border-1)', margin: '16px 0' }} />
 

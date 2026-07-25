@@ -44,7 +44,7 @@ export async function PATCH(
 
     const { data: existingTask } = await service
       .from('study_plan_tasks')
-      .select('id, writing_record_id, status, task_type')
+      .select('id, writing_record_id, status')
       .eq('id', id)
       .eq('user_id', userId)
       .maybeSingle()
@@ -84,25 +84,7 @@ export async function PATCH(
 
     updateAbilityProfile(service, userId).catch(() => {})
 
-    let rewardResult: { awarded: boolean; amount: number; balance: number } | null = null
-    try {
-      const { data: rewardData } = await service.rpc('award_adjustment_points', {
-        p_user_id: userId,
-        p_task_id: id,
-        p_task_type: (existingTask.task_type as string) ?? 'review',
-        p_idempotency_key: `task_complete_${id}`
-      }).single()
-      if (rewardData && typeof rewardData === 'object') {
-        const rd = rewardData as Record<string, unknown>
-        rewardResult = {
-          awarded: Boolean(rd.awarded),
-          amount: Number(rd.amount) || 0,
-          balance: Number(rd.balance) || 0
-        }
-      }
-    } catch { /* best-effort */ }
-
-    return json({ success: true, result: data, reward: rewardResult })
+    return json({ success: true, result: data })
   }
 
   const updates: Record<string, unknown> = {}

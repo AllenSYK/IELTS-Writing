@@ -1,4 +1,4 @@
-import { averageTaskBand, parseBand } from '@/lib/ielts-scoring'
+import { averageTaskBand, parseBand, roundToHalfBand } from '@/lib/ielts-scoring'
 import {
   averageScore,
   scoreValue,
@@ -176,10 +176,18 @@ export function buildErrorDistribution(records: WritingRecord[]): ErrorDistribut
   }))
 }
 
-export function buildGoalStatus(records: WritingRecord[], profile: UserProfile): GoalStatus {
-  const currentAverage = averageScore(records)
-  const task1Average = averageTaskBand(records, 'task1')
-  const task2Average = averageTaskBand(records, 'task2')
+export function buildGoalStatus(
+  records: WritingRecord[],
+  profile: UserProfile,
+  options: { currentAverageOverride?: number | null } = {}
+): GoalStatus {
+  const calculatedAverage = averageScore(records)
+  const selectedAverage = options.currentAverageOverride ?? calculatedAverage
+  const currentAverage = selectedAverage === null ? null : roundToHalfBand(selectedAverage)
+  const rawTask1Average = averageTaskBand(records, 'task1')
+  const rawTask2Average = averageTaskBand(records, 'task2')
+  const task1Average = rawTask1Average === null ? null : roundToHalfBand(rawTask1Average)
+  const task2Average = rawTask2Average === null ? null : roundToHalfBand(rawTask2Average)
   const recentScore = records[0] ? parseBand(records[0].evaluation.overallBand || records[0].evaluation.bandEstimate) : null
   const weeklyCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
   const weeklyCompleted = records.filter((record) => new Date(record.submittedAt).getTime() >= weeklyCutoff).length

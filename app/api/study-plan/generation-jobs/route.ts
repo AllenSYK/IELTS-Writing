@@ -3,6 +3,7 @@ import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { processGenerationJob } from '@/lib/study-plan-generation'
+import { studyPlanAdjustmentMonthRange } from '@/lib/study-plan-adjustments'
 
 const CreateJobSchema = z.object({
   overallTarget: z.number().min(5.5).max(9).optional(),
@@ -92,6 +93,29 @@ export async function POST(request: Request) {
       .eq('id', activeJob.id)
   }
 
+  if (jobType === 'replan') {
+    const adjustmentMonth = studyPlanAdjustmentMonthRange()
+    const { count, error: quotaError } = await service
+      .from('study_plan_generation_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('job_type', 'replan')
+      .in('status', ['queued', 'running', 'completed'])
+      .gte('created_at', adjustmentMonth.startsAt)
+      .lt('created_at', adjustmentMonth.endsAt)
+
+    if (quotaError) {
+      return json({ success: false, message: '暂时无法读取本月调整次数，请稍后重试' }, { status: 500 })
+    }
+    if ((count ?? 0) >= adjustmentMonth.limit) {
+      return json({
+        success: false,
+        code: 'STUDY_PLAN_MONTHLY_ADJUSTMENT_LIMIT',
+        message: '本月 3 次学习计划调整机会已用完，下个月将自动恢复。'
+      }, { status: 429 })
+    }
+  }
+
   // Update profile if needed
   if (body.overallTarget !== undefined || body.sessionsPerWeek !== undefined || body.examDate !== undefined) {
     const profileUpdates: Record<string, unknown> = { user_id: userId }
@@ -132,6 +156,13 @@ export async function POST(request: Request) {
     .single()
 
   if (jobError || !job) {
+    if (jobError?.message?.includes('STUDY_PLAN_MONTHLY_ADJUSTMENT_LIMIT')) {
+      return json({
+        success: false,
+        code: 'STUDY_PLAN_MONTHLY_ADJUSTMENT_LIMIT',
+        message: '本月 3 次学习计划调整机会已用完，下个月将自动恢复。'
+      }, { status: 429 })
+    }
     return json({ success: false, message: jobError?.message || 'Failed to create job' }, { status: 500 })
   }
 

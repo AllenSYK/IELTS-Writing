@@ -1,6 +1,7 @@
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { studyPlanAdjustmentMonthRange, studyPlanAdjustmentQuota } from '@/lib/study-plan-adjustments'
 
 export async function GET() {
   const check = await requireActiveWebLicense()
@@ -10,6 +11,7 @@ export async function GET() {
 
   const service = createSupabaseServiceRoleClient()
   const userId = check.user.id
+  const adjustmentMonth = studyPlanAdjustmentMonthRange()
 
   const [planResult, profileResult, quotaResult] = await Promise.all([
     service
@@ -24,10 +26,13 @@ export async function GET() {
       .eq('user_id', userId)
       .maybeSingle(),
     service
-      .from('study_plan_generation_events')
+      .from('study_plan_generation_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('month_key', currentMonthKey())
+      .eq('job_type', 'replan')
+      .in('status', ['queued', 'running', 'completed'])
+      .gte('created_at', adjustmentMonth.startsAt)
+      .lt('created_at', adjustmentMonth.endsAt)
   ])
 
   let tasks: unknown[] = []
@@ -44,19 +49,8 @@ export async function GET() {
     success: true,
     plan: planResult.data ? mapPlan(planResult.data, tasks) : null,
     profile: profileResult.data ? mapProfile(profileResult.data) : null,
-    quota: {
-      monthKey: currentMonthKey(),
-      usedCount: quotaResult.count ?? 0,
-      remainingCount: Math.max(0, 5 - (quotaResult.count ?? 0)),
-      limit: 5
-    }
+    quota: studyPlanAdjustmentQuota(quotaResult.count ?? 0)
   })
-}
-
-function currentMonthKey() {
-  const now = new Date()
-  const shanghai = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai' }))
-  return `${shanghai.getFullYear()}-${String(shanghai.getMonth() + 1).padStart(2, '0')}`
 }
 
 function mapPlan(row: Record<string, unknown>, tasks: unknown[]) {

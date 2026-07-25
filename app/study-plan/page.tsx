@@ -54,13 +54,6 @@ type GenerationJob = {
   updatedAt?: string
 }
 
-type AdjustmentPoints = {
-  success: boolean
-  balance: number
-  lifetimeEarned: number
-  lifetimeSpent: number
-}
-
 type ViewMode =
   | 'resolving'
   | 'empty'
@@ -507,17 +500,7 @@ export default function StudyPlanPage() {
     return () => { cancelled = true }
   }, [state.viewMode, state.activeJob?.resultPlanId, state.planLoadRetries, pushToast, mutate])
 
-  const { data: pointsData } = useSWR<AdjustmentPoints>(
-    userId ? 'study-plan-points' : null,
-    async () => {
-      const res = await fetch('/api/study-plan/adjustment-points')
-      return res.json()
-    },
-    { revalidateOnFocus: false, dedupingInterval: 30000 }
-  )
-
   const quota = data?.quota
-  const adjustmentBalance = pointsData?.balance ?? 0
   const plan = state.plan ?? data?.plan ?? null
   const profile = state.profile ?? data?.profile ?? null
 
@@ -722,7 +705,7 @@ export default function StudyPlanPage() {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="study-plan-page">
-          <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
+          <StudyPlanHeader quota={quota} />
           <GlassPanel style={styles.emptyCard}>
             <MaterialIcon name="error" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>加载失败</h2>
@@ -742,7 +725,7 @@ export default function StudyPlanPage() {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
         <section className="study-plan-page">
-          <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
+          <StudyPlanHeader quota={quota} />
           {isJobFailed(state.activeJob) && (
             <GlassPanel style={styles.failedBanner}>
               <MaterialIcon name="error" size={20} />
@@ -780,7 +763,7 @@ export default function StudyPlanPage() {
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
       <section className="study-plan-page">
-        <StudyPlanHeader adjustmentBalance={adjustmentBalance} />
+        <StudyPlanHeader quota={quota} />
 
         {showJobFailedBanner && (
           <GlassPanel style={styles.failedBanner}>
@@ -891,6 +874,7 @@ export default function StudyPlanPage() {
                 <button
                   className="ui-primary-button"
                   type="button"
+                  disabled={quota?.remainingCount === 0}
                   onClick={() => {
                     setShowReplanSuggestion(null)
                     dispatch({ type: 'OPEN_REPLAN_SETUP' })
@@ -919,19 +903,19 @@ export default function StudyPlanPage() {
   )
 }
 
-function StudyPlanHeader({ adjustmentBalance }: { adjustmentBalance: number }) {
+function StudyPlanHeader({ quota }: { quota?: StudyPlanGenerationQuota }) {
   return (
     <header className="page-section-header">
       <div>
         <h1 className="ui-title-display">雅思写作学习规划</h1>
         <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标、剩余时间和真实写作表现，动态安排整个备考周期。</p>
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {quota ? <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <MaterialIcon name="stars" size={14} />
-          调整点：{adjustmentBalance}
+          <MaterialIcon name="event_repeat" size={14} />
+          本月可调整：{quota.remainingCount}/{quota.limit} 次
         </span>
-      </div>
+      </div> : null}
     </header>
   )
 }
@@ -1458,11 +1442,17 @@ function BottomActions({ quota, onReplan, onSettings }: {
         <MaterialIcon name="tune" size={18} />
         设置
       </button>
-      <button className="ui-primary-button" type="button" onClick={onReplan}>
-        重新规划
+      <button
+        className="ui-primary-button"
+        type="button"
+        disabled={quota?.remainingCount === 0}
+        title={quota?.remainingCount === 0 ? '本月 3 次调整机会已用完' : undefined}
+        onClick={onReplan}
+      >
+        {quota?.remainingCount === 0 ? '本月调整已用完' : '重新规划'}
       </button>
       {quota && (
-        <span className="ui-label">本月已规划 {quota.usedCount}/{quota.limit}</span>
+        <span className="ui-label">本月已调整 {quota.usedCount}/{quota.limit} 次</span>
       )}
     </div>
   )

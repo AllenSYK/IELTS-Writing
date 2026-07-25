@@ -22,7 +22,22 @@ export function PageSkeleton({ variant = 'cards' }: { variant?: PageSkeletonVari
             <WritingEditorSkeleton />
           </section>
         </section>
-        <span className="sr-only" role="status" aria-live="polite">正在加载题目和编辑器</span>
+        <section className="writing-route-loading-card" role="status" aria-live="polite">
+          <span className="writing-route-loading-spinner" aria-hidden="true" />
+          <div>
+            <strong>正在准备写作练习</strong>
+            <p>正在加载草稿、题目和写作编辑器，请稍候…</p>
+          </div>
+          <div className="writing-route-progress" aria-hidden="true">
+            <span />
+          </div>
+          <ol className="writing-route-stages" aria-hidden="true">
+            <li className="is-done">验证练习</li>
+            <li className="is-active">准备题目</li>
+            <li>打开编辑器</li>
+          </ol>
+        </section>
+        <span className="sr-only">正在加载题目和编辑器</span>
       </main>
     )
   }

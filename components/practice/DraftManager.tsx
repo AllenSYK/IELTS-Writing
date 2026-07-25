@@ -11,7 +11,6 @@ import {
   DraftLimits,
   deleteManagedDraft,
   fetchDraftDeleteQuota,
-  fetchManagedDraft,
   listDraftsLightweight,
   type DraftDeleteQuota,
   type DraftListItem
@@ -106,21 +105,25 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
   const [quotaLoaded, setQuotaLoaded] = useState(false)
   const hasLoadedRef = useRef(false)
   const quotaLoadedRef = useRef(false)
+  const loadRequestRef = useRef(0)
 
-  const loadDrafts = useCallback(async () => {
+  const loadDrafts = useCallback(async (force = false) => {
     if (!userId) return
-    if (hasLoadedRef.current) return
+    if (hasLoadedRef.current && !force) return
     hasLoadedRef.current = true
+    const requestId = ++loadRequestRef.current
     setLoading(true)
     setLoadError('')
     try {
       const items = await listDraftsLightweight()
-      setDrafts(items)
+      if (requestId === loadRequestRef.current) setDrafts(items)
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : '草稿读取失败，请稍后重试。')
-      hasLoadedRef.current = false
+      if (requestId === loadRequestRef.current) {
+        setLoadError(error instanceof Error ? error.message : '草稿读取失败，请稍后重试。')
+        hasLoadedRef.current = false
+      }
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestRef.current) setLoading(false)
     }
   }, [userId])
 
@@ -140,6 +143,21 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
     }, 0)
     return () => clearTimeout(timer)
   }, [userId, open, loadDrafts])
+
+  useEffect(() => {
+    if (!userId) return
+    const timer = window.setTimeout(() => {
+      void loadDrafts(true)
+    }, 0)
+    const handlePracticeVisited = () => {
+      void loadDrafts(true)
+    }
+    window.addEventListener('ielts-writing:practice-visited', handlePracticeVisited)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('ielts-writing:practice-visited', handlePracticeVisited)
+    }
+  }, [loadDrafts, userId])
 
   const counts = {
     task1: drafts.filter((d) => d.taskType === 'task1').length,
@@ -225,7 +243,7 @@ export function DraftManager({ initialOpen = false }: { initialOpen?: boolean })
 
         {loading ? (
           <div className="draft-dialog-state" role="status">
-            <MaterialIcon name="progress_activity" size={24} />
+            <MaterialIcon className="draft-loading-spinner" name="progress_activity" size={24} />
             正在读取草稿…
           </div>
         ) : loadError ? (
