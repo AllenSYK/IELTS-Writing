@@ -1,5 +1,9 @@
 export function getSupabaseUrl() {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || ''
+  const configuredUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || ''
+
+  return configuredUrl
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/+$/, '')
 }
 
 export function getSupabaseAnonKey() {
