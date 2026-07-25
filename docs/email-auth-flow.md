@@ -20,7 +20,7 @@ http://127.0.0.1:3000/dev/email-preview
 
 ```env
 RESEND_API_KEY=
-EMAIL_FROM_NAME=Carrie学雅思@空与梦
+EMAIL_FROM_NAME=空与梦的雅思写作
 EMAIL_FROM_ADDRESS=noreply@ieltswriting.online
 EMAIL_VERIFICATION_SECRET=replace-with-32-plus-random-bytes
 NEXT_PUBLIC_SITE_URL=https://www.ieltswriting.online

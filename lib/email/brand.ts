@@ -6,7 +6,7 @@ const SiteUrl = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || DefaultSiteUrl).rep
 
 export const emailBrand = {
   productName: BRAND_NAME,
-  logoUrl: `${SiteUrl}/brand/carrie-logo.png`,
+  logoUrl: `${SiteUrl}/brand/kongyumeng-logo.png`,
   websiteUrl: SiteUrl,
   supportEmail: 'qgyxzq@gmail.com',
   primaryColor: '#0a66ff',

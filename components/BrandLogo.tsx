@@ -24,7 +24,7 @@ type BrandLogoProps = {
 const SizeConfig: Record<BrandLogoSize, { pixels: number; src: string; sizes: string }> = {
   sm: { pixels: 32, src: BRAND_LOGO_SRC, sizes: '32px' },
   md: { pixels: 40, src: BRAND_LOGO_SRC, sizes: '40px' },
-  lg: { pixels: 76, src: '/brand/carrie-logo-256.webp', sizes: '76px' }
+  lg: { pixels: 76, src: '/brand/kongyumeng-logo-256.webp', sizes: '76px' }
 }
 
 export function BrandLogo({
