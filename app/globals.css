@@ -10841,89 +10841,38 @@ body.is-resizing-editor * {
   }
 }
 
-/* Page transition animations */
+/* Page transition - instant, no animation */
 .app-content {
-  animation: page-enter 0.15s ease-out;
-  will-change: opacity, transform;
+  /* No animation for instant response */
 }
 
-@keyframes page-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Smooth sidebar link transitions */
+/* Sidebar link - instant response, no animation */
 .sidebar-link {
-  transition: background-color 0.1s ease, color 0.1s ease, transform 0.1s ease;
+  /* No transition for instant response */
   cursor: pointer;
   user-select: none;
 }
 
-.sidebar-link:active {
-  transform: scale(0.96);
-  background-color: var(--surface-variant);
-}
-
-/* Sidebar link hover effect */
 .sidebar-link:hover {
   background-color: var(--surface-variant);
 }
 
-/* Loading state for pages */
-.page-loading {
-  opacity: 0.7;
-  pointer-events: none;
-}
-
-/* Instant page transitions for cached routes */
-[data-cached="true"] .app-content {
-  animation: none;
-}
-
-/* Click feedback for navigation */
+/* Click feedback for navigation - just highlight, no animation */
 .sidebar-link.is-navigating {
-  opacity: 0.8;
   background-color: var(--surface-variant);
 }
 
-/* Global instant feedback */
+/* Global instant feedback - no animations */
 button, a, [role="button"] {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  /* No transition or animation */
 }
 
-/* Ultra-fast transitions for all interactive elements */
-.ui-primary-button,
-.ui-secondary-button,
-.ui-dark-button,
-.ui-hover-glow {
-  transition: background-color 0.06s ease, color 0.06s ease, box-shadow 0.06s ease, transform 0.06s ease, opacity 0.06s ease;
-}
-
-/* Click animation */
-@keyframes instant-click {
-  0% { transform: scale(1); }
-  50% { transform: scale(0.97); }
-  100% { transform: scale(1); }
-}
-
-.ui-primary-button:active,
-.ui-secondary-button:active,
-.ui-dark-button:active {
-  animation: instant-click 0.08s ease-out;
-}
-
-/* Disable animations for reduced motion preference */
+/* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
   }
 }
