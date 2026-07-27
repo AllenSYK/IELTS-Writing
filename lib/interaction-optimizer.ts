@@ -125,10 +125,9 @@ export function addGlobalClickFeedback() {
     }
 
     /* 禁用元素样式 */
-    [disabled], [aria-disabled="true"] {
+    button[disabled], input[disabled], select[disabled], textarea[disabled] {
       opacity: 0.6;
       cursor: not-allowed;
-      pointer-events: none;
     }
 
     /* 聚焦样式 */
