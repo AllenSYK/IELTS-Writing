@@ -10891,3 +10891,39 @@ body.is-resizing-editor * {
   opacity: 0.8;
   background-color: var(--surface-variant);
 }
+
+/* Global instant feedback */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Ultra-fast transitions for all interactive elements */
+.ui-primary-button,
+.ui-secondary-button,
+.ui-dark-button,
+.ui-hover-glow {
+  transition: background-color 0.06s ease, color 0.06s ease, box-shadow 0.06s ease, transform 0.06s ease, opacity 0.06s ease;
+}
+
+/* Click animation */
+@keyframes instant-click {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+.ui-primary-button:active,
+.ui-secondary-button:active,
+.ui-dark-button:active {
+  animation: instant-click 0.08s ease-out;
+}
+
+/* Disable animations for reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
