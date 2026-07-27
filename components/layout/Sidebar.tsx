@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
@@ -81,7 +81,6 @@ export function Sidebar() {
   const { userId } = useUserSession()
   const online = useOnlineLabel()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
   const prefetchedRef = useRef<Set<string>>(new Set())
   
   const activeId = useMemo(() => {
@@ -117,34 +116,10 @@ export function Sidebar() {
     }
   }, [router])
 
-  // 处理导航点击
-  const handleNavigate = useCallback((href: string, itemId: string, event: MouseEvent) => {
-    event.preventDefault()
-    
-    // 如果已经在当前页面，不导航
-    if (pathname === href || (href !== '/practice' && pathname.startsWith(href))) {
-      return
-    }
-    
-    // 设置导航状态
-    setNavigatingTo(itemId)
-    
-    // 立即导航
-    router.push(href)
-    
-    // 清除导航状态（在下一个事件循环）
-    setTimeout(() => setNavigatingTo(null), 300)
-  }, [pathname, router])
-
   // Hover 时预加载
   const handleItemHover = useCallback((href: string) => {
     prefetchPage(href)
   }, [prefetchPage])
-
-  // 清除导航状态当路径变化时
-  useEffect(() => {
-    setNavigatingTo(null)
-  }, [pathname])
 
   return (
     <aside className="sidebar" aria-label="应用导航">
@@ -171,17 +146,17 @@ export function Sidebar() {
 
       <nav className="sidebar-nav" aria-label="主要页面" onKeyDown={handleRovingNavKeyDown}>
         {mainItems.map((item) => (
-          <a
+          <Link
             key={item.id}
-            className={`sidebar-link ${activeId === item.id ? 'is-active' : ''} ${navigatingTo === item.id ? 'is-navigating' : ''}`}
+            className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
+            prefetch={true}
             aria-current={activeId === item.id ? 'page' : undefined}
             onMouseEnter={() => handleItemHover(item.href)}
-            onClick={(e) => handleNavigate(item.href, item.id, e)}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>
-          </a>
+          </Link>
         ))}
       </nav>
 
@@ -196,16 +171,16 @@ export function Sidebar() {
 
         <nav className="sidebar-support-nav" aria-label="支持与法律页面" onKeyDown={handleRovingNavKeyDown}>
           {supportItems.map((item) => (
-            <a
+            <Link
               key={item.id}
               className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
               href={item.href}
+              prefetch={false}
               aria-current={activeId === item.id ? 'page' : undefined}
-              onClick={(e) => handleNavigate(item.href, item.id, e)}
             >
               <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
               <span>{item.label}</span>
-            </a>
+            </Link>
           ))}
         </nav>
 
@@ -235,38 +210,32 @@ export function Sidebar() {
             </div>
             <nav aria-label="移动端主要页面">
               {mainItems.map((item) => (
-                <a
+                <Link
                   key={item.id}
-                  className={`sidebar-link ${activeId === item.id ? 'is-active' : ''} ${navigatingTo === item.id ? 'is-navigating' : ''}`}
+                  className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
-                  onClick={(e) => {
-                    setMobileOpen(false)
-                    handleNavigate(item.href, item.id, e)
-                  }}
+                  onClick={() => setMobileOpen(false)}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>
-                </a>
+                </Link>
               ))}
             </nav>
             <nav className="sidebar-mobile-support" aria-label="移动端支持与法律页面">
               {supportItems.map((item) => (
-                <a
+                <Link
                   key={item.id}
                   className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
-                  onClick={(e) => {
-                    setMobileOpen(false)
-                    handleNavigate(item.href, item.id, e)
-                  }}
+                  onClick={() => setMobileOpen(false)}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
                   <span>{item.label}</span>
-                </a>
+                </Link>
               ))}
             </nav>
           </div>
