@@ -1,68 +1,19 @@
-import { z } from 'zod'
 import { json } from '@/lib/http'
-import { adminApiError, refreshUsersLicenseStatus, requireAdminService } from '@/lib/web-license/admin-api'
+import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 
-const UpdateSchema = z.object({
-  id: z.string().uuid(),
-  status: z.enum(['unused', 'active', 'exhausted', 'disabled', 'expired', 'revoked']).optional(),
-  plan: z.string().min(1).max(80).optional(),
-  durationDays: z.number().int().min(1).max(3650).optional(),
-  maxActivations: z.number().int().min(1).max(100).optional(),
-  expiresAt: z.string().datetime().nullable().optional(),
-  note: z.string().max(500).nullable().optional()
-})
-
+/**
+ * 旧版更新入口已停用。所有激活码变更统一走资源 PATCH，
+ * 避免两套实现产生不同的状态和审计结果。
+ */
 export async function POST(request: Request) {
   try {
-    const { service } = await requireAdminService()
-    const body = UpdateSchema.parse(await request.json())
-    const patch: Record<string, unknown> = {}
-    if (body.status) patch.status = body.status
-    if (body.plan) patch.plan = body.plan
-    if (body.durationDays) patch.duration_days = body.durationDays
-    if (body.maxActivations) patch.max_activations = body.maxActivations
-    if ('expiresAt' in body) patch.expires_at = body.expiresAt || null
-    if ('note' in body) patch.note = body.note?.trim() || null
-
-    const { data: activations, error: activationError } = await service
-      .from('license_activations')
-      .select('id, user_id')
-      .eq('license_id', body.id)
-
-    if (activationError) throw activationError
-
-    const { data, error } = await service
-      .from('license_codes')
-      .update(patch)
-      .eq('id', body.id)
-      .select()
-      .single()
-
-    if (error) throw error
-
-    if (body.status === 'disabled' || body.status === 'revoked') {
-      await service
-        .from('license_activations')
-        .update(body.status === 'revoked'
-          ? { status: 'revoked', revoked_at: new Date().toISOString(), revoked_reason: '激活码已被管理员撤销' }
-          : { status: 'suspended' })
-        .eq('license_id', body.id)
-        .eq('status', 'active')
-    } else if (body.status === 'active' || body.status === 'unused') {
-      await service
-        .from('license_activations')
-        .update({ status: 'active', revoked_at: null, revoked_reason: null })
-        .eq('license_id', body.id)
-        .eq('status', 'suspended')
-        .gt('expires_at', new Date().toISOString())
-    }
-
-    await refreshUsersLicenseStatus((activations || []).map((item) => item.user_id))
-    return json({ success: true, license: data })
+    await requireAdminService(request)
+    return json({
+      success: false,
+      code: 'LEGACY_ENDPOINT_DISABLED',
+      message: '该管理接口已升级，请刷新管理员页面后重试。'
+    }, { status: 410 })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return json({ success: false, code: 'INVALID_INPUT', message: '更新参数无效' }, { status: 400 })
-    }
-    return adminApiError(error, '无法更新激活码')
+    return adminApiError(error, '无法处理激活码更新')
   }
 }

@@ -1,6 +1,9 @@
 import type { User } from '@supabase/supabase-js'
 import { cache } from 'react'
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { assertTrustedAdminMutationRequest } from '@/lib/admin/trusted-origin'
+
+export { assertTrustedAdminMutationRequest } from '@/lib/admin/trusted-origin'
 
 type MinimalUser = Pick<User, 'id'> & { email?: string | null; phone?: string | null }
 
@@ -66,7 +69,9 @@ export const getWebProfile = cache(async function getWebProfile(userId: string) 
   return profile as WebProfile | null
 })
 
-export async function requireWebAdmin() {
+export async function requireWebAdmin(request?: Request) {
+  if (request) assertTrustedAdminMutationRequest(request)
+
   const user = await getCurrentSupabaseUser()
   if (!user) {
     throw new Response('Unauthorized', { status: 401 })

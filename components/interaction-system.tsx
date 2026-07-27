@@ -474,6 +474,8 @@ export function ConfirmDialog({
   confirmLabel = '确认',
   cancelLabel = '取消',
   tone = 'default',
+  verificationText,
+  verificationLabel = '请输入上方账号以确认',
   onConfirm,
   onCancel
 }: {
@@ -483,15 +485,23 @@ export function ConfirmDialog({
   confirmLabel?: string
   cancelLabel?: string
   tone?: 'default' | 'danger' | 'warning' | 'primary'
+  verificationText?: string
+  verificationLabel?: string
   onConfirm: () => void
   onCancel: () => void
 }) {
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const verificationRef = useRef<HTMLInputElement>(null)
+  const [verificationValue, setVerificationValue] = useState('')
 
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    window.requestAnimationFrame(() => confirmRef.current?.focus())
+    const focusFrame = window.requestAnimationFrame(() => {
+      setVerificationValue('')
+      if (verificationText) verificationRef.current?.focus()
+      else confirmRef.current?.focus()
+    })
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') onCancel()
     }
@@ -499,10 +509,11 @@ export function ConfirmDialog({
     window.addEventListener('keydown', handleKeyDown)
     return () => {
       document.body.classList.remove('modal-open')
+      window.cancelAnimationFrame(focusFrame)
       window.removeEventListener('keydown', handleKeyDown)
       previouslyFocused?.focus({ preventScroll: true })
     }
-  }, [onCancel, open])
+  }, [onCancel, open, verificationText])
 
   if (!open) return null
 
@@ -537,6 +548,20 @@ export function ConfirmDialog({
             {message}
           </p>
         </div>
+        {verificationText ? (
+          <label className="confirm-verification">
+            <span>{verificationLabel}</span>
+            <strong>{verificationText}</strong>
+            <input
+              ref={verificationRef}
+              value={verificationValue}
+              onChange={(event) => setVerificationValue(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={verificationLabel}
+            />
+          </label>
+        ) : null}
         <div className="confirm-actions">
           <button className="ui-secondary-button" type="button" onClick={onCancel}>
             {cancelLabel}
@@ -546,6 +571,7 @@ export function ConfirmDialog({
             className={config.buttonClass}
             type="button"
             onClick={onConfirm}
+            disabled={Boolean(verificationText) && verificationValue !== verificationText}
           >
             {confirmLabel}
           </button>

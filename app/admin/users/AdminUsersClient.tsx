@@ -26,7 +26,6 @@ import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type LicenseRef = {
   id: string
-  code_value: string | null
   code_prefix: string
   plan: string
   status: string
@@ -59,7 +58,6 @@ type UserRow = {
   activation?: ActivationRef | null
   isBound: boolean
   licenseId: string | null
-  licenseCode: string | null
   licensePrefix: string | null
   lastUsedAt: string | null
   evaluationCount: number
@@ -91,11 +89,19 @@ type UsersResponse = {
   success: true
   users: UserRow[]
   total: number
+  currentAdminId: string
+  truncated?: boolean
 }
 
 const EMPTY_USERS: UserRow[] = []
 
-type ConfirmState = { title: string; message: string; label: string; action: () => Promise<void> } | null
+type ConfirmState = {
+  title: string
+  message: string
+  label: string
+  verificationText?: string
+  action: () => Promise<void>
+} | null
 
 function isBanned(user: UserRow) {
   return Boolean(user.bannedUntil && new Date(user.bannedUntil).getTime() > Date.now())
@@ -108,6 +114,8 @@ export function AdminUsersClient() {
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [filter, setFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const pageSize = 50
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<UserRow | null>(null)
   const [detail, setDetail] = useState<UserDetail | null>(null)
@@ -138,10 +146,10 @@ export function AdminUsersClient() {
   }, [pushToast])
 
   const usersKey = useMemo(() => {
-    const params = new URLSearchParams({ pageSize: '100', search: debouncedSearch, filter })
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), search: debouncedSearch, filter })
     if (focusedUserId) params.set('userId', focusedUserId)
     return `/api/admin/users?${params.toString()}`
-  }, [debouncedSearch, filter, focusedUserId])
+  }, [debouncedSearch, filter, focusedUserId, page])
 
   const {
     data: usersData,
@@ -153,7 +161,7 @@ export function AdminUsersClient() {
   const users = usersData?.users || EMPTY_USERS
   const loading = !usersData && isLoading
   const activeSelectedIds = useMemo(
-    () => new Set([...selectedIds].filter((id) => users.some((user) => user.id === id))),
+    () => new Set([...selectedIds].filter((id) => users.some((user) => user.id === id && user.role !== 'admin'))),
     [selectedIds, users]
   )
 
@@ -192,10 +200,14 @@ export function AdminUsersClient() {
     }
   }
 
-  async function deleteUser(userId: string) {
+  async function deleteUser(target: UserRow) {
     setSubmitting(true)
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' })
+      const response = await fetch(`/api/admin/users/${target.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmation: target.accountLabel })
+      })
       const data = await response.json().catch(() => ({}))
       if (!response.ok || !data.success) throw new Error(data.message || '删除失败。')
       pushToast({ kind: 'success', title: '用户账号已删除' })
@@ -435,14 +447,14 @@ export function AdminUsersClient() {
         <div className="admin-filter-bar admin-user-filter">
           <label className="admin-search-field">
             <Search size={17} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索邮箱或用户 ID" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="搜索邮箱或用户 ID" />
           </label>
           <div className="admin-filter-tabs" role="tablist" aria-label="用户筛选">
             {[
               ['all', '全部用户'], ['admin', '管理员'], ['active', '已激活'], ['inactive', '未激活'],
               ['expired', '已过期'], ['disabled', '已禁用'], ['unbound', '未绑定激活码']
             ].map(([value, label]) => (
-              <button key={value} className={filter === value ? 'is-active' : ''} type="button" onClick={() => setFilter(value)}>{label}</button>
+              <button key={value} className={filter === value ? 'is-active' : ''} type="button" onClick={() => { setFilter(value); setPage(1) }}>{label}</button>
             ))}
           </div>
           <button className="admin-icon-button" type="button" onClick={() => void mutate()} disabled={isValidating} aria-label="刷新">
@@ -455,6 +467,12 @@ export function AdminUsersClient() {
             <span>已选择 <strong>{activeSelectedIds.size}</strong> 位用户</span>
             <button className="admin-primary-button compact" type="button" onClick={() => setBatchOpen(true)}><KeyRound size={15} />批量绑定</button>
             <button className="admin-text-button" type="button" onClick={() => setSelectedIds(new Set())}>取消选择</button>
+          </div>
+        ) : null}
+
+        {usersData?.truncated ? (
+          <div className="admin-selection-bar">
+            <span>搜索范围已达到 1000 个账号；如未找到目标，请使用更精确的邮箱或用户 ID。</span>
           </div>
         ) : null}
 
@@ -479,13 +497,14 @@ export function AdminUsersClient() {
                         <input
                           type="checkbox"
                           checked={activeSelectedIds.has(user.id)}
+                          disabled={user.role === 'admin'}
                           onChange={(event) => setSelectedIds((current) => {
                             const next = new Set(current)
                             if (event.target.checked) next.add(user.id)
                             else next.delete(user.id)
                             return next
                           })}
-                          aria-label={`选择 ${user.accountLabel}`}
+                          aria-label={user.role === 'admin' ? `${user.accountLabel} 是管理员，不能绑定普通许可` : `选择 ${user.accountLabel}`}
                         />
                       </td>
                       <td data-label="账号"><strong>{user.accountLabel}</strong><small className="admin-id-cell">{user.id}</small></td>
@@ -502,12 +521,13 @@ export function AdminUsersClient() {
                           {banned ? (
                             <button className="admin-icon-button success" type="button" onClick={() => void updateUser(user.id, { action: 'enable' }, '用户账号已启用')} aria-label="启用"><CheckCircle2 size={15} /></button>
                           ) : (
-                            <button className="admin-icon-button warning" type="button" onClick={() => setConfirm({
+                            <button className="admin-icon-button warning" type="button" disabled={user.role === 'admin' || user.id === usersData?.currentAdminId || submitting} onClick={() => setConfirm({
                               title: '禁用这个用户账号？',
                               message: `${user.accountLabel} 将无法继续登录。`,
                               label: '确认禁用',
-                              action: () => updateUser(user.id, { action: 'disable' }, '用户账号已禁用')
-                            })} aria-label="禁用"><Ban size={15} /></button>
+                              verificationText: user.accountLabel,
+                              action: () => updateUser(user.id, { action: 'disable', confirmation: user.accountLabel }, '用户账号已禁用')
+                            })} aria-label="禁用" title={user.role === 'admin' ? '请先取消管理员角色' : user.id === usersData?.currentAdminId ? '不能禁用当前管理员' : '禁用账号'}><Ban size={15} /></button>
                           )}
                         </div>
                       </td>
@@ -523,6 +543,14 @@ export function AdminUsersClient() {
             message={filter === 'unbound' ? '当前所有用户都已有绑定记录。' : '尝试调整搜索词或状态筛选。'}
           />
         )}
+
+        {!focusedUserId && (usersData?.total || 0) > pageSize ? (
+          <div className="admin-pagination">
+            <button className="admin-secondary-button" type="button" disabled={page <= 1 || isValidating} onClick={() => setPage((current) => Math.max(1, current - 1))}>上一页</button>
+            <div>第 {page} / {Math.max(1, Math.ceil((usersData?.total || 0) / pageSize))} 页，共 {usersData?.total || 0} 位用户</div>
+            <button className="admin-secondary-button" type="button" disabled={page >= Math.ceil((usersData?.total || 0) / pageSize) || isValidating} onClick={() => setPage((current) => current + 1)}>下一页</button>
+          </div>
+        ) : null}
       </section>
 
       <CenteredDialog open={Boolean(selected)} title="用户详情" description="查看用户账号本身；详细绑定历史在邮箱绑定页面管理。" className="admin-detail-dialog" onClose={() => { setSelected(null); setDetail(null) }}>
@@ -569,7 +597,23 @@ export function AdminUsersClient() {
                 <section>
                   <div className="admin-panel-heading"><div><p className="admin-eyebrow">ACCOUNT CONTROL</p><h3>账号控制</h3></div></div>
                   <div className="admin-dialog-action-grid">
-                    <button className="admin-secondary-button" type="button" onClick={() => void updateUser(selected.id, { action: 'role', role: selected.role === 'admin' ? 'user' : 'admin' }, selected.role === 'admin' ? '已取消管理员角色' : '已设为管理员')}>
+                    <button className="admin-secondary-button" type="button" disabled={submitting || selected.id === usersData?.currentAdminId} onClick={() => setConfirm({
+                      title: selected.role === 'admin' ? '取消该账号的管理员权限？' : '授予该账号管理员权限？',
+                      message: selected.role === 'admin'
+                        ? '取消后，该账号将无法继续进入管理员系统。'
+                        : '管理员可以查看敏感数据并执行高风险操作。',
+                      label: selected.role === 'admin' ? '确认取消管理员' : '确认授予管理员',
+                      verificationText: selected.accountLabel,
+                      action: () => updateUser(
+                        selected.id,
+                        {
+                          action: 'role',
+                          role: selected.role === 'admin' ? 'user' : 'admin',
+                          confirmation: selected.accountLabel
+                        },
+                        selected.role === 'admin' ? '已取消管理员角色' : '已设为管理员'
+                      )
+                    })}>
                       <UserCog size={15} />{selected.role === 'admin' ? '取消管理员' : '设为管理员'}
                     </button>
                     <button className="admin-secondary-button" type="button" onClick={() => void updateUser(selected.id, { action: 'reset-password' }, '密码重置邮件已发送', true)}>
@@ -578,19 +622,21 @@ export function AdminUsersClient() {
                     {isBanned(selected) ? (
                       <button className="admin-secondary-button" type="button" onClick={() => void updateUser(selected.id, { action: 'enable' }, '用户账号已启用')}><CheckCircle2 size={15} />启用账号</button>
                     ) : (
-                      <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
+                      <button className="admin-secondary-button danger" type="button" disabled={submitting || selected.id === usersData?.currentAdminId} onClick={() => setConfirm({
                         title: '禁用这个用户账号？',
                         message: '用户将无法登录，直到管理员重新启用。',
                         label: '确认禁用',
-                        action: () => updateUser(selected.id, { action: 'disable' }, '用户账号已禁用')
+                        verificationText: selected.accountLabel,
+                        action: () => updateUser(selected.id, { action: 'disable', confirmation: selected.accountLabel }, '用户账号已禁用')
                       })}><Ban size={15} />禁用账号</button>
                     )}
-                    <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
-                      title: '永久删除这个用户？',
-                      message: '用户账号、邮箱绑定记录和关联数据可能会被永久删除，且无法恢复。',
-                      label: '永久删除',
-                      action: () => deleteUser(selected.id)
-                    })}><Trash2 size={15} />删除用户</button>
+                    <button className="admin-secondary-button danger" type="button" disabled={submitting || selected.role === 'admin' || selected.id === usersData?.currentAdminId} onClick={() => setConfirm({
+                      title: '删除这个用户账号？',
+                      message: '账号将立即停用且无法恢复；业务数据、绑定历史和审计记录会保留。',
+                      label: '确认删除账号',
+                      verificationText: selected.accountLabel,
+                      action: () => deleteUser(selected)
+                    })} title={selected.role === 'admin' ? '请先取消管理员角色' : '删除账号'}><Trash2 size={15} />删除用户</button>
                   </div>
                 </section>
               </>
@@ -697,6 +743,7 @@ export function AdminUsersClient() {
         title={confirm?.title || ''}
         message={confirm?.message || ''}
         confirmLabel={confirm?.label}
+        verificationText={confirm?.verificationText}
         tone="danger"
         onCancel={() => setConfirm(null)}
         onConfirm={() => void runConfirm()}

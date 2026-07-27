@@ -56,6 +56,14 @@ export function maskLicenseCodeWithPrefix(value?: string | null, prefix?: string
 }
 
 /**
+ * 根据不可逆前缀生成列表展示文本，避免为了显示掩码而传输完整激活码。
+ */
+export function maskLicensePrefix(prefix?: string | null): string {
+  if (!prefix) return 'IELTS-••••-••••-••••'
+  return `${prefix}-••••-••••`
+}
+
+/**
  * 验证激活码格式
  */
 export function isValidLicenseCodeFormat(value: string): boolean {

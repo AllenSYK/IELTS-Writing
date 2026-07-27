@@ -5,11 +5,13 @@ export type AuditAction =
   | 'admin_logout'
   | 'reveal_license_code'
   | 'create_license'
+  | 'update_license'
   | 'revoke_license'
   | 'delete_license'
   | 'bind_user'
   | 'batch_bind_users'
   | 'update_user'
+  | 'update_binding'
   | 'delete_user'
   | 'publish_past_paper'
   | 'unpublish_past_paper'
@@ -61,6 +63,12 @@ export async function logAdminAudit(
   entry: AuditLogEntry
 ): Promise<string | null> {
   try {
+    const ipHash = entry.ipHash
+      ? /^[a-f0-9]{64}$/i.test(entry.ipHash)
+        ? entry.ipHash
+        : await hashIpAddress(entry.ipHash)
+      : null
+
     const { data, error } = await service.rpc('log_admin_action', {
       p_admin_user_id: entry.adminUserId,
       p_action: entry.action,
@@ -70,7 +78,7 @@ export async function logAdminAudit(
       p_result: entry.result || 'success',
       p_changed_fields: entry.changedFields ? sanitizeChangedFields(entry.changedFields) : null,
       p_error_message: entry.errorMessage ? sanitizeErrorMessage(entry.errorMessage) : null,
-      p_ip_hash: entry.ipHash || null,
+      p_ip_hash: ipHash,
       p_user_agent_summary: entry.userAgentSummary ? sanitizeUserAgent(entry.userAgentSummary) : null,
       p_metadata: entry.metadata || {}
     })
@@ -173,9 +181,11 @@ function sanitizeUserAgent(userAgent: string): string {
 /**
  * 生成IP地址哈希
  */
-export async function hashIpAddress(ip: string): Promise<string> {
+export async function hashIpAddress(ip: string): Promise<string | null> {
+  const salt = process.env.AUDIT_SALT?.trim()
+  if (!salt) return null
   const encoder = new TextEncoder()
-  const data = encoder.encode(ip + process.env.AUDIT_SALT || 'default-salt')
+  const data = encoder.encode(`${ip}:${salt}`)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')

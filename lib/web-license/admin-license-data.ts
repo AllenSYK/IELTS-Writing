@@ -65,7 +65,9 @@ export async function syncLicenseActivationCount(service: SupabaseClient, licens
   if (licenseError) throw licenseError
   if (bindingsError) throw bindingsError
 
-  const activationCount = (bindings || []).filter((binding) => binding.revoked_reason !== UNBOUND_BINDING_REASON).length
+  const activationCount = (bindings || []).filter(
+    (binding) => ![UNBOUND_BINDING_REASON, 'ACCOUNT_DELETED'].includes(binding.revoked_reason || '')
+  ).length
   let status = license.status
 
   if (!['disabled', 'revoked'].includes(status)) {

@@ -73,7 +73,7 @@ const CreateSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { user, service } = await requireAdminService()
+    const { user, service } = await requireAdminService(request)
 
     let body
     try {

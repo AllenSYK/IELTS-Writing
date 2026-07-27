@@ -6,7 +6,7 @@ import type { User } from '@supabase/supabase-js'
 
 export async function GET(request: Request) {
   try {
-    const { service } = await requireAdminService()
+    const { service, user: currentAdmin } = await requireAdminService()
     const url = new URL(request.url)
     const page = Math.max(1, toQueryParamNumber(url.searchParams.get('page'), 1))
     const pageSize = Math.min(100, Math.max(1, toQueryParamNumber(url.searchParams.get('pageSize'), 50)))
@@ -22,21 +22,31 @@ export async function GET(request: Request) {
       listedUsers = data.user ? [data.user] : []
       totalUsers = listedUsers.length
     } else {
-      const { data, error } = await service.auth.admin.listUsers({ page, perPage: pageSize })
+      const needsCrossPageFiltering = Boolean(search) || filter !== 'all'
+      const { data, error } = await service.auth.admin.listUsers({
+        page: needsCrossPageFiltering ? 1 : page,
+        perPage: needsCrossPageFiltering ? 1000 : pageSize
+      })
       if (error) throw error
-      listedUsers = data.users
+      listedUsers = data.users.filter((listedUser) => !listedUser.deleted_at)
       totalUsers = data.total || data.users.length
     }
 
     const userIds = listedUsers.map((user) => user.id)
     const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, { data: usage, error: usageError }] = await Promise.all([
-      service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at').in('id', userIds),
-      service
-        .from('license_activations')
-        .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_value, code_prefix, plan, status)')
-        .in('user_id', userIds)
-        .order('expires_at', { ascending: false }),
-      service.from('usage_records').select('user_id, created_at').in('user_id', userIds)
+      userIds.length
+        ? service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at').in('id', userIds)
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? service
+            .from('license_activations')
+            .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_prefix, plan, status)')
+            .in('user_id', userIds)
+            .order('expires_at', { ascending: false })
+        : Promise.resolve({ data: [], error: null }),
+      userIds.length
+        ? service.rpc('get_admin_usage_summary', { p_user_ids: userIds })
+        : Promise.resolve({ data: [], error: null })
     ])
 
     if (profilesError) throw profilesError
@@ -46,17 +56,25 @@ export async function GET(request: Request) {
     const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]))
     const activationMap = new Map<string, (typeof activations)[number]>()
     for (const activation of activations || []) {
-      if (activation.revoked_reason === UNBOUND_BINDING_REASON) continue
-      if (!activationMap.has(activation.user_id)) activationMap.set(activation.user_id, activation)
+      if ([UNBOUND_BINDING_REASON, 'ACCOUNT_DELETED'].includes(activation.revoked_reason || '')) continue
+      const license = Array.isArray(activation.license_codes)
+        ? activation.license_codes[0]
+        : activation.license_codes
+      const isCurrentlyActive =
+        activation.status === 'active'
+        && new Date(activation.expires_at).getTime() > Date.now()
+        && Boolean(license)
+        && !['disabled', 'expired', 'revoked'].includes(license?.status || '')
+      if (isCurrentlyActive && !activationMap.has(activation.user_id)) {
+        activationMap.set(activation.user_id, activation)
+      }
     }
     const usageMap = new Map<string, { count: number; lastUsedAt: string | null }>()
     for (const item of usage || []) {
-      const current = usageMap.get(item.user_id) || { count: 0, lastUsedAt: null }
-      current.count += 1
-      if (!current.lastUsedAt || new Date(item.created_at).getTime() > new Date(current.lastUsedAt).getTime()) {
-        current.lastUsedAt = item.created_at
-      }
-      usageMap.set(item.user_id, current)
+      usageMap.set(item.user_id, {
+        count: Number(item.evaluation_count || 0),
+        lastUsedAt: item.last_used_at || null
+      })
     }
 
     const users = listedUsers
@@ -83,7 +101,6 @@ export async function GET(request: Request) {
           activation,
           isBound: Boolean(activation),
           licenseId: license?.id || null,
-          licenseCode: license?.code_value || null,
           licensePrefix: license?.code_prefix || null,
           lastUsedAt: usageInfo.lastUsedAt,
           evaluationCount: usageInfo.count
@@ -101,7 +118,18 @@ export async function GET(request: Request) {
         return true
       })
 
-    return json({ success: true, users, total: userId ? users.length : totalUsers })
+    const filteredRequest = Boolean(search) || filter !== 'all'
+    const offset = (page - 1) * pageSize
+    const pagedUsers = filteredRequest && !userId
+      ? users.slice(offset, offset + pageSize)
+      : users
+    return json({
+      success: true,
+      users: pagedUsers,
+      total: userId || filteredRequest ? users.length : totalUsers,
+      currentAdminId: currentAdmin.id,
+      truncated: filteredRequest && listedUsers.length >= 1000
+    })
   } catch (error) {
     return adminApiError(error, '无法加载用户列表')
   }

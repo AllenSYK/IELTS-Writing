@@ -1,17 +1,34 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
-import { adminApiError, refreshUserLicenseStatus, requireAdminService } from '@/lib/web-license/admin-api'
-import {
-  getEffectiveBindingStatus,
-  syncLicenseActivationCount,
-  UNBOUND_BINDING_REASON
-} from '@/lib/web-license/admin-license-data'
+import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
+import { getEffectiveBindingStatus } from '@/lib/web-license/admin-license-data'
+import { extractAuditInfo, logAdminAudit } from '@/lib/admin/audit-log'
 
 const PatchSchema = z.object({
-  action: z.enum(['extend', 'revoke', 'rebind', 'restore']),
+  action: z.enum(['extend', 'revoke', 'rebind']),
   days: z.number().int().min(1).max(3650).optional(),
   reason: z.string().max(500).optional()
 })
+
+function bindingMutationError(error: unknown) {
+  if (!(error instanceof Error)) return null
+  const messages: Record<string, string> = {
+    BINDING_NOT_FOUND: '邮箱绑定记录不存在。',
+    LICENSE_NOT_FOUND: '对应激活码不存在。',
+    LICENSE_UNAVAILABLE: '该激活码当前不可用于续期或重新绑定。',
+    BINDING_UNBOUND: '请先重新绑定，再延长有效期。',
+    ACCOUNT_DISABLED: '该账号已禁用，请先在用户管理中启用账号。',
+    ACCOUNT_DELETED: '已删除账号的绑定历史不可修改。',
+    USER_ALREADY_ACTIVE: '该用户已有其他有效激活码。',
+    LICENSE_EXHAUSTED: '该激活码已无剩余次数。'
+  }
+  const code = Object.keys(messages).find((item) => error.message.includes(item))
+  if (!code) return null
+  return json(
+    { success: false, code, message: messages[code] },
+    { status: code.endsWith('NOT_FOUND') ? 404 : 409 }
+  )
+}
 
 async function loadBinding(service: Awaited<ReturnType<typeof requireAdminService>>['service'], id: string) {
   const { data: binding, error } = await service
@@ -29,7 +46,6 @@ async function loadBinding(service: Awaited<ReturnType<typeof requireAdminServic
       revoked_reason,
       license_codes (
         id,
-        code_value,
         code_prefix,
         plan,
         status,
@@ -73,119 +89,69 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const auditInfo = extractAuditInfo(request)
   try {
-    const { service } = await requireAdminService()
+    const { service, user } = await requireAdminService(request)
     const { id } = await context.params
     const body = PatchSchema.parse(await request.json())
-    const binding = await loadBinding(service, id)
-    const license = binding.license_codes
-    if (!license) {
-      return json({ success: false, code: 'LICENSE_NOT_FOUND', message: '对应激活码不存在' }, { status: 404 })
-    }
+    const { error } = await service.rpc('admin_mutate_binding', {
+      p_binding_id: id,
+      p_action: body.action,
+      p_days: body.action === 'extend' ? body.days || 30 : null,
+      p_reason: body.reason || null
+    })
+    if (error) throw error
 
-    if (body.action === 'extend') {
-      if (binding.binding_status === 'unbound' || binding.binding_status === 'revoked') {
-        return json({ success: false, code: 'BINDING_INACTIVE', message: '请先重新绑定，再延长有效期' }, { status: 409 })
-      }
-      if (['disabled', 'revoked', 'expired'].includes(license.status)) {
-        return json({ success: false, code: 'LICENSE_UNAVAILABLE', message: '该激活码当前不可延长邮箱权限' }, { status: 409 })
-      }
-      if (license.expires_at && new Date(license.expires_at).getTime() <= Date.now()) {
-        return json({ success: false, code: 'LICENSE_EXPIRED', message: '该激活码整体有效期已结束' }, { status: 409 })
-      }
-      const base = new Date(binding.expires_at).getTime() > Date.now() ? new Date(binding.expires_at) : new Date()
-      const expiresAt = new Date(base.getTime() + (body.days || 30) * 24 * 60 * 60 * 1000).toISOString()
-      const { error } = await service
-        .from('license_activations')
-        .update({ expires_at: expiresAt, status: 'active', revoked_at: null, revoked_reason: null })
-        .eq('id', id)
-      if (error) throw error
-    } else if (body.action === 'revoke') {
-      const { error } = await service
-        .from('license_activations')
-        .update({
-          status: 'revoked',
-          revoked_at: new Date().toISOString(),
-          revoked_reason: body.reason || '管理员撤销邮箱权限'
-        })
-        .eq('id', id)
-      if (error) throw error
-    } else {
-      if (['disabled', 'revoked', 'expired'].includes(license.status)) {
-        return json({ success: false, code: 'LICENSE_UNAVAILABLE', message: '该激活码当前不可重新绑定' }, { status: 409 })
-      }
-      if (license.expires_at && new Date(license.expires_at).getTime() <= Date.now()) {
-        return json({ success: false, code: 'LICENSE_EXPIRED', message: '该激活码整体有效期已结束' }, { status: 409 })
-      }
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'update_binding',
+      resourceType: 'binding',
+      resourceId: id,
+      requestId: auditInfo.requestId,
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent,
+      changedFields: { action: body.action, days: body.days }
+    })
 
-      const { data: otherActive, error: activeError } = await service
-        .from('license_activations')
-        .select('id')
-        .eq('user_id', binding.user_id)
-        .eq('status', 'active')
-        .neq('id', id)
-        .gt('expires_at', new Date().toISOString())
-        .limit(1)
-        .maybeSingle()
-      if (activeError) throw activeError
-      if (otherActive) {
-        return json({ success: false, code: 'USER_ALREADY_ACTIVE', message: '该邮箱已有其他有效激活码' }, { status: 409 })
-      }
-
-      if (binding.binding_status === 'unbound') {
-        const count = await syncLicenseActivationCount(service, license.id)
-        if (count.activationCount >= license.max_activations) {
-          return json({ success: false, code: 'LICENSE_EXHAUSTED', message: '该激活码已无剩余次数' }, { status: 409 })
-        }
-      }
-
-      const expiresAt = new Date(Date.now() + license.duration_days * 24 * 60 * 60 * 1000).toISOString()
-      const { error } = await service
-        .from('license_activations')
-        .update({
-          activated_at: new Date().toISOString(),
-          expires_at: expiresAt,
-          status: 'active',
-          revoked_at: null,
-          revoked_reason: null
-        })
-        .eq('id', id)
-      if (error) throw error
-    }
-
-    await syncLicenseActivationCount(service, binding.license_id)
-    await refreshUserLicenseStatus(binding.user_id)
     return json({ success: true, binding: await loadBinding(service, id) })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return json({ success: false, code: 'INVALID_INPUT', message: '操作参数无效' }, { status: 400 })
     }
+    const businessError = bindingMutationError(error)
+    if (businessError) return businessError
     return adminApiError(error, '无法更新邮箱绑定')
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const auditInfo = extractAuditInfo(request)
   try {
-    const { service } = await requireAdminService()
+    const { service, user } = await requireAdminService(request)
     const { id } = await context.params
-    const binding = await loadBinding(service, id)
+    const { error } = await service.rpc('admin_mutate_binding', {
+      p_binding_id: id,
+      p_action: 'unbind',
+      p_days: null,
+      p_reason: null
+    })
+    if (error) throw error
 
-    if (binding.binding_status !== 'unbound') {
-      const { error } = await service
-        .from('license_activations')
-        .update({
-          status: 'revoked',
-          revoked_at: new Date().toISOString(),
-          revoked_reason: UNBOUND_BINDING_REASON
-        })
-        .eq('id', id)
-      if (error) throw error
-    }
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'update_binding',
+      resourceType: 'binding',
+      resourceId: id,
+      requestId: auditInfo.requestId,
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent,
+      changedFields: { action: 'unbind' }
+    })
 
-    await syncLicenseActivationCount(service, binding.license_id)
-    await refreshUserLicenseStatus(binding.user_id)
     return json({ success: true, binding: await loadBinding(service, id) })
   } catch (error) {
+    const businessError = bindingMutationError(error)
+    if (businessError) return businessError
     return adminApiError(error, '无法解绑邮箱')
   }
 }

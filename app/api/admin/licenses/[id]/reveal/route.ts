@@ -1,5 +1,6 @@
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
+import { extractAuditInfo, logAdminAudit } from '@/lib/admin/audit-log'
 
 /**
  * 获取激活码完整值
@@ -9,9 +10,9 @@ import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
  * 2. 记录审计日志
  * 3. 返回完整码用于复制
  */
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const { user, service } = await requireAdminService()
+    const { user, service } = await requireAdminService(request)
     const { id } = await context.params
     
     // 获取激活码
@@ -26,25 +27,27 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       return json({ success: false, message: '激活码不存在' }, { status: 404 })
     }
     
-    // 记录审计日志（异步，不阻塞响应）
-    // 使用 Promise.resolve 包装以确保有 .then 和 .catch 方法
-    Promise.resolve(
-      service
-        .from('admin_audit_logs')
-        .insert({
-          admin_user_id: user.id,
-          action: 'reveal_license_code',
-          target_type: 'license',
-          target_id: id,
-          details: {
-            code_prefix: license.code_prefix,
-            plan: license.plan,
-            timestamp: new Date().toISOString()
-          }
-        })
-        .select()
-        .single()
-    ).then(() => {}).catch(() => {})
+    const auditInfo = extractAuditInfo(request)
+    const auditId = await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'reveal_license_code',
+      resourceType: 'license',
+      resourceId: id,
+      requestId: auditInfo.requestId,
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent,
+      metadata: {
+        codePrefix: license.code_prefix,
+        plan: license.plan
+      }
+    })
+    if (!auditId) {
+      return json({
+        success: false,
+        code: 'AUDIT_UNAVAILABLE',
+        message: '审计日志暂时不可用，完整激活码未显示。'
+      }, { status: 503 })
+    }
     
     return json({
       success: true,

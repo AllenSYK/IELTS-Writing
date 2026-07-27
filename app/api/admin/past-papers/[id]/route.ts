@@ -58,7 +58,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const auditInfo = extractAuditInfo(request)
   
   try {
-    const { user, service } = await requireAdminService()
+    const { user, service } = await requireAdminService(request)
 
     const { id } = await params
     let body
@@ -134,6 +134,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const nextStatus = (updates.status ?? currentQuestion.status) as string
   const nextVisible = (updates.is_visible ?? currentQuestion.is_visible) as boolean
+  if (updates.status === 'published' && currentQuestion.status !== 'published') {
+    return json({
+      success: false,
+      code: 'USE_PUBLISH_ENDPOINT',
+      message: '请从真题列表使用“发布”操作并完成二次确认。',
+      requestId
+    }, { status: 409 })
+  }
   if (nextStatus === 'published' && nextVisible) {
     const readiness = pastPaperPracticeReadiness({
       taskType: (updates.task_type ?? currentQuestion.task_type) as string,
@@ -146,48 +154,39 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   }
 
-  if (expectedUpdatedAt) {
-    const { data: existing, error: fetchError } = await service
-      .from('past_paper_questions')
-      .select('updated_at')
-      .eq('id', id)
-      .single()
-
-    if (fetchError) return json({ success: false, message: 'Question not found', requestId }, { status: 404 })
-
-    const serverTime = new Date(existing.updated_at as string).getTime()
-    const clientTime = new Date(expectedUpdatedAt).getTime()
-    if (Math.abs(serverTime - clientTime) > 2000) {
-      // 记录冲突审计日志
-      await logAdminAudit(service, {
-        adminUserId: user.id,
-        action: 'update_past_paper',
-        resourceType: 'past_paper',
-        resourceId: id,
-        requestId,
-        result: 'failure',
-        errorMessage: '该题目已被其他管理员更新',
-        ipHash: auditInfo.ip,
-        userAgentSummary: auditInfo.userAgent
-      })
-      
-      return json({
-        success: false,
-        code: 'CONFLICT',
-        message: '该题目已被其他管理员更新，请刷新后重新编辑。',
-        requestId
-      }, { status: 409 })
-    }
-  }
-
-  const { data, error } = await service
+  let updateQuery = service
     .from('past_paper_questions')
     .update(updates)
     .eq('id', id)
+  if (expectedUpdatedAt) {
+    // 乐观锁和 UPDATE 必须在同一条 SQL 中，避免先检查后覆盖的竞态。
+    updateQuery = updateQuery.eq('updated_at', expectedUpdatedAt)
+  }
+
+  const { data, error } = await updateQuery
     .select()
-    .single()
+    .maybeSingle()
 
   if (error) return json({ success: false, message: error.message, requestId }, { status: 500 })
+  if (!data) {
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'update_past_paper',
+      resourceType: 'past_paper',
+      resourceId: id,
+      requestId,
+      result: 'failure',
+      errorMessage: '该题目已被其他管理员更新',
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent
+    })
+    return json({
+      success: false,
+      code: 'CONFLICT',
+      message: '该题目已被其他管理员更新，请刷新后重新编辑。',
+      requestId
+    }, { status: 409 })
+  }
   
   // 记录成功审计日志
   const changedFieldNames = Object.keys(updates).filter(k => k !== 'updated_by')
@@ -232,24 +231,40 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const auditInfo = extractAuditInfo(request)
   
   try {
-    const { user, service } = await requireAdminService()
+    const { user, service } = await requireAdminService(request)
 
     const { id } = await params
     
-    // 先获取真题信息用于审计
-    const { data: question } = await service
+    // DELETE 语义改为可恢复归档，保留题目和关联记录。
+    const { data: question, error: fetchError } = await service
       .from('past_paper_questions')
       .select('title, status')
       .eq('id', id)
-      .single()
-    
-    const { error } = await service.from('past_paper_questions').delete().eq('id', id)
+      .maybeSingle()
+    if (fetchError) throw fetchError
+    if (!question) return json({ success: false, message: '真题不存在', requestId }, { status: 404 })
+
+    const { data: archived, error } = await service
+      .from('past_paper_questions')
+      .update({
+        status: 'archived',
+        is_visible: false,
+        published_at: null,
+        updated_by: user.id
+      })
+      .eq('id', id)
+      .eq('status', question.status)
+      .select('id')
+      .maybeSingle()
     if (error) return json({ success: false, message: error.message, requestId }, { status: 500 })
+    if (!archived) {
+      return json({ success: false, code: 'CONFLICT', message: '题目状态已被其他管理员修改，请刷新后重试。', requestId }, { status: 409 })
+    }
     
     // 记录审计日志
     await logAdminAudit(service, {
       adminUserId: user.id,
-      action: 'delete_past_paper',
+      action: 'archive_past_paper',
       resourceType: 'past_paper',
       resourceId: id,
       requestId,
@@ -262,7 +277,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       userAgentSummary: auditInfo.userAgent
     })
     
-    return json({ success: true, requestId })
+    return json({ success: true, archived: true, requestId })
   } catch (error) {
     return adminApiError(error, '无法删除真题')
   }

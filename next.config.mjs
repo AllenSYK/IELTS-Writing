@@ -35,6 +35,32 @@ const nextConfig = {
             value: 'camera=(), microphone=(), geolocation=()'
           }
         ]
+      },
+      {
+        source: '/admin/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-store'
+          },
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin'
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY'
+          }
+        ]
+      },
+      {
+        source: '/api/admin/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-store'
+          }
+        ]
       }
     ]
   }

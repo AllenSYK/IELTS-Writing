@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { getAiConfig, AiProviderError, AiConfigurationError } from '@/lib/ai-provider'
 import type { RecalledExamImportResult, ExamMode, ExamSession, QuestionCompleteness } from '@/lib/past-paper-types'
 
@@ -13,8 +12,9 @@ const AnalyzeSchema = z.object({
 })
 
 export async function POST(request: Request) {
+  let admin: Awaited<ReturnType<typeof requireWebAdmin>>
   try {
-    await requireWebAdmin()
+    admin = await requireWebAdmin(request)
   } catch {
     return json({ success: false, message: 'Unauthorized' }, { status: 401 })
   }
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const config = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen3.5-plus' })
     const result = await analyzeRecalledExam(config, body.rawText, body.defaultYear, body.defaultRegion, body.defaultMode)
 
-    const service = createSupabaseServiceRoleClient()
+    const { service } = admin
     const { data: batch, error: batchError } = await service
       .from('exam_import_batches')
       .insert({
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
         status: 'completed',
         sets_created: result.examRecords.length,
         questions_created: result.examRecords.reduce((sum, r) => sum + (r.task1 ? 1 : 0) + (r.task2 ? 1 : 0), 0),
-        created_by: (await requireWebAdmin()).user.id
+        created_by: admin.user.id
       })
       .select('id')
       .single()

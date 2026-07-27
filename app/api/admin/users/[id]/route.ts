@@ -1,164 +1,242 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { hashWebLicenseCode } from '@/lib/web-license/codes'
-import { adminApiError, refreshUserLicenseStatus, requireAdminService } from '@/lib/web-license/admin-api'
-import { syncLicenseActivationCount, UNBOUND_BINDING_REASON } from '@/lib/web-license/admin-license-data'
+import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
+import { extractAuditInfo, logAdminAudit } from '@/lib/admin/audit-log'
 
 const PatchSchema = z.object({
-  action: z.enum(['role', 'disable', 'enable', 'bind', 'extend', 'revoke', 'unbind', 'reset-password']),
+  action: z.enum(['role', 'disable', 'enable', 'bind', 'reset-password']),
   role: z.enum(['user', 'admin']).optional(),
   licenseCode: z.string().min(8).max(80).optional(),
-  activationId: z.string().uuid().optional(),
-  days: z.number().int().min(1).max(3650).optional()
+  confirmation: z.string().min(1).max(200).optional()
+}).superRefine((value, context) => {
+  if (value.action === 'role' && !value.role) {
+    context.addIssue({ code: 'custom', path: ['role'], message: '角色不能为空' })
+  }
+  if (value.action === 'bind' && !value.licenseCode) {
+    context.addIssue({ code: 'custom', path: ['licenseCode'], message: '激活码不能为空' })
+  }
 })
+
+const DeleteSchema = z.object({
+  confirmation: z.string().min(1).max(200),
+  reason: z.string().max(500).optional()
+})
+
+type AdminService = Awaited<ReturnType<typeof requireAdminService>>['service']
+
+async function loadTargetUser(service: AdminService, id: string) {
+  const [{ data: authData, error: authError }, { data: profile, error: profileError }] = await Promise.all([
+    service.auth.admin.getUserById(id),
+    service
+      .from('profiles')
+      .select('id, email, phone, role, license_status, license_expires_at, created_at, updated_at')
+      .eq('id', id)
+      .maybeSingle()
+  ])
+  if (authError) throw authError
+  if (profileError) throw profileError
+  if (!authData.user || !profile) {
+    throw new Error('USER_NOT_FOUND')
+  }
+
+  const accountLabel = authData.user.email || authData.user.phone || profile.email || profile.phone || id
+  return { authUser: authData.user, profile, accountLabel }
+}
+
+function requireTypedConfirmation(actual: string | undefined, expected: string) {
+  if (actual?.trim() !== expected) {
+    throw new Error('CONFIRMATION_MISMATCH')
+  }
+}
+
+function userBusinessError(error: unknown) {
+  if (!(error instanceof Error)) return null
+  const messages: Record<string, string> = {
+    USER_NOT_FOUND: '用户不存在。',
+    CONFIRMATION_MISMATCH: '确认文字与目标账号不一致。',
+    CANNOT_CHANGE_SELF: '不能降低或禁用当前登录的管理员账号。',
+    LAST_ADMIN_PROTECTED: '系统必须至少保留一位可用管理员。',
+    ACTOR_NOT_ADMIN: '当前账号已不再是管理员，请重新登录。',
+    ADMIN_ROLE_PROTECTED: '请先取消管理员角色，再禁用或删除该账号。',
+    ADMIN_LICENSE_NOT_ALLOWED: '管理员账号不使用普通激活码。'
+  }
+  const code = Object.keys(messages).find((item) => error.message.includes(item))
+  if (!code) return null
+  return json(
+    { success: false, code, message: messages[code] },
+    { status: code === 'USER_NOT_FOUND' ? 404 : 409 }
+  )
+}
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { service } = await requireAdminService()
     const { id } = await context.params
-    const [{ data: authData, error: authError }, { data: profile, error: profileError }, { data: activations, error: activationError }] = await Promise.all([
-      service.auth.admin.getUserById(id),
-      service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at, updated_at').eq('id', id).single(),
+    const [{ authUser, profile }, { data: activations, error: activationError }] = await Promise.all([
+      loadTargetUser(service, id),
       service
         .from('license_activations')
-        .select('id, email, activated_at, expires_at, status, last_used_at, license_codes(id, code_value, code_prefix, plan, status)')
+        .select('id, email, activated_at, expires_at, status, last_used_at, license_codes(id, code_prefix, plan, status)')
         .eq('user_id', id)
         .order('activated_at', { ascending: false })
     ])
-    if (authError) throw authError
-    if (profileError) throw profileError
     if (activationError) throw activationError
-    return json({ success: true, user: authData.user, profile, activations: activations || [] })
+    return json({ success: true, user: authUser, profile, activations: activations || [] })
   } catch (error) {
+    const businessError = userBusinessError(error)
+    if (businessError) return businessError
     return adminApiError(error, '无法加载用户详情')
   }
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const auditInfo = extractAuditInfo(request)
   try {
-    const { service } = await requireAdminService()
+    const { service, user } = await requireAdminService(request)
     const { id } = await context.params
     const body = PatchSchema.parse(await request.json())
 
     if (body.action === 'reset-password') {
-      const { data: authData, error: userError } = await service.auth.admin.getUserById(id)
-      if (userError) throw userError
-      if (!authData.user.email) {
+      const { authUser } = await loadTargetUser(service, id)
+      if (!authUser.email) {
         return json({ success: false, code: 'EMAIL_REQUIRED', message: '该用户没有可用邮箱' }, { status: 400 })
       }
       const redirectTo = `${new URL(request.url).origin}/reset-password`
-      const { error } = await service.auth.resetPasswordForEmail(authData.user.email, { redirectTo })
+      const { error } = await service.auth.resetPasswordForEmail(authUser.email, { redirectTo })
       if (error) throw error
     } else if (body.action === 'role') {
-      const { error } = await service.from('profiles').update({ role: body.role || 'user' }).eq('id', id)
-      if (error) throw error
-    } else if (body.action === 'disable' || body.action === 'enable') {
-      const { error } = await service.auth.admin.updateUserById(id, {
-        ban_duration: body.action === 'disable' ? '876000h' : 'none'
+      const target = await loadTargetUser(service, id)
+      requireTypedConfirmation(body.confirmation, target.accountLabel)
+      const { error } = await service.rpc('admin_set_user_role', {
+        p_actor_user_id: user.id,
+        p_user_id: id,
+        p_role: body.role
       })
       if (error) throw error
+    } else if (body.action === 'disable' || body.action === 'enable') {
+      const target = await loadTargetUser(service, id)
       if (body.action === 'disable') {
-        const { error: activationError } = await service
-          .from('license_activations')
-          .update({ status: 'suspended', revoked_reason: 'ACCOUNT_DISABLED' })
-          .eq('user_id', id)
-          .eq('status', 'active')
-        if (activationError) throw activationError
-      } else {
-        const { error: activationError } = await service
-          .from('license_activations')
-          .update({ status: 'active', revoked_reason: null })
-          .eq('user_id', id)
-          .eq('status', 'suspended')
-          .eq('revoked_reason', 'ACCOUNT_DISABLED')
-          .gt('expires_at', new Date().toISOString())
-        if (activationError) throw activationError
+        requireTypedConfirmation(body.confirmation, target.accountLabel)
+        if (id === user.id) throw new Error('CANNOT_CHANGE_SELF')
+        if (target.profile.role === 'admin') throw new Error('ADMIN_ROLE_PROTECTED')
+      }
+
+      const { error: authError } = await service.auth.admin.updateUserById(id, {
+        ban_duration: body.action === 'disable' ? '876000h' : 'none'
+      })
+      if (authError) throw authError
+
+      const { error: accessError } = await service.rpc('admin_set_user_access', {
+        p_user_id: id,
+        p_action: body.action
+      })
+      if (accessError) {
+        await service.auth.admin.updateUserById(id, {
+          ban_duration: body.action === 'disable' ? 'none' : '876000h'
+        }).catch(() => undefined)
+        throw accessError
       }
     } else if (body.action === 'bind') {
-      const { data: authData, error: userError } = await service.auth.admin.getUserById(id)
-      if (userError) throw userError
-      const account = authData.user.email || authData.user.phone || authData.user.id
-      if (!body.licenseCode) {
-        return json({ success: false, code: 'INVALID_INPUT', message: '账号或激活码缺失' }, { status: 400 })
-      }
+      const { authUser, profile } = await loadTargetUser(service, id)
+      if (profile.role === 'admin') throw new Error('ADMIN_LICENSE_NOT_ALLOWED')
+      const account = authUser.email || authUser.phone || authUser.id
       const { data, error } = await service.rpc('activate_license_code', {
-        p_code_hash: hashWebLicenseCode(body.licenseCode),
+        p_code_hash: hashWebLicenseCode(body.licenseCode || ''),
         p_user_id: id,
         p_email: account
       })
       if (error) throw error
       const result = Array.isArray(data) ? data[0] : data
       if (!result?.success) {
-        return json({ success: false, code: result?.error_code || 'ACTIVATION_FAILED', message: result?.message || '绑定失败' }, { status: 409 })
-      }
-    } else {
-      const activationId = body.activationId
-      if (!activationId) {
-        return json({ success: false, code: 'INVALID_INPUT', message: '缺少邮箱绑定记录 ID' }, { status: 400 })
-      }
-      if (body.action === 'extend') {
-        const { data: activation, error: loadError } = await service
-          .from('license_activations')
-          .select('expires_at')
-          .eq('id', activationId)
-          .eq('user_id', id)
-          .single()
-        if (loadError) throw loadError
-        const base = new Date(activation.expires_at).getTime() > Date.now() ? new Date(activation.expires_at) : new Date()
-        const expiresAt = new Date(base.getTime() + (body.days || 30) * 24 * 60 * 60 * 1000).toISOString()
-        const { error } = await service
-          .from('license_activations')
-          .update({ expires_at: expiresAt, status: 'active', revoked_at: null, revoked_reason: null })
-          .eq('id', activationId)
-        if (error) throw error
-      } else if (body.action === 'revoke') {
-        const { error } = await service
-          .from('license_activations')
-          .update({ status: 'revoked', revoked_at: new Date().toISOString(), revoked_reason: '管理员从用户详情撤销' })
-          .eq('id', activationId)
-        if (error) throw error
-      } else if (body.action === 'unbind') {
-        const { data: activation, error: loadError } = await service
-          .from('license_activations')
-          .select('license_id')
-          .eq('id', activationId)
-          .eq('user_id', id)
-          .single()
-        if (loadError) throw loadError
-        const { error } = await service
-          .from('license_activations')
-          .update({
-            status: 'revoked',
-            revoked_at: new Date().toISOString(),
-            revoked_reason: UNBOUND_BINDING_REASON
-          })
-          .eq('id', activationId)
-        if (error) throw error
-        await syncLicenseActivationCount(service, activation.license_id)
+        return json({
+          success: false,
+          code: result?.error_code || 'ACTIVATION_FAILED',
+          message: result?.message || '绑定失败'
+        }, { status: 409 })
       }
     }
 
-    await refreshUserLicenseStatus(id)
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'update_user',
+      resourceType: 'user',
+      resourceId: id,
+      requestId: auditInfo.requestId,
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent,
+      changedFields: { action: body.action, role: body.role }
+    })
+
     return json({ success: true })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return json({ success: false, code: 'INVALID_INPUT', message: '用户操作参数无效' }, { status: 400 })
     }
+    const businessError = userBusinessError(error)
+    if (businessError) return businessError
     return adminApiError(error, '无法更新用户')
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const auditInfo = extractAuditInfo(request)
   try {
-    const { service, user } = await requireAdminService()
+    const { service, user } = await requireAdminService(request)
     const { id } = await context.params
-    if (id === user.id) {
-      return json({ success: false, code: 'CANNOT_DELETE_SELF', message: '不能删除当前登录的管理员账号' }, { status: 400 })
+    const body = DeleteSchema.parse(await request.json())
+    const target = await loadTargetUser(service, id)
+
+    requireTypedConfirmation(body.confirmation, target.accountLabel)
+    if (id === user.id) throw new Error('CANNOT_CHANGE_SELF')
+    if (target.profile.role === 'admin') throw new Error('ADMIN_ROLE_PROTECTED')
+
+    const { error: banError } = await service.auth.admin.updateUserById(id, {
+      ban_duration: '876000h'
+    })
+    if (banError) throw banError
+
+    const { error: prepareError } = await service.rpc('admin_prepare_user_deletion', {
+      p_user_id: id
+    })
+    if (prepareError) {
+      await service.auth.admin.updateUserById(id, { ban_duration: 'none' }).catch(() => undefined)
+      throw prepareError
     }
-    const { error } = await service.auth.admin.deleteUser(id)
-    if (error) throw error
+
+    const { error: deleteError } = await service.auth.admin.deleteUser(id, true)
+    if (deleteError) {
+      await logAdminAudit(service, {
+        adminUserId: user.id,
+        action: 'delete_user',
+        resourceType: 'user',
+        resourceId: id,
+        requestId: auditInfo.requestId,
+        result: 'partial',
+        errorMessage: deleteError.message,
+        ipHash: auditInfo.ip,
+        userAgentSummary: auditInfo.userAgent
+      })
+      throw deleteError
+    }
+
+    await logAdminAudit(service, {
+      adminUserId: user.id,
+      action: 'delete_user',
+      resourceType: 'user',
+      resourceId: id,
+      requestId: auditInfo.requestId,
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent,
+      metadata: { mode: 'soft-delete', reasonProvided: Boolean(body.reason?.trim()) }
+    })
     return json({ success: true })
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return json({ success: false, code: 'INVALID_INPUT', message: '删除确认参数无效' }, { status: 400 })
+    }
+    const businessError = userBusinessError(error)
+    if (businessError) return businessError
     return adminApiError(error, '无法删除用户')
   }
 }

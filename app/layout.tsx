@@ -3,6 +3,7 @@ import { UserSessionProvider } from '@/components/auth/UserSessionProvider'
 import { AppInteractionProvider } from '@/components/interaction-system'
 import { AppRuntime } from '@/components/layout/AppRuntime'
 import { BrandFaviconRefresher } from '@/components/layout/BrandFaviconRefresher'
+import { SWRProvider } from '@/components/providers/SWRProvider'
 import { BRAND_DESCRIPTION, BRAND_ICON_ALT, BRAND_NAME, BRAND_OG_IMAGE, BRAND_SHORT_NAME } from '@/lib/brand'
 import './globals.css'
 import './styles/web-audit-refactor.css'
@@ -70,11 +71,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <BrandFaviconRefresher />
-        <UserSessionProvider>
-          <AppInteractionProvider>
-            <AppRuntime>{children}</AppRuntime>
-          </AppInteractionProvider>
-        </UserSessionProvider>
+        <SWRProvider>
+          <UserSessionProvider>
+            <AppInteractionProvider>
+              <AppRuntime>{children}</AppRuntime>
+            </AppInteractionProvider>
+          </UserSessionProvider>
+        </SWRProvider>
       </body>
     </html>
   )

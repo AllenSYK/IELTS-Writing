@@ -8159,6 +8159,36 @@ img {
   margin-top: 8px;
 }
 
+.confirm-verification {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+}
+
+.confirm-verification strong {
+  color: var(--on-surface);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.confirm-verification input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--outline);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--on-surface);
+  padding: 9px 11px;
+  font: inherit;
+}
+
+.confirm-verification input:focus {
+  border-color: var(--primary);
+  outline: 3px solid color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
 .confirm-actions {
   grid-column: 1 / -1;
   display: flex;
@@ -10809,4 +10839,40 @@ body.is-resizing-editor * {
   .question-bank-loading-row {
     font-size: 13px;
   }
+}
+
+/* Page transition animations */
+.app-content {
+  animation: page-enter 0.2s ease-out;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0.8;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Smooth sidebar link transitions */
+.sidebar-link {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-link:active {
+  transform: scale(0.98);
+}
+
+/* Loading state for pages */
+.page-loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Instant page transitions for cached routes */
+[data-cached="true"] .app-content {
+  animation: none;
 }

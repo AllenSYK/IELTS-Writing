@@ -41,7 +41,7 @@ const ConfirmSchema = z.object({
 export async function POST(request: Request) {
   let adminUser
   try {
-    const admin = await requireWebAdmin()
+    const admin = await requireWebAdmin(request)
     adminUser = admin.user
   } catch {
     return json({ success: false, message: 'Unauthorized' }, { status: 401 })

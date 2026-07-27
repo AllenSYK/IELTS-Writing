@@ -2,10 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { generateWebLicenseCode, getWebLicenseCodePrefix, hashWebLicenseCode } from '@/lib/web-license/codes'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
-import {
-  getEffectiveLicenseStatus,
-  UNBOUND_BINDING_REASON
-} from '@/lib/web-license/admin-license-data'
+import { getEffectiveLicenseStatus } from '@/lib/web-license/admin-license-data'
 import { toQueryParamNumber } from '@/lib/admin/number-utils'
 import { logAdminAudit, extractAuditInfo } from '@/lib/admin/audit-log'
 
@@ -65,35 +62,21 @@ export async function GET(request: Request) {
       query = query.or(`code_prefix.ilike.%${search}%,code_value.ilike.%${search}%,plan.ilike.%${search}%,note.ilike.%${search}%`)
     }
 
-    const [licensesResult, activationsResult] = await Promise.all([
-      query,
-      service
-        .from('license_activations')
-        .select('license_id, revoked_reason')
-        .limit(1000)
-    ])
-
+    const licensesResult = await query
     if (licensesResult.error) throw licensesResult.error
-    if (activationsResult.error) throw activationsResult.error
-
-    const usageByLicense = new Map<string, number>()
-    for (const binding of activationsResult.data || []) {
-      if (binding.revoked_reason === UNBOUND_BINDING_REASON) continue
-      usageByLicense.set(binding.license_id, (usageByLicense.get(binding.license_id) || 0) + 1)
-    }
 
     const normalized = (licensesResult.data || []).map((license) => {
-      const activationCount = usageByLicense.get(license.id) || 0
+      const activationCount = license.activation_count || 0
       const effectiveStatus = getEffectiveLicenseStatus({
         ...license,
         activation_count: activationCount
       })
-      // 列表 API 不返回完整激活码，只返回掩码后的值
-      const { code_value, ...rest } = license
+      // 完整码只允许通过有审计的 reveal 端点读取。列表响应连末四位也不返回，
+      // 避免 code_prefix 与末四位组合后显著缩小暴力枚举空间。
+      const redacted = { ...license }
+      Reflect.deleteProperty(redacted, 'code_value')
       return {
-        ...rest,
-        // 保留 code_value 用于掩码显示，但不返回完整值
-        code_value: code_value ? `${code_value.slice(0, 4)}••••••••${code_value.slice(-4)}` : null,
+        ...redacted,
         activation_count: activationCount,
         remaining_count: Math.max(0, license.max_activations - activationCount),
         status: effectiveStatus
@@ -120,7 +103,7 @@ export async function POST(request: Request) {
   const auditInfo = extractAuditInfo(request)
   
   try {
-    const { user, service } = await requireAdminService()
+    const { user, service } = await requireAdminService(request)
     const body = CreateSchema.parse(await request.json())
     const generated = Array.from({ length: body.count }, () => {
       const code = generateWebLicenseCode()

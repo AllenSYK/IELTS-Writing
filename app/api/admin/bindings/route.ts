@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       licenseIds.size
         ? service
             .from('license_codes')
-            .select('id, code_value, code_prefix, plan, status, expires_at, duration_days')
+            .select('id, code_prefix, plan, status, expires_at, duration_days')
             .in('id', [...licenseIds])
         : Promise.resolve({ data: [], error: null })
     ])
@@ -82,7 +82,6 @@ export async function GET(request: Request) {
           return binding.email.toLowerCase().includes(search)
             || binding.user_id.toLowerCase().includes(search)
             || license?.code_prefix?.toLowerCase().includes(search)
-            || license?.code_value?.toLowerCase().includes(search)
         })
       : normalized
     const filtered = status === 'all'
@@ -93,7 +92,7 @@ export async function GET(request: Request) {
     let licenseLabel = ''
     if (licenseId) {
       const license = licenseMap.get(licenseId)
-      licenseLabel = license?.code_value || (license?.code_prefix ? `${license.code_prefix}-••••-••••` : licenseId)
+      licenseLabel = license?.code_prefix ? `${license.code_prefix}-••••-••••` : licenseId
     }
 
     let userLabel = ''

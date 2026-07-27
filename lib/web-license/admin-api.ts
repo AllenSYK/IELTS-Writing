@@ -2,8 +2,8 @@ import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireWebAdmin } from './auth'
 
-export async function requireAdminService() {
-  const { user, profile, service } = await requireWebAdmin()
+export async function requireAdminService(request?: Request) {
+  const { user, profile, service } = await requireWebAdmin(request)
   return { user, profile, service }
 }
 
@@ -80,5 +80,13 @@ export async function refreshUserLicenseStatus(userId: string) {
 }
 
 export async function refreshUsersLicenseStatus(userIds: string[]) {
-  await Promise.all([...new Set(userIds)].filter(Boolean).map((id) => refreshUserLicenseStatus(id)))
+  const uniqueUserIds = [...new Set(userIds)].filter(Boolean)
+  const concurrency = 8
+  for (let index = 0; index < uniqueUserIds.length; index += concurrency) {
+    await Promise.all(
+      uniqueUserIds
+        .slice(index, index + concurrency)
+        .map((id) => refreshUserLicenseStatus(id))
+    )
+  }
 }

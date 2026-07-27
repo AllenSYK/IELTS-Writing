@@ -5,7 +5,7 @@ import Link from 'next/link'
 import useSWR from 'swr'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminTableSkeleton, AdminEmpty, AdminError, AdminBadge, formatAdminDate } from '@/components/admin/AdminUI'
-import { useToast } from '@/components/interaction-system'
+import { ConfirmDialog, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 import type {
   PastPaperStatus, PastPaperTaskType, PastPaperFrequencyLevel,
@@ -49,6 +49,12 @@ export function AdminPastPapersClient() {
   const [showAnalyze, setShowAnalyze] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showClassify, setShowClassify] = useState(false)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [statusConfirm, setStatusConfirm] = useState<{
+    id: string
+    action: 'publish' | 'unpublish'
+    title: string
+  } | null>(null)
 
   const url = `/api/admin/past-papers?page=${page}&pageSize=20${statusFilter ? `&status=${statusFilter}` : ''}`
   const { data, error, isLoading, mutate } = useSWR<AdminPastPapersData>(url, adminJsonFetcher, { keepPreviousData: true })
@@ -57,25 +63,43 @@ export function AdminPastPapersClient() {
   const total = data?.total ?? 0
 
   async function handlePublish(id: string) {
+    if (pendingId) return
+    setPendingId(id)
     try {
       const res = await fetch(`/api/admin/past-papers/${id}/publish`, { method: 'POST' })
-      if (!res.ok) throw new Error()
+      const payload = await res.json().catch(() => ({})) as { message?: string }
+      if (!res.ok) throw new Error(payload.message || '发布失败')
       pushToast({ kind: 'success', title: '已发布' })
-      void mutate()
-    } catch {
-      pushToast({ kind: 'error', title: '发布失败' })
+      await mutate().catch(() => undefined)
+    } catch (error) {
+      pushToast({ kind: 'error', title: '发布失败', message: error instanceof Error ? error.message : undefined })
+    } finally {
+      setPendingId(null)
     }
   }
 
   async function handleUnpublish(id: string) {
+    if (pendingId) return
+    setPendingId(id)
     try {
       const res = await fetch(`/api/admin/past-papers/${id}/unpublish`, { method: 'POST' })
-      if (!res.ok) throw new Error()
+      const payload = await res.json().catch(() => ({})) as { message?: string }
+      if (!res.ok) throw new Error(payload.message || '下架失败')
       pushToast({ kind: 'success', title: '已下架' })
-      void mutate()
-    } catch {
-      pushToast({ kind: 'error', title: '下架失败' })
+      await mutate().catch(() => undefined)
+    } catch (error) {
+      pushToast({ kind: 'error', title: '下架失败', message: error instanceof Error ? error.message : undefined })
+    } finally {
+      setPendingId(null)
     }
+  }
+
+  async function confirmStatusChange() {
+    const confirmation = statusConfirm
+    setStatusConfirm(null)
+    if (!confirmation) return
+    if (confirmation.action === 'publish') await handlePublish(confirmation.id)
+    else await handleUnpublish(confirmation.id)
   }
 
   async function handleAnalyze(id: string, imageUrl?: string, rawText?: string) {
@@ -161,8 +185,8 @@ export function AdminPastPapersClient() {
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <Link className="admin-secondary-button" href={`/admin/past-papers/${item.id}/edit`} prefetch={false}>编辑</Link>
-                      {item.status !== 'published' && <button className="admin-secondary-button" onClick={() => handlePublish(item.id)}>发布</button>}
-                      {item.status === 'published' && <button className="admin-secondary-button" onClick={() => handleUnpublish(item.id)}>下架</button>}
+                      {item.status !== 'published' && <button className="admin-secondary-button" type="button" disabled={Boolean(pendingId)} onClick={() => setStatusConfirm({ id: item.id, action: 'publish', title: item.title })}>发布</button>}
+                      {item.status === 'published' && <button className="admin-secondary-button" type="button" disabled={Boolean(pendingId)} onClick={() => setStatusConfirm({ id: item.id, action: 'unpublish', title: item.title })}>下架</button>}
                       <button className="admin-secondary-button" onClick={() => setShowAnalyze(item.id)}>AI 分析</button>
                     </div>
                   </td>
@@ -185,6 +209,17 @@ export function AdminPastPapersClient() {
       {showAnalyze && <AnalyzeDialog questionId={showAnalyze} onClose={() => setShowAnalyze(null)} onAnalyze={handleAnalyze} />}
       {showImport && <ImportRecalledDialog onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); void mutate() }} />}
       {showClassify && <ClassifyDialog onClose={() => setShowClassify(false)} onDone={() => { setShowClassify(false); void mutate() }} />}
+      <ConfirmDialog
+        open={Boolean(statusConfirm)}
+        title={statusConfirm?.action === 'publish' ? '发布这道真题？' : '下架这道真题？'}
+        message={statusConfirm?.action === 'publish'
+          ? `“${statusConfirm?.title || ''}”将立即对所有用户可见。`
+          : `“${statusConfirm?.title || ''}”将立即从用户题库中隐藏。`}
+        confirmLabel={statusConfirm?.action === 'publish' ? '确认发布' : '确认下架'}
+        tone="warning"
+        onCancel={() => setStatusConfirm(null)}
+        onConfirm={() => void confirmStatusChange()}
+      />
     </main>
   )
 }

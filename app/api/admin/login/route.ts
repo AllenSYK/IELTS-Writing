@@ -3,8 +3,10 @@ import { normalizeEmail } from '@/lib/auth/email-verification'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
 import { json } from '@/lib/http'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { getWebProfile } from '@/lib/web-license/auth'
+import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { assertTrustedAdminMutationRequest, getWebProfile } from '@/lib/web-license/auth'
 import { checkRateLimit, getClientIp, rateLimitResponse, ADMIN_LOGIN_RATE_LIMIT } from '@/lib/rate-limit'
+import { extractAuditInfo, logAdminAudit } from '@/lib/admin/audit-log'
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -13,6 +15,7 @@ const LoginSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    assertTrustedAdminMutationRequest(request)
     const ip = getClientIp(request)
     const body = LoginSchema.parse(await request.json())
     const email = normalizeEmail(body.email)
@@ -58,11 +61,26 @@ export async function POST(request: Request) {
       )
     }
 
+    const service = createSupabaseServiceRoleClient()
+    const auditInfo = extractAuditInfo(request)
+    await logAdminAudit(service, {
+      adminUserId: data.user.id,
+      action: 'admin_login',
+      resourceType: 'user',
+      resourceId: data.user.id,
+      requestId: auditInfo.requestId,
+      ipHash: auditInfo.ip,
+      userAgentSummary: auditInfo.userAgent
+    })
+
     return json({
       success: true,
       redirectTo: '/admin/licenses'
     })
   } catch (error) {
+    if (error instanceof Response) {
+      return json({ success: false, code: 'FORBIDDEN', message: '请求来源不受信任。' }, { status: error.status })
+    }
     if (error instanceof z.ZodError) {
       return json({ success: false, message: '请输入有效的管理员邮箱和密码。' }, { status: 400 })
     }

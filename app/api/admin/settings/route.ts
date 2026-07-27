@@ -47,12 +47,13 @@ export async function GET(request: Request) {
     const { service } = await requireAdminService()
     const { data, error } = await service
       .from('admin_settings')
-      .select('value, updated_at')
+      .select('setting_value, updated_at')
       .eq('id', 'default')
-      .single()
+      .maybeSingle()
     
-    // 如果查询失败或数据为空，返回默认设置
-    if (error || !data) {
+    if (error) throw error
+    // 首次部署尚未创建默认行时使用安全默认值。
+    if (!data) {
       return json({ 
         success: true, 
         settings: DEFAULT_SETTINGS, 
@@ -62,7 +63,7 @@ export async function GET(request: Request) {
     }
     
     // 合并默认值和存储的值
-    const settings = { ...DEFAULT_SETTINGS, ...(data.value || {}) }
+    const settings = { ...DEFAULT_SETTINGS, ...(data.setting_value || {}) }
     return json({ success: true, settings, updatedAt: data.updated_at, requestId })
   } catch (error) {
     return adminApiError(error, '无法加载管理设置')
@@ -74,19 +75,29 @@ export async function PATCH(request: Request) {
   const auditInfo = extractAuditInfo(request)
   
   try {
-    const { user, service } = await requireAdminService()
+    const { user, service } = await requireAdminService(request)
     const body = await request.json()
     const { expectedUpdatedAt, ...patch } = SettingsSchema.parse(body)
     
-    // 并发保护：检查版本
+    let data: { setting_value: Record<string, unknown>; updated_at: string } | null = null
+
+    // 并发保护必须和 UPDATE 在同一条 SQL 中完成，避免“先检查、后覆盖”的竞态。
     if (expectedUpdatedAt) {
-      const { data: current } = await service
+      const updateResult = await service
         .from('admin_settings')
-        .select('updated_at')
+        .update({
+          setting_value: patch,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', 'default')
-        .single()
-      
-      if (current && current.updated_at !== expectedUpdatedAt) {
+        .eq('updated_at', expectedUpdatedAt)
+        .select('setting_value, updated_at')
+        .maybeSingle()
+
+      if (updateResult.error) throw updateResult.error
+      data = updateResult.data
+
+      if (!data) {
         // 记录冲突审计日志
         await logAdminAudit(service, {
           adminUserId: user.id,
@@ -107,22 +118,32 @@ export async function PATCH(request: Request) {
           requestId
         }, { status: 409 })
       }
+    } else {
+      const createResult = await service
+        .from('admin_settings')
+        .upsert({
+          id: 'default',
+          setting_key: 'default',
+          setting_value: patch,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'id',
+          ignoreDuplicates: true
+        })
+        .select('setting_value, updated_at')
+        .maybeSingle()
+
+      if (createResult.error) throw createResult.error
+      if (!createResult.data) {
+        return json({
+          success: false,
+          code: 'CONFLICT',
+          message: '设置已由其他管理员创建，请刷新后重新编辑。',
+          requestId
+        }, { status: 409 })
+      }
+      data = createResult.data
     }
-    
-    // 使用 upsert 确保默认行存在
-    const { data, error } = await service
-      .from('admin_settings')
-      .upsert({
-        id: 'default',
-        value: patch,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'id'
-      })
-      .select('value, updated_at')
-      .single()
-    
-    if (error) throw error
     
     // 记录成功审计日志
     const changedFieldNames = Object.keys(patch).filter(k => k !== 'expectedUpdatedAt')
@@ -140,7 +161,7 @@ export async function PATCH(request: Request) {
     
     return json({ 
       success: true, 
-      settings: data.value, 
+      settings: data.setting_value,
       updatedAt: data.updated_at,
       requestId
     })

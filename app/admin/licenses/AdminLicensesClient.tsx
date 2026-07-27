@@ -18,19 +18,17 @@ import {
   RefreshCw,
   Search,
   ShieldX,
-  Trash2,
   UsersRound
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
-import { maskLicenseCode } from '@/lib/admin/mask-license'
+import { maskLicensePrefix } from '@/lib/admin/mask-license'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type LicenseRow = {
   id: string
-  code_value: string | null
   code_prefix: string
   plan: string
   duration_days: number
@@ -57,6 +55,7 @@ type ConfirmState = {
   title: string
   message: string
   label: string
+  verificationText?: string
   action: () => Promise<void>
 } | null
 
@@ -196,22 +195,6 @@ export function AdminLicensesClient() {
     }
   }
 
-  async function deleteLicense(id: string) {
-    setSubmitting(true)
-    try {
-      const response = await fetch(`/api/admin/licenses/${id}`, { method: 'DELETE' })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '删除失败。')
-      pushToast({ kind: 'success', title: '激活码已删除' })
-      setSelected(null)
-      await mutate().catch(() => undefined)
-    } catch (caught) {
-      pushToast({ kind: 'error', title: '删除失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   async function copyText(value: string, title = '已复制') {
     await navigator.clipboard.writeText(value)
     pushToast({ kind: 'success', title })
@@ -221,7 +204,7 @@ export function AdminLicensesClient() {
     downloadCsv(`license-codes-${new Date().toISOString().slice(0, 10)}.csv`, [
       ['激活码', '套餐', '状态', '已使用次数', '最大激活次数', '剩余次数', '用户有效天数', '激活码整体到期时间', '创建时间', '备注'],
       ...licenses.map((license) => [
-        license.code_value || license.code_prefix,
+        maskLicensePrefix(license.code_prefix),
         license.plan,
         license.status,
         license.activation_count,
@@ -233,7 +216,7 @@ export function AdminLicensesClient() {
         license.note || ''
       ])
     ])
-    pushToast({ kind: 'success', title: '激活码数据已导出' })
+    pushToast({ kind: 'success', title: '当前结果已脱敏导出' })
   }
 
   async function runConfirm() {
@@ -242,7 +225,7 @@ export function AdminLicensesClient() {
     if (action) await action()
   }
 
-  async function revealLicenseCode(id: string) {
+  async function revealLicenseCode(id: string): Promise<string | null> {
     // 如果已经显示，则隐藏
     if (revealed.has(id)) {
       setRevealed((current) => {
@@ -250,12 +233,12 @@ export function AdminLicensesClient() {
         next.delete(id)
         return next
       })
-      return
+      return null
     }
     
     // 否则通过 API 获取完整码
     try {
-      const response = await fetch(`/api/admin/licenses/${id}/reveal`)
+      const response = await fetch(`/api/admin/licenses/${id}/reveal`, { method: 'POST' })
       const data = await response.json().catch(() => ({}))
       
       if (!response.ok || !data.success) {
@@ -283,13 +266,20 @@ export function AdminLicensesClient() {
           return next
         })
       }, 5 * 60 * 1000)
+      return data.code_value as string
     } catch (caught) {
       pushToast({ 
         kind: 'error', 
         title: '获取完整激活码失败', 
         message: caught instanceof Error ? caught.message : '请稍后重试' 
       })
+      return null
     }
+  }
+
+  async function copyLicenseCode(id: string) {
+    const code = revealedCodes[id] || await revealLicenseCode(id)
+    if (code) await copyText(code)
   }
 
   return (
@@ -297,11 +287,11 @@ export function AdminLicensesClient() {
       <AdminPageHeader
         eyebrow="LICENSE ASSETS"
         title="激活码管理"
-        description="生成、查看、禁用、撤销和管理所有激活码"
+        description="生成、查看、禁用、撤销和管理所有激活码；撤销后保留历史记录"
         actions={(
           <>
             <button className="admin-secondary-button" type="button" onClick={exportAll} disabled={!licenses.length}>
-              <Download size={16} />导出 CSV
+              <Download size={16} />导出当前结果（已脱敏）
             </button>
             <button className="admin-primary-button" type="button" onClick={() => setCreateOpen(true)}>
               <Plus size={16} />生成激活码
@@ -361,7 +351,7 @@ export function AdminLicensesClient() {
                     <tr key={license.id}>
                       <td data-label="激活码">
                         <div className="admin-code-cell">
-                          <code>{visible && fullCode ? fullCode : maskLicenseCode(license.code_value)}</code>
+                          <code>{visible && fullCode ? fullCode : maskLicensePrefix(license.code_prefix)}</code>
                           <button type="button" onClick={() => void revealLicenseCode(license.id)} aria-label={visible ? '隐藏激活码' : '显示激活码'}>
                             {visible ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
@@ -379,33 +369,29 @@ export function AdminLicensesClient() {
                       <td data-label="备注"><span className="admin-note-cell" title={license.note || ''}>{license.note || '—'}</span></td>
                       <td data-label="操作">
                         <div className="admin-row-actions">
-                          {license.code_value ? <button className="admin-icon-button" type="button" onClick={() => void copyText(license.code_value || '')} aria-label="复制" title="复制"><Copy size={15} /></button> : null}
                           <button className="admin-icon-button" type="button" onClick={() => setSelected(license)} aria-label="查看详情" title="查看详情"><FileText size={15} /></button>
                           <Link className="admin-icon-button" href={`/admin/bindings?licenseId=${license.id}`} aria-label="查看绑定记录" title="查看绑定记录"><UsersRound size={15} /></Link>
-                          {['disabled', 'revoked'].includes(license.status) ? (
+                          {license.status === 'disabled' ? (
                             <button className="admin-icon-button success" type="button" onClick={() => void updateLicense(license.id, { status: license.activation_count ? 'active' : 'unused' }, '激活码已启用')} aria-label="启用" title="启用">
                               <CheckCircle2 size={15} />
                             </button>
-                          ) : (
+                          ) : license.status !== 'revoked' ? (
                             <button className="admin-icon-button warning" type="button" onClick={() => setConfirm({
                               title: '禁用这个激活码？',
                               message: '已绑定用户将暂停使用权限，重新启用后可恢复。',
                               label: '确认禁用',
                               action: () => updateLicense(license.id, { status: 'disabled' }, '激活码已禁用')
                             })} aria-label="禁用" title="禁用"><Ban size={15} /></button>
-                          )}
-                          <button className="admin-icon-button warning" type="button" onClick={() => setConfirm({
-                            title: '撤销这个激活码？',
-                            message: '该激活码会停止使用，相关邮箱权限也会被撤销。',
-                            label: '确认撤销',
-                            action: () => updateLicense(license.id, { status: 'revoked' }, '激活码已撤销')
-                          })} aria-label="撤销" title="撤销"><ShieldX size={15} /></button>
-                          <button className="admin-icon-button danger" type="button" onClick={() => setConfirm({
-                            title: '永久删除这个激活码？',
-                            message: '激活码及其绑定记录都会被永久删除，且无法恢复。',
-                            label: '永久删除',
-                            action: () => deleteLicense(license.id)
-                          })} aria-label="删除" title="删除"><Trash2 size={15} /></button>
+                          ) : null}
+                          {license.status !== 'revoked' ? (
+                            <button className="admin-icon-button warning" type="button" onClick={() => setConfirm({
+                              title: '不可逆地撤销这个激活码？',
+                              message: '该激活码及相关邮箱权限会立即失效，记录会保留且不能重新启用。',
+                              label: '确认永久撤销',
+                              verificationText: license.code_prefix,
+                              action: () => updateLicense(license.id, { status: 'revoked' }, '激活码已撤销')
+                            })} aria-label="撤销" title="撤销"><ShieldX size={15} /></button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -535,27 +521,14 @@ export function AdminLicensesClient() {
             <section className="admin-license-hero">
               <span className="admin-list-icon"><KeyRound size={20} /></span>
               <div>
-                <code>{revealedCodes[selected.id] || maskLicenseCode(selected.code_value)}</code>
+                <code>{revealedCodes[selected.id] || maskLicensePrefix(selected.code_prefix)}</code>
                 <div><span className="admin-plan-pill">{selected.plan}</span><AdminBadge value={selected.status} /></div>
               </div>
-              {selected.code_value ? (
+              {selected.id ? (
                 <button 
                   className="admin-secondary-button" 
                   type="button" 
-                  onClick={() => {
-                    if (revealedCodes[selected.id]) {
-                      void copyText(revealedCodes[selected.id])
-                    } else {
-                      void revealLicenseCode(selected.id).then(() => {
-                        // 获取后复制
-                        setTimeout(() => {
-                          if (revealedCodes[selected.id]) {
-                            void copyText(revealedCodes[selected.id])
-                          }
-                        }, 100)
-                      })
-                    }
-                  }}
+                  onClick={() => void copyLicenseCode(selected.id)}
                 >
                   <Copy size={15} />复制
                 </button>
@@ -578,19 +551,16 @@ export function AdminLicensesClient() {
               <Link className="admin-primary-button" href={`/admin/bindings?licenseId=${selected.id}`}>查看全部绑定邮箱</Link>
             </section>
             <div className="admin-danger-zone">
-              <div><strong>危险操作</strong><p>撤销会停止激活码使用；删除会永久移除激活码及其绑定记录。</p></div>
-              <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
-                title: '撤销这个激活码？',
-                message: '该激活码和相关邮箱权限都会被撤销。',
-                label: '确认撤销',
-                action: () => updateLicense(selected.id, { status: 'revoked' }, '激活码已撤销')
-              })}><ShieldX size={15} />撤销激活码</button>
-              <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
-                title: '永久删除这个激活码？',
-                message: '激活码和全部绑定记录都会被删除，且无法恢复。',
-                label: '永久删除',
-                action: () => deleteLicense(selected.id)
-              })}><Trash2 size={15} />删除</button>
+              <div><strong>危险操作</strong><p>撤销后会保留激活码、绑定历史和审计记录，但不能重新启用。</p></div>
+              {selected.status !== 'revoked' ? (
+                <button className="admin-secondary-button danger" type="button" onClick={() => setConfirm({
+                  title: '不可逆地撤销这个激活码？',
+                  message: '该激活码和相关邮箱权限都会立即失效。',
+                  label: '确认永久撤销',
+                  verificationText: selected.code_prefix,
+                  action: () => updateLicense(selected.id, { status: 'revoked' }, '激活码已撤销')
+                })}><ShieldX size={15} />撤销激活码</button>
+              ) : <span className="admin-status bad">已永久撤销</span>}
             </div>
           </div>
         ) : null}
@@ -601,6 +571,7 @@ export function AdminLicensesClient() {
         title={confirm?.title || ''}
         message={confirm?.message || ''}
         confirmLabel={confirm?.label}
+        verificationText={confirm?.verificationText}
         tone="danger"
         onCancel={() => setConfirm(null)}
         onConfirm={() => void runConfirm()}

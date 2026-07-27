@@ -18,14 +18,13 @@ import {
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
-import { maskLicenseCode } from '@/lib/admin/mask-license'
+import { maskLicensePrefix } from '@/lib/admin/mask-license'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
 
 type LicenseRef = {
   id: string
-  code_value: string | null
   code_prefix: string
   plan: string
   status: string
@@ -168,6 +167,7 @@ export function AdminBindingsClient() {
 
   function rebindButton(binding: BindingRow) {
     if (!['unbound', 'revoked', 'expired'].includes(binding.binding_status)) return null
+    if (['ACCOUNT_DISABLED', 'ACCOUNT_DELETED'].includes(binding.revoked_reason || '')) return null
     if (!binding.license_codes || ['disabled', 'revoked', 'expired'].includes(binding.license_codes.status)) return null
     return (
       <button className="admin-icon-button success" type="button" disabled={submitting} onClick={() => void patchBinding(binding.id, 'rebind')} aria-label="重新绑定" title="重新绑定">
@@ -203,7 +203,7 @@ export function AdminBindingsClient() {
         {licenseId || email || userId ? (
           <div className="admin-filter-tags" aria-label="当前筛选条件">
             {licenseId ? (
-              <span>激活码：{maskLicenseCode(labels.license || licenseId)}<button type="button" onClick={() => clearFilter('licenseId')} aria-label="清除激活码筛选"><X size={13} /></button></span>
+              <span>激活码：{labels.license || licenseId}<button type="button" onClick={() => clearFilter('licenseId')} aria-label="清除激活码筛选"><X size={13} /></button></span>
             ) : null}
             {email ? (
               <span>邮箱：{labels.email || email}<button type="button" onClick={() => clearFilter('email')} aria-label="清除邮箱筛选"><X size={13} /></button></span>
@@ -234,7 +234,7 @@ export function AdminBindingsClient() {
                       </td>
                       <td data-label="激活码">
                         <Link className="admin-table-link" href={`/admin/licenses?licenseId=${license?.id || binding.license_id}`}>
-                          <code>{maskLicenseCode(license?.code_value)}</code>
+                          <code>{maskLicensePrefix(license?.code_prefix)}</code>
                         </Link>
                       </td>
                       <td data-label="套餐"><span className="admin-plan-pill">{license?.plan || '—'}</span></td>
@@ -260,7 +260,7 @@ export function AdminBindingsClient() {
                               action: () => patchBinding(binding.id, 'revoke')
                             })} aria-label="撤销权限" title="撤销权限"><ShieldX size={15} /></button>
                           ) : null}
-                          {binding.binding_status !== 'unbound' ? (
+                          {binding.binding_status !== 'unbound' && binding.revoked_reason !== 'ACCOUNT_DELETED' ? (
                             <button className="admin-icon-button danger" type="button" disabled={submitting} onClick={() => setConfirm({
                               title: '解绑这个邮箱？',
                               message: '绑定历史会保留，同时释放激活码的一次使用名额。',
@@ -295,7 +295,7 @@ export function AdminBindingsClient() {
               <AdminBadge value={selected.binding_status} />
             </section>
             <dl className="admin-definition-grid">
-              <div><dt>激活码</dt><dd><code>{maskLicenseCode(selected.license_codes?.code_value)}</code></dd></div>
+              <div><dt>激活码</dt><dd><code>{maskLicensePrefix(selected.license_codes?.code_prefix)}</code></dd></div>
               <div><dt>套餐</dt><dd>{selected.license_codes?.plan || '—'}</dd></div>
               <div><dt>激活时间</dt><dd>{formatAdminDate(selected.activated_at)}</dd></div>
               <div><dt>账号到期时间</dt><dd>{formatAdminDate(selected.expires_at)}</dd></div>
@@ -318,7 +318,7 @@ export function AdminBindingsClient() {
                   action: () => patchBinding(selected.id, 'revoke')
                 })}><ShieldX size={15} />撤销权限</button>
               ) : null}
-              {selected.binding_status !== 'unbound' ? (
+              {selected.binding_status !== 'unbound' && selected.revoked_reason !== 'ACCOUNT_DELETED' ? (
                 <button className="admin-secondary-button danger" type="button" disabled={submitting} onClick={() => setConfirm({
                   title: '解绑这个邮箱？',
                   message: '绑定历史会保留，同时释放激活码的一次使用名额。',
@@ -328,6 +328,7 @@ export function AdminBindingsClient() {
               ) : null}
               {['unbound', 'revoked', 'expired'].includes(selected.binding_status)
                 && selected.license_codes
+                && !['ACCOUNT_DISABLED', 'ACCOUNT_DELETED'].includes(selected.revoked_reason || '')
                 && !['disabled', 'revoked', 'expired'].includes(selected.license_codes.status) ? (
                 <button className="admin-primary-button" type="button" disabled={submitting} onClick={() => void patchBinding(selected.id, 'rebind')}><RotateCcw size={15} />重新绑定</button>
               ) : null}

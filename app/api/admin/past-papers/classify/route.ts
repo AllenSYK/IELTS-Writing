@@ -51,7 +51,7 @@ const TOTAL_TIME_GUARD_MS = 250_000
 export async function POST(request: Request) {
   let user
   try {
-    const result = await requireWebAdmin()
+    const result = await requireWebAdmin(request)
     user = result.user
   } catch {
     return json({ success: false, message: 'Unauthorized' }, { status: 401 })
