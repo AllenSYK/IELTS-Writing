@@ -140,14 +140,9 @@ export function Sidebar() {
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
-            prefetch={false}
+            prefetch={true}
             aria-current={activeId === item.id ? 'page' : undefined}
-            onPointerEnter={() => handleItemHover(item)}
-            onPointerLeave={() => handleItemLeave(item)}
-            onFocus={() => prefetchItem(item)}
             onClick={() => {
-              // 提升优先级并取消其他低优先级任务
-              promoteTask(`route:${item.href}`)
               if (item.id === 'ielts') {
                 window.dispatchEvent(new Event('ielts-writing:practice-visited'))
               }

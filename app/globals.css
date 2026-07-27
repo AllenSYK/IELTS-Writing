@@ -10843,13 +10843,14 @@ body.is-resizing-editor * {
 
 /* Page transition animations */
 .app-content {
-  animation: page-enter 0.2s ease-out;
+  animation: page-enter 0.15s ease-out;
+  will-change: opacity, transform;
 }
 
 @keyframes page-enter {
   from {
-    opacity: 0.8;
-    transform: translateY(4px);
+    opacity: 0;
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -10859,11 +10860,19 @@ body.is-resizing-editor * {
 
 /* Smooth sidebar link transitions */
 .sidebar-link {
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.1s ease, color 0.1s ease, transform 0.1s ease;
+  cursor: pointer;
+  user-select: none;
 }
 
 .sidebar-link:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
+  background-color: var(--surface-variant);
+}
+
+/* Sidebar link hover effect */
+.sidebar-link:hover {
+  background-color: var(--surface-variant);
 }
 
 /* Loading state for pages */
@@ -10875,4 +10884,10 @@ body.is-resizing-editor * {
 /* Instant page transitions for cached routes */
 [data-cached="true"] .app-content {
   animation: none;
+}
+
+/* Click feedback for navigation */
+.sidebar-link.is-navigating {
+  opacity: 0.8;
+  background-color: var(--surface-variant);
 }
