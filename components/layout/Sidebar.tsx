@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
 import { BRAND_NAME } from '@/lib/brand'
+import { prefetchRoute, promoteTask } from '@/lib/performance/prefetch-manager'
 import type { UserRouteCacheKey } from '@/lib/user-route-cache'
 
 type SidebarItem = {
@@ -76,9 +77,37 @@ export function Sidebar() {
     }
   }, [mobileOpen])
 
+  const hoverTimers = useRef<Map<string, NodeJS.Timeout>>(new Map())
+
   function prefetchItem(item: SidebarItem) {
-    router.prefetch(item.href)
+    // 提升优先级
+    promoteTask(`route:${item.href}`)
+    // 立即预加载路由
+    prefetchRoute(router, item.href)
   }
+
+  function handleItemHover(item: SidebarItem) {
+    // 延迟预加载，避免快速划过时触发
+    const timer = setTimeout(() => {
+      prefetchRoute(router, item.href)
+    }, 200)
+    hoverTimers.current.set(item.id, timer)
+  }
+
+  function handleItemLeave(item: SidebarItem) {
+    const timer = hoverTimers.current.get(item.id)
+    if (timer) {
+      clearTimeout(timer)
+      hoverTimers.current.delete(item.id)
+    }
+  }
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      hoverTimers.current.forEach(timer => clearTimeout(timer))
+    }
+  }, [])
 
   return (
     <aside className="sidebar" aria-label="应用导航">
@@ -88,8 +117,8 @@ export function Sidebar() {
         prefetch={false}
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
-        onPointerEnter={() => router.prefetch('/practice')}
-        onFocus={() => router.prefetch('/practice')}
+        onPointerEnter={() => prefetchRoute(router, '/practice')}
+        onFocus={() => prefetchRoute(router, '/practice')}
       >
         <BrandLogo size="md" showName />
       </Link>
@@ -113,9 +142,12 @@ export function Sidebar() {
             href={item.href}
             prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
-            onPointerEnter={() => prefetchItem(item)}
+            onPointerEnter={() => handleItemHover(item)}
+            onPointerLeave={() => handleItemLeave(item)}
             onFocus={() => prefetchItem(item)}
             onClick={() => {
+              // 提升优先级并取消其他低优先级任务
+              promoteTask(`route:${item.href}`)
               if (item.id === 'ielts') {
                 window.dispatchEvent(new Event('ielts-writing:practice-visited'))
               }
