@@ -1,11 +1,12 @@
 'use client'
 
+import { Suspense, useLayoutEffect, useRef, useEffect, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import { AppHeader } from './AppHeader'
 import { Sidebar } from './Sidebar'
-import { useLayoutEffect, useRef, useEffect, type ReactNode } from 'react'
+import { NavigationProgress } from './NavigationProgress'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { setCurrentUserId, setupVisibilityListener, setupNetworkListener } from '@/lib/performance/prefetch-manager'
+import { setCurrentUserId } from '@/lib/performance/prefetch-manager'
 import { clearUserCache } from '@/lib/performance/cache-manager'
 import { clearUserRouteMemoryCaches } from '@/lib/user-route-cache'
 
@@ -32,7 +33,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const contentRef = useRef<HTMLDivElement>(null)
   const { userId, status: sessionStatus } = useUserSession()
-  const prefetchedRef = useRef(false)
   const fullScreenRoute =
     pathname.startsWith('/write') ||
     pathname.startsWith('/admin') ||
@@ -65,22 +65,22 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [sessionStatus, userId])
 
-  // 设置可见性和网络监听
-  useEffect(() => {
-    const cleanupVisibility = setupVisibilityListener()
-    const cleanupNetwork = setupNetworkListener()
-    return () => {
-      cleanupVisibility()
-      cleanupNetwork()
-    }
-  }, [])
-
   if (fullScreenRoute) {
-    return <div className="app-route-root is-full-screen">{children}</div>
+    return (
+      <div className="app-route-root is-full-screen">
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
+        {children}
+      </div>
+    )
   }
 
   return (
     <div className="app-route-root">
+      <Suspense fallback={null}>
+        <NavigationProgress />
+      </Suspense>
       <div className="app-shell">
         <Sidebar />
         <div className="app-main">
