@@ -5,8 +5,9 @@ import { AppHeader } from './AppHeader'
 import { Sidebar } from './Sidebar'
 import { useLayoutEffect, useRef, useEffect, type ReactNode } from 'react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { setCurrentUserId, addPrefetchTask, setupVisibilityListener, setupNetworkListener } from '@/lib/performance/prefetch-manager'
+import { setCurrentUserId, setupVisibilityListener, setupNetworkListener } from '@/lib/performance/prefetch-manager'
 import { clearUserCache } from '@/lib/performance/cache-manager'
+import { clearUserRouteMemoryCaches } from '@/lib/user-route-cache'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string }> = [
   { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心' },
@@ -56,8 +57,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // 监听用户登出，清理缓存
   useEffect(() => {
-    if (sessionStatus === 'unauthenticated' && userId) {
-      clearUserCache(userId)
+    if (sessionStatus === 'unauthenticated') {
+      if (userId) {
+        clearUserCache(userId)
+        clearUserRouteMemoryCaches(userId)
+      }
     }
   }, [sessionStatus, userId])
 
@@ -70,29 +74,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       cleanupNetwork()
     }
   }, [])
-
-  // 页面可交互后启动后台预加载
-  useEffect(() => {
-    if (!userId || prefetchedRef.current) return
-    
-    // 延迟启动预加载，等待页面可交互
-    const startPrefetch = () => {
-      prefetchedRef.current = true
-      
-      // 第一批：高优先级（学习规划、写作练习）
-      addPrefetchTask('prefetch-batch-1', async () => {
-        // 这里只是预加载路由代码，不加载数据
-        // 实际的数据预加载由各页面自己管理
-      }, 'high')
-    }
-    
-    // 使用 requestIdleCallback 或 setTimeout
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      window.requestIdleCallback(startPrefetch, { timeout: 2000 })
-    } else {
-      setTimeout(startPrefetch, 1200)
-    }
-  }, [userId])
 
   if (fullScreenRoute) {
     return <div className="app-route-root is-full-screen">{children}</div>

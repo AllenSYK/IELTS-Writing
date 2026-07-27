@@ -1,7 +1,7 @@
 'use client'
 
 import { SWRConfig } from 'swr'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 
 type SWRProviderProps = {
   children: ReactNode
@@ -16,7 +16,12 @@ async function defaultFetcher<T>(url: string): Promise<T> {
   return response.json()
 }
 
+// 全局缓存 Map（单例）
+const globalCache = new Map()
+
 export function SWRProvider({ children }: SWRProviderProps) {
+  const cacheRef = useRef(globalCache)
+
   return (
     <SWRConfig
       value={{
@@ -27,10 +32,10 @@ export function SWRProvider({ children }: SWRProviderProps) {
         revalidateIfStale: true,
         shouldRetryOnError: false,
         errorRetryCount: 0,
-        dedupingInterval: 2000,
-        focusThrottleInterval: 5000,
-        // 使用内存缓存
-        provider: () => new Map(),
+        dedupingInterval: 5000,
+        focusThrottleInterval: 10000,
+        // 使用稳定的内存缓存
+        provider: () => cacheRef.current,
       }}
     >
       {children}
