@@ -74,6 +74,14 @@ test('UserSessionProvider splits auth context from session context', async () =>
   assert.match(provider, /applyUser\(session\?\.user/)
 })
 
+test('UserSessionProvider tracks status to prevent permanent loading', async () => {
+  const provider = await readFile(new URL('../components/auth/UserSessionProvider.tsx', import.meta.url), 'utf8')
+
+  assert.match(provider, /currentStatusRef/)
+  assert.match(provider, /const nextStatus/)
+  assert.match(provider, /currentStatusRef\.current === nextStatus/)
+})
+
 test('AppShell uses lightweight useAuth instead of useUserSession', async () => {
   const shell = await readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
 
@@ -95,6 +103,43 @@ test('study-plan SWR key includes userId', async () => {
   assert.match(page, /\['study-plan',\s*userId\]/)
 })
 
+test('study-plan boot resolution does not depend on jobRestored', async () => {
+  const page = await readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
+
+  const bootEffect = page.match(/Boot resolution[\s\S]*?\}, \[data, error, isLoading\]/)
+  assert.ok(bootEffect, 'Boot resolution effect should exist')
+  assert.doesNotMatch(bootEffect[0], /jobRestored/)
+})
+
+test('study-plan current job request has timeout', async () => {
+  const page = await readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
+
+  assert.match(page, /AbortController/)
+  assert.match(page, /setTimeout.*controller\.abort.*3000/)
+})
+
+test('study-plan uses useAuth instead of useUserSession', async () => {
+  const page = await readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
+
+  assert.match(page, /import.*useAuth.*from/)
+  assert.doesNotMatch(page, /useUserSession/)
+})
+
+test('proxy matcher includes study-plan routes', async () => {
+  const proxy = await readFile(new URL('../proxy.ts', import.meta.url), 'utf8')
+
+  assert.match(proxy, /\/study-plan\/:path\*/)
+})
+
+test('study-plan API does not scan 100 writing records for bootstrap', async () => {
+  const route = await readFile(new URL('../app/api/study-plan/route.ts', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(route, /writing_records/)
+  assert.doesNotMatch(route, /buildLiveStudyPlanAnalysis/)
+  assert.doesNotMatch(route, /StudyPlanAnalysisRow/)
+  assert.match(route, /analysis_snapshot/)
+})
+
 test('NavigationProgress uses event-driven approach', async () => {
   const navProgress = await readFile(new URL('../components/layout/NavigationProgress.tsx', import.meta.url), 'utf8')
 
@@ -110,4 +155,10 @@ test('navigation-events module provides clean API', async () => {
   assert.match(mod, /complete\(\)/)
   assert.match(mod, /subscribe\(listener/)
   assert.doesNotMatch(mod, /setInterval/)
+})
+
+test('Sidebar mobile drawer triggers navigationEvents.start on link click', async () => {
+  const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
+
+  assert.match(sidebar, /handleNavigationStart.*item\.href/s)
 })

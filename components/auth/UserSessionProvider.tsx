@@ -39,6 +39,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
   const currentUserIdRef = useRef<string | null>(null)
+  const currentStatusRef = useRef<UserSessionStatus>('loading')
   const hasFetchedRef = useRef(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [accountLabel, setAccountLabel] = useState<string | null>(null)
@@ -46,11 +47,13 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
 
   const applyUser = useCallback((user: { id: string; email?: string | null; phone?: string | null } | null) => {
     const nextUserId = user?.id ?? null
-    if (currentUserIdRef.current === nextUserId) return
+    const nextStatus: UserSessionStatus = nextUserId ? 'authenticated' : 'unauthenticated'
+    if (currentUserIdRef.current === nextUserId && currentStatusRef.current === nextStatus) return
     currentUserIdRef.current = nextUserId
+    currentStatusRef.current = nextStatus
     setUserId(nextUserId)
     setAccountLabel(user ? accountDisplayName(user) : null)
-    setStatus(nextUserId ? 'authenticated' : 'unauthenticated')
+    setStatus(nextStatus)
   }, [])
 
   const refreshUser = useCallback(async () => {
@@ -68,6 +71,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     const activeUserId = currentUserIdRef.current
     if (activeUserId) clearUserEphemeralBrowserState(activeUserId)
     currentUserIdRef.current = null
+    currentStatusRef.current = 'unauthenticated'
     setUserId(null)
     setAccountLabel(null)
     setStatus('unauthenticated')

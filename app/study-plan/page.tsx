@@ -7,7 +7,7 @@ import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { useAuth } from '@/components/auth/UserSessionProvider'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import type {
   StudyPlan,
@@ -286,7 +286,7 @@ function computeExamDays(examDate: string | null): number | null {
 }
 
 export default function StudyPlanPage() {
-  const { userId } = useUserSession()
+  const { userId } = useAuth()
   const { pushToast } = useToast()
   const { data, error, mutate, isLoading } = useSWR(userId ? ['study-plan', userId] : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
 
@@ -316,11 +316,9 @@ export default function StudyPlanPage() {
     }
   }, [])
 
-  // Boot resolution: decide initial viewMode from SWR data + active job
+  // Boot resolution: decide initial viewMode from SWR data only (not blocked by job restoration)
   useEffect(() => {
     if (bootResolvedRef.current) return
-    if (!jobRestored) return
-
     if (isLoading && !data && !error) return
 
     bootResolvedRef.current = true
@@ -331,25 +329,23 @@ export default function StudyPlanPage() {
     }
 
     if (data?.plan) {
-      if (state.activeJob && isJobActive(state.activeJob)) {
-        dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
-        dispatch({ type: 'ACTIVE_JOB_RECOVERED', job: state.activeJob })
-      } else {
-        dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
-      }
-    } else if (!state.activeJob) {
+      dispatch({ type: 'BOOT_RESOLVED_WITH_PLAN', plan: data.plan, profile: data.profile ?? null })
+    } else {
       dispatch({ type: 'BOOT_RESOLVED_WITHOUT_PLAN' })
     }
-  }, [data, error, isLoading, jobRestored, state.activeJob])
+  }, [data, error, isLoading])
 
-  // Restore active job on mount
+  // Restore active job on mount (with timeout, non-blocking)
   useEffect(() => {
     if (!userId || jobRestored) return
     let cancelled = false
 
     async function restoreActiveJob() {
       try {
-        const res = await fetch('/api/study-plan/generation-jobs/current')
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000)
+        const res = await fetch('/api/study-plan/generation-jobs/current', { signal: controller.signal })
+        clearTimeout(timeoutId)
         const data = await res.json() as { success?: boolean; job?: GenerationJob | null }
         if (cancelled || !mountedRef.current) return
 
@@ -376,7 +372,7 @@ export default function StudyPlanPage() {
           }
         }
       } catch {
-        // Silent fail
+        // Silent fail — timeout or network error does not block the page
       } finally {
         if (!cancelled) setJobRestored(true)
       }

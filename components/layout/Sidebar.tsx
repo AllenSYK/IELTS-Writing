@@ -179,7 +179,10 @@ export function Sidebar() {
                   href={item.href}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={(e) => {
+                    setMobileOpen(false)
+                    handleNavigationStart(item.href, e)
+                  }}
                   prefetch={false}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
