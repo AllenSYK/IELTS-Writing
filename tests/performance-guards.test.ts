@@ -48,6 +48,13 @@ test('InteractionOptimizer files are deleted', async () => {
   )
 })
 
+test('request-deduper is deleted', async () => {
+  await assert.rejects(
+    () => readFile(new URL('../lib/performance/request-deduper.ts', import.meta.url), 'utf8'),
+    (err: unknown) => err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT'
+  )
+})
+
 test('UserPerformanceProvider does not use React key to force remount', async () => {
   const provider = await readFile(new URL('../components/performance/UserPerformanceProvider.tsx', import.meta.url), 'utf8')
 
@@ -56,12 +63,30 @@ test('UserPerformanceProvider does not use React key to force remount', async ()
   assert.match(provider, /useRef\(new Map\(\)\)/)
 })
 
-test('UserSessionProvider uses session.user from onAuthStateChange', async () => {
+test('UserSessionProvider splits auth context from session context', async () => {
   const provider = await readFile(new URL('../components/auth/UserSessionProvider.tsx', import.meta.url), 'utf8')
 
+  assert.match(provider, /AuthContext/)
+  assert.match(provider, /UserSessionContext/)
+  assert.match(provider, /export function useAuth/)
+  assert.match(provider, /export function useUserSession/)
   assert.match(provider, /onAuthStateChange\(\(event, session\)/)
   assert.match(provider, /applyUser\(session\?\.user/)
-  assert.doesNotMatch(provider, /refreshUser\(\)/)
+})
+
+test('AppShell uses lightweight useAuth instead of useUserSession', async () => {
+  const shell = await readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
+
+  assert.match(shell, /import.*useAuth.*from/)
+  assert.match(shell, /const \{ userId, status.*\} = useAuth\(\)/)
+  assert.doesNotMatch(shell, /useUserSession/)
+})
+
+test('UserPerformanceProvider uses lightweight useAuth', async () => {
+  const provider = await readFile(new URL('../components/performance/UserPerformanceProvider.tsx', import.meta.url), 'utf8')
+
+  assert.match(provider, /import.*useAuth.*from/)
+  assert.doesNotMatch(provider, /useUserSession/)
 })
 
 test('study-plan SWR key includes userId', async () => {

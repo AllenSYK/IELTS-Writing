@@ -6,7 +6,7 @@ import {
   saveUserProfile,
   type UserProfile
 } from '@/lib/user-profile'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { useAuth } from '@/components/auth/UserSessionProvider'
 import { userScopedStorageKey } from '@/lib/user-storage'
 import {
   createContext,
@@ -42,7 +42,7 @@ const UserProfileContext = createContext<UserProfileContextValue | null>(null)
 const DEFAULT_DISPLAY_NAME = '雅思追梦人'
 
 export function UserProfileProvider({ children }: { children: ReactNode }) {
-  const { userId } = useUserSession()
+  const { userId } = useAuth()
   const [profile, setProfile] = useState<UserProfile>(DefaultUserProfile)
   const [serverDisplayName, setServerDisplayName] = useState<string | null>(null)
   const [serverEmail, setServerEmail] = useState<string | null>(null)

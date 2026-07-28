@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { useAuth } from '@/components/auth/UserSessionProvider'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 
 type AuthGuardProps = {
@@ -12,7 +12,7 @@ type AuthGuardProps = {
 
 export function AuthGuard({ children, fallback }: AuthGuardProps) {
   const router = useRouter()
-  const { userId, status } = useUserSession()
+  const { userId, status } = useAuth()
 
   useEffect(() => {
     if (status === 'unauthenticated') {

@@ -5,10 +5,7 @@ import { usePathname } from 'next/navigation'
 import { AppHeader } from './AppHeader'
 import { Sidebar } from './Sidebar'
 import { NavigationProgress } from './NavigationProgress'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
-import { setCurrentUserId } from '@/lib/performance/prefetch-manager'
-import { clearUserCache } from '@/lib/performance/cache-manager'
-import { clearUserRouteMemoryCaches } from '@/lib/user-route-cache'
+import { useAuth } from '@/components/auth/UserSessionProvider'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string }> = [
   { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心' },
@@ -32,7 +29,7 @@ function pageMeta(pathname: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const contentRef = useRef<HTMLDivElement>(null)
-  const { userId, status: sessionStatus } = useUserSession()
+  const { userId, status: sessionStatus } = useAuth()
   const fullScreenRoute =
     pathname.startsWith('/write') ||
     pathname.startsWith('/admin') ||
@@ -49,21 +46,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       container.scrollTo({ top: 0, left: 0, behavior: 'auto' })
     }
   }, [pathname])
-
-  // 设置当前用户 ID
-  useEffect(() => {
-    setCurrentUserId(userId)
-  }, [userId])
-
-  // 监听用户登出，清理缓存
-  useEffect(() => {
-    if (sessionStatus === 'unauthenticated') {
-      if (userId) {
-        clearUserCache(userId)
-        clearUserRouteMemoryCaches(userId)
-      }
-    }
-  }, [sessionStatus, userId])
 
   if (fullScreenRoute) {
     return (

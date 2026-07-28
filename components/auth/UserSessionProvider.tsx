@@ -16,14 +16,18 @@ import { accountDisplayName } from '@/lib/phone-auth'
 
 type UserSessionStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
-type UserSessionContextValue = {
+type AuthContextValue = {
   userId: string | null
-  accountLabel: string | null
   status: UserSessionStatus
+}
+
+type UserSessionContextValue = AuthContextValue & {
+  accountLabel: string | null
   refreshUser: () => Promise<string | null>
   prepareForLogout: () => void
 }
 
+const AuthContext = createContext<AuthContextValue | null>(null)
 const UserSessionContext = createContext<UserSessionContextValue | null>(null)
 
 export function UserSessionProvider({ children }: { children: ReactNode }) {
@@ -98,12 +102,29 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
     return () => data.subscription.unsubscribe()
   }, [applyUser, prepareForLogout, supabase])
 
-  const value = useMemo(
+  const authValue = useMemo(
+    () => ({ userId, status }),
+    [userId, status]
+  )
+
+  const sessionValue = useMemo(
     () => ({ userId, accountLabel, status, refreshUser, prepareForLogout }),
     [accountLabel, prepareForLogout, refreshUser, status, userId]
   )
 
-  return <UserSessionContext.Provider value={value}>{children}</UserSessionContext.Provider>
+  return (
+    <AuthContext.Provider value={authValue}>
+      <UserSessionContext.Provider value={sessionValue}>
+        {children}
+      </UserSessionContext.Provider>
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (!context) throw new Error('useAuth must be used inside UserSessionProvider')
+  return context
 }
 
 export function useUserSession() {
