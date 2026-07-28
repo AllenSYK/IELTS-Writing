@@ -336,8 +336,21 @@ export default function StudyPlanPage() {
   }, [data, error, isLoading])
 
   // Restore active job on mount (with timeout, non-blocking)
+  // Only request if localStorage indicates an active job was in progress
   useEffect(() => {
     if (!userId || jobRestored) return
+
+    let storedJobId: string | null = null
+    try { storedJobId = localStorage.getItem('activeStudyPlanJobId') } catch {}
+    let storedAnalysisJobId: string | null = null
+    try { storedAnalysisJobId = localStorage.getItem('activeAnalysisRefreshJobId') } catch {}
+
+    // Skip request if no stored job IDs indicate active generation
+    if (!storedJobId && !storedAnalysisJobId) {
+      window.queueMicrotask(() => setJobRestored(true))
+      return
+    }
+
     let cancelled = false
 
     async function restoreActiveJob() {
@@ -359,17 +372,26 @@ export default function StudyPlanPage() {
             setAnalysisJob(job)
             if (isActive) {
               try { localStorage.setItem('activeAnalysisRefreshJobId', job.id) } catch {}
+            } else {
+              try { localStorage.removeItem('activeAnalysisRefreshJobId') } catch {}
             }
           } else {
             if (isActive) {
               dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
               try { localStorage.setItem('activeStudyPlanJobId', job.id) } catch {}
-            } else if (isDone && job.resultPlanId) {
-              dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
-            } else if (isFailed) {
-              dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
+            } else {
+              try { localStorage.removeItem('activeStudyPlanJobId') } catch {}
+              if (isDone && job.resultPlanId) {
+                dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
+              } else if (isFailed) {
+                dispatch({ type: 'ACTIVE_JOB_RECOVERED', job })
+              }
             }
           }
+        } else {
+          // No active job on server — clear stale localStorage
+          try { localStorage.removeItem('activeStudyPlanJobId') } catch {}
+          try { localStorage.removeItem('activeAnalysisRefreshJobId') } catch {}
         }
       } catch {
         // Silent fail — timeout or network error does not block the page

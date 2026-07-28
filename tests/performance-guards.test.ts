@@ -29,12 +29,17 @@ test('past-paper filters cancel superseded and unmounted requests', async () => 
   assert.match(page, /request\.timedOut/)
 })
 
-test('user profile provider wraps all authenticated routes uniformly', async () => {
-  const runtime = await readFile(new URL('../components/layout/AppRuntime.tsx', import.meta.url), 'utf8')
+test('UserProfileProvider is not in global AppRuntime — only on routes that need it', async () => {
+  const [runtime, analytics, dashboardWrapper] = await Promise.all([
+    readFile(new URL('../components/layout/AppRuntime.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/analytics/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/dashboard/AccountSettingsWithProvider.tsx', import.meta.url), 'utf8')
+  ])
 
-  assert.match(runtime, /UserProfileProvider/)
+  assert.doesNotMatch(runtime, /UserProfileProvider/)
   assert.match(runtime, /UserPerformanceProvider/)
-  assert.doesNotMatch(runtime, /needsUserProfile/)
+  assert.match(analytics, /UserProfileProvider/)
+  assert.match(dashboardWrapper, /UserProfileProvider/)
 })
 
 test('InteractionOptimizer files are deleted', async () => {
