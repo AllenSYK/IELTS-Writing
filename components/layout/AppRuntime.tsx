@@ -19,15 +19,11 @@ export function AppRuntime({ children }: { children: ReactNode }) {
     return <AppShell>{children}</AppShell>
   }
 
-  const appShell = <AppShell>{children}</AppShell>
-  const needsUserProfile =
-    pathname === '/dashboard' ||
-    pathname === '/analytics' ||
-    pathname.startsWith('/analytics/')
-
   return (
     <UserPerformanceProvider>
-      {needsUserProfile ? <UserProfileProvider>{appShell}</UserProfileProvider> : appShell}
+      <UserProfileProvider>
+        <AppShell>{children}</AppShell>
+      </UserProfileProvider>
     </UserPerformanceProvider>
   )
 }
