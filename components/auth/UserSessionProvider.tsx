@@ -42,6 +42,7 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
 
   const applyUser = useCallback((user: { id: string; email?: string | null; phone?: string | null } | null) => {
     const nextUserId = user?.id ?? null
+    if (currentUserIdRef.current === nextUserId) return
     currentUserIdRef.current = nextUserId
     setUserId(nextUserId)
     setAccountLabel(user ? accountDisplayName(user) : null)
@@ -62,9 +63,12 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
   const prepareForLogout = useCallback(() => {
     const activeUserId = currentUserIdRef.current
     if (activeUserId) clearUserEphemeralBrowserState(activeUserId)
-    applyUser(null)
+    currentUserIdRef.current = null
+    setUserId(null)
+    setAccountLabel(null)
+    setStatus('unauthenticated')
     hasFetchedRef.current = false
-  }, [applyUser])
+  }, [])
 
   useEffect(() => {
     if (!supabase) {
@@ -84,17 +88,21 @@ export function UserSessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase) return
-    const { data } = supabase.auth.onAuthStateChange((event) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         prepareForLogout()
         return
       }
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        void refreshUser()
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'USER_UPDATED'
+      ) {
+        applyUser(session?.user ?? null)
       }
     })
     return () => data.subscription.unsubscribe()
-  }, [prepareForLogout, refreshUser, supabase])
+  }, [applyUser, prepareForLogout, supabase])
 
   const value = useMemo(
     () => ({ userId, accountLabel, status, refreshUser, prepareForLogout }),
