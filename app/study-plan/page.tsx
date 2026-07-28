@@ -288,7 +288,7 @@ function computeExamDays(examDate: string | null): number | null {
 export default function StudyPlanPage() {
   const { userId } = useUserSession()
   const { pushToast } = useToast()
-  const { data, error, mutate, isLoading } = useSWR(userId ? 'study-plan' : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
+  const { data, error, mutate, isLoading } = useSWR(userId ? ['study-plan', userId] : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
 
   const [state, dispatch] = useReducer(studyPlanReducer, initialState)
   const [analysisJob, setAnalysisJob] = useState<GenerationJob | null>(null)

@@ -1,13 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
 import { BRAND_NAME } from '@/lib/brand'
-import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { navigationEvents } from '@/lib/navigation-events'
 import type { UserRouteCacheKey } from '@/lib/user-route-cache'
 
 type SidebarItem = {
@@ -51,43 +51,22 @@ function useOnlineLabel() {
   return online
 }
 
-// 预加载页面数据的函数
-const pageDataPrefetchers: Record<string, () => Promise<void>> = {
-  '/study-plan': async () => {
-    try {
-      await fetch('/api/study-plan', { cache: 'no-store' })
-    } catch {}
-  },
-  '/history': async () => {
-    try {
-      await fetch('/api/user/writing-records/list', { cache: 'no-store' })
-    } catch {}
-  },
-  '/analytics': async () => {
-    try {
-      await fetch('/api/user/writing-records/analytics', { cache: 'no-store' })
-    } catch {}
-  },
-  '/dashboard': async () => {
-    try {
-      await fetch('/api/profile', { cache: 'no-store' })
-    } catch {}
-  }
-}
-
 export function Sidebar() {
   const pathname = usePathname()
-  const router = useRouter()
-  const { userId } = useUserSession()
   const online = useOnlineLabel()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const prefetchedRef = useRef<Set<string>>(new Set())
-  
+
   const activeId = useMemo(() => {
     const allItems = [...mainItems, ...supportItems]
     const matches = allItems.filter((item) => item.match(pathname))
     if (matches.length === 0) return null
     return matches.sort((a, b) => b.href.length - a.href.length)[0].id
+  }, [pathname])
+
+  const handleNavigationStart = useCallback((href: string, e: React.MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    if (href === pathname) return
+    navigationEvents.start()
   }, [pathname])
 
   useEffect(() => {
@@ -104,23 +83,6 @@ export function Sidebar() {
     }
   }, [mobileOpen])
 
-  // 预加载路由和数据
-  const prefetchPage = useCallback((href: string) => {
-    // 预加载路由
-    router.prefetch(href)
-    
-    // 预加载数据（如果还没预加载过）
-    if (!prefetchedRef.current.has(href) && pageDataPrefetchers[href]) {
-      prefetchedRef.current.add(href)
-      pageDataPrefetchers[href]()
-    }
-  }, [router])
-
-  // Hover 时预加载
-  const handleItemHover = useCallback((href: string) => {
-    prefetchPage(href)
-  }, [prefetchPage])
-
   return (
     <aside className="sidebar" aria-label="应用导航">
       <Link
@@ -128,7 +90,8 @@ export function Sidebar() {
         href="/practice"
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
-        onMouseEnter={() => prefetchPage('/practice')}
+        prefetch={false}
+        onClick={(e) => handleNavigationStart('/practice', e)}
       >
         <BrandLogo size="md" showName />
       </Link>
@@ -150,9 +113,9 @@ export function Sidebar() {
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
-            prefetch={true}
+            prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
-            onMouseEnter={() => handleItemHover(item.href)}
+            onClick={(e) => handleNavigationStart(item.href, e)}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>
@@ -217,6 +180,7 @@ export function Sidebar() {
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
                   onClick={() => setMobileOpen(false)}
+                  prefetch={false}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>
@@ -232,6 +196,7 @@ export function Sidebar() {
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
                   onClick={() => setMobileOpen(false)}
+                  prefetch={false}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
                   <span>{item.label}</span>
