@@ -12,12 +12,13 @@ test('web fonts use compressed sources without changing the declared families or
   assert.doesNotMatch(css, /url\("\/fonts\/[^"]+\.ttf"\)/)
 })
 
-test('global navigation prefetches primary routes only on user intent', async () => {
+test('global navigation uses prefetch={false} and no hover prefetching', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
 
   assert.match(sidebar, /prefetch=\{false\}/)
-  assert.match(sidebar, /onPointerEnter=\{\(\) => prefetchItem\(item\)\}/)
-  assert.match(sidebar, /onFocus=\{\(\) => prefetchItem\(item\)\}/)
+  assert.doesNotMatch(sidebar, /onMouseEnter/)
+  assert.doesNotMatch(sidebar, /router\.prefetch/)
+  assert.doesNotMatch(sidebar, /pageDataPrefetchers/)
   assert.doesNotMatch(sidebar, /\n\s+prefetch\n/)
 })
 
@@ -29,14 +30,10 @@ test('past-paper filters cancel superseded and unmounted requests', async () => 
   assert.match(page, /request\.timedOut/)
 })
 
-test('non-profile routes avoid the profile provider and error queries run concurrently', async () => {
-  const [runtime, route] = await Promise.all([
-    readFile(new URL('../components/layout/AppRuntime.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/api/study-plan/errors/route.ts', import.meta.url), 'utf8')
-  ])
+test('user profile provider wraps all authenticated routes uniformly', async () => {
+  const runtime = await readFile(new URL('../components/layout/AppRuntime.tsx', import.meta.url), 'utf8')
 
-  assert.match(runtime, /needsUserProfile/)
-  assert.match(runtime, /pathname === '\/dashboard'/)
-  assert.match(runtime, /pathname === '\/analytics'/)
-  assert.match(route, /Promise\.all\(\[/)
+  assert.match(runtime, /UserProfileProvider/)
+  assert.match(runtime, /UserPerformanceProvider/)
+  assert.doesNotMatch(runtime, /needsUserProfile/)
 })

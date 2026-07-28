@@ -8,16 +8,12 @@ import { clearUserRouteMemoryCaches } from '@/lib/user-route-cache'
 export function UserPerformanceProvider({ children }: { children: ReactNode }) {
   const { userId } = useUserSession()
   const prevUserIdRef = useRef(userId)
-  const cacheRef = useRef<Map<string, unknown>>()
-
-  if (!cacheRef.current) {
-    cacheRef.current = new Map()
-  }
+  const cacheRef = useRef(new Map())
 
   useEffect(() => {
     if (prevUserIdRef.current !== userId) {
-      clearUserRouteMemoryCaches()
-      cacheRef.current?.clear()
+      clearUserRouteMemoryCaches(userId ?? undefined)
+      cacheRef.current.clear()
       prevUserIdRef.current = userId
     }
   }, [userId])
@@ -25,7 +21,7 @@ export function UserPerformanceProvider({ children }: { children: ReactNode }) {
   return (
     <SWRConfig
       value={{
-        provider: () => cacheRef.current!,
+        provider: () => cacheRef.current,
         dedupingInterval: 30_000,
         keepPreviousData: true,
         revalidateOnFocus: false,
