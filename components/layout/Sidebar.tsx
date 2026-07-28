@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
 import { BRAND_NAME } from '@/lib/brand'
+import { navigationEvents } from '@/lib/navigation-events'
 import type { UserRouteCacheKey } from '@/lib/user-route-cache'
 
 type SidebarItem = {
@@ -62,6 +63,20 @@ export function Sidebar() {
     return matches.sort((a, b) => b.href.length - a.href.length)[0].id
   }, [pathname])
 
+  const handleNavigationStart = useCallback((href: string, e: React.MouseEvent) => {
+    if (
+      e.button !== 0 ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey
+    ) {
+      return
+    }
+    if (href === pathname) return
+    navigationEvents.start()
+  }, [pathname])
+
   useEffect(() => {
     if (!mobileOpen) return
     const previousOverflow = document.body.style.overflow
@@ -84,6 +99,7 @@ export function Sidebar() {
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
         prefetch={false}
+        onClick={(e) => handleNavigationStart('/practice', e)}
       >
         <BrandLogo size="md" showName />
       </Link>
@@ -107,6 +123,7 @@ export function Sidebar() {
             href={item.href}
             prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
+            onClick={(e) => handleNavigationStart(item.href, e)}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>

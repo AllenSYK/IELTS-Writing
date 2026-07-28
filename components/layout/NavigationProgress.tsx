@@ -2,64 +2,53 @@
 
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import { navigationEvents } from '@/lib/navigation-events'
 
 /**
  * 导航进度条组件
  * 
  * 在页面切换时显示顶部进度条
+ * 使用CSS动画实现不确定进度
  */
 export function NavigationProgress() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [isLoading, setIsLoading] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const prevPathRef = useRef(pathname)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const prevPathRef = useRef(pathname + searchParams.toString())
 
   useEffect(() => {
-    // 路径变化时触发加载状态
-    if (prevPathRef.current !== pathname) {
-      prevPathRef.current = pathname
-      setIsLoading(true)
-      setProgress(30)
+    const unsubscribe = navigationEvents.subscribe(() => {
+      setIsLoading(navigationEvents.getIsNavigating())
+    })
+    return unsubscribe
+  }, [])
 
-      // 模拟进度
-      if (timerRef.current) clearInterval(timerRef.current)
-      
-      const startTime = Date.now()
-      timerRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTime
-        if (elapsed > 2000) {
-          setProgress(90)
-        } else if (elapsed > 1000) {
-          setProgress(70)
-        } else if (elapsed > 500) {
-          setProgress(50)
-        }
-      }, 100)
-
-      // 页面加载完成
-      const handleLoad = () => {
-        setProgress(100)
-        setTimeout(() => {
-          setIsLoading(false)
-          setProgress(0)
-        }, 200)
-      }
-
-      // 监听页面加载完成
-      if (document.readyState === 'complete') {
-        handleLoad()
-      } else {
-        window.addEventListener('load', handleLoad, { once: true })
-      }
-
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current)
-        window.removeEventListener('load', handleLoad)
-      }
+  useEffect(() => {
+    const currentPath = pathname + searchParams.toString()
+    if (prevPathRef.current !== currentPath) {
+      prevPathRef.current = currentPath
+      navigationEvents.complete()
     }
   }, [pathname, searchParams])
+
+  useEffect(() => {
+    if (isLoading) {
+      timeoutRef.current = setTimeout(() => {
+        navigationEvents.complete()
+      }, 8000)
+    } else {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [isLoading])
 
   if (!isLoading) return null
 
@@ -79,12 +68,26 @@ export function NavigationProgress() {
       <div
         style={{
           height: '100%',
-          width: `${progress}%`,
+          width: '100%',
           backgroundColor: '#3b82f6',
-          transition: 'width 0.2s ease',
+          animation: 'navigation-progress 1.5s infinite ease-in-out',
+          transformOrigin: 'left',
           boxShadow: '0 0 10px rgba(59, 130, 246, 0.5)',
         }}
       />
+      <style jsx>{`
+        @keyframes navigation-progress {
+          0% {
+            transform: scaleX(0);
+          }
+          50% {
+            transform: scaleX(0.6);
+          }
+          100% {
+            transform: scaleX(0.9);
+          }
+        }
+      `}</style>
     </div>
   )
 }
