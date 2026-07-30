@@ -122,7 +122,7 @@ test('practice page exposes a centered draft manager and complete-test configura
   ])
 
   assert.match(selector, /<DraftManager/)
-  assert.match(selector, /createManagedDraft\(mode, selection, requestId\)/)
+  assert.match(selector, /createManagedDraft\(mode, selection, requestId, controller\.signal\)/)
   assert.match(selector, /Task 1 题型/)
   assert.match(selector, /Task 2 题型/)
   assert.match(selector, /Task 2 主题/)

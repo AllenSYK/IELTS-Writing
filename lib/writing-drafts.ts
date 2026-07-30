@@ -262,7 +262,8 @@ export function createDraftRequestId() {
 export async function createManagedDraft(
   mode: WritingTaskType,
   selection: PromptSelection,
-  requestId = createDraftRequestId()
+  requestId = createDraftRequestId(),
+  signal?: AbortSignal
 ) {
   const id = `draft-${requestId}`
   const response = await fetch('/api/user/writing-drafts', {
@@ -273,7 +274,8 @@ export async function createManagedDraft(
       requestId,
       taskType: mode,
       draft: initialManagedDraft(mode, selection)
-    })
+    }),
+    signal
   })
   return parseDraftResponse<{ success: true; draft: DraftRecord }>(response)
 }

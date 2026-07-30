@@ -172,12 +172,22 @@ export function WritingModeSelector({
     setStartingMode(mode)
     setLaunchProgress(18)
     let navigating = false
+    let resolved = false
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 15000) // 15秒超时
+    // Safety: unconditionally reset overlay after 20 seconds
+    const safetyTimeoutId = setTimeout(() => {
+      if (!resolved && mountedRef.current) {
+        startingRef.current = false
+        setStartingMode(null)
+        setLaunchProgress(0)
+      }
+    }, 20000)
     try {
       const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
       startRequestIdsRef.current[mode] = requestId
-      const payload = await createManagedDraft(mode, selection, requestId)
+      const payload = await createManagedDraft(mode, selection, requestId, controller.signal)
+      resolved = true
       setLaunchProgress(62)
       delete startRequestIdsRef.current[mode]
       const params = searchParamsForSelection(mode, selection)
@@ -186,6 +196,7 @@ export function WritingModeSelector({
       navigating = true
       router.push(`/write/${mode}?${params.toString()}`)
     } catch (error) {
+      resolved = true
       clearTimeout(timeoutId)
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
       const isTimeout = error instanceof DOMException && error.name === 'AbortError'
@@ -206,6 +217,7 @@ export function WritingModeSelector({
       })
     } finally {
       clearTimeout(timeoutId)
+      clearTimeout(safetyTimeoutId)
       if (!navigating && mountedRef.current) {
         startingRef.current = false
         setStartingMode(null)
