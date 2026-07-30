@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { MaterialIcon } from '@/components/app-ui'
 
 export function AppHeader({ title }: { title: string }) {
@@ -19,9 +18,9 @@ export function AppHeader({ title }: { title: string }) {
           >
             <MaterialIcon name="share" />
           </a>
-          <Link className="ui-icon-button" href="/dashboard" prefetch={false} aria-label="账号中心" title="账号中心">
+          <a className="ui-icon-button" href="/dashboard" aria-label="账号中心" title="账号中心">
             <MaterialIcon name="manage_accounts" />
-          </Link>
+          </a>
         </div>
       </div>
     </header>

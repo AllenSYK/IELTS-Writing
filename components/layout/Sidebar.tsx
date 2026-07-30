@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
@@ -78,15 +77,14 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar" aria-label="应用导航">
-      <Link
+      <a
         className="sidebar-logo"
         href="/practice"
-        prefetch={false}
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
       >
         <BrandLogo size="md" showName />
-      </Link>
+      </a>
 
       <button
         className="sidebar-mobile-menu"
@@ -101,16 +99,15 @@ export function Sidebar() {
 
       <nav className="sidebar-nav" aria-label="主要页面" onKeyDown={handleRovingNavKeyDown}>
         {mainItems.map((item) => (
-          <Link
+          <a
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
-            prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>
-          </Link>
+          </a>
         ))}
       </nav>
 
@@ -125,16 +122,15 @@ export function Sidebar() {
 
         <nav className="sidebar-support-nav" aria-label="支持与法律页面" onKeyDown={handleRovingNavKeyDown}>
           {supportItems.map((item) => (
-            <Link
+            <a
               key={item.id}
               className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
               href={item.href}
-              prefetch={false}
               aria-current={activeId === item.id ? 'page' : undefined}
             >
               <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
               <span>{item.label}</span>
-            </Link>
+            </a>
           ))}
         </nav>
 
@@ -164,34 +160,30 @@ export function Sidebar() {
             </div>
             <nav aria-label="移动端主要页面">
               {mainItems.map((item) => (
-                <Link
+                <a
                   key={item.id}
                   className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
-                  prefetch={false}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
-                  onClick={() => setMobileOpen(false)}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>
-                </Link>
+                </a>
               ))}
             </nav>
             <nav className="sidebar-mobile-support" aria-label="移动端支持与法律页面">
               {supportItems.map((item) => (
-                <Link
+                <a
                   key={item.id}
                   className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
-                  onClick={() => setMobileOpen(false)}
-                  prefetch={false}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
                   <span>{item.label}</span>
-                </Link>
+                </a>
               ))}
             </nav>
           </div>

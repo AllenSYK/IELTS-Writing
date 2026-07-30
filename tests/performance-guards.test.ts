@@ -12,12 +12,17 @@ test('web fonts use compressed sources without changing the declared families or
   assert.doesNotMatch(css, /url\("\/fonts\/[^"]+\.ttf"\)/)
 })
 
-test('every user sidebar link disables automatic prefetching with no hover prefetching', async () => {
+test('user shell navigation uses native anchors without client-side prefetching', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
-  const links = [...sidebar.matchAll(/<Link\b[\s\S]*?\n\s*>/g)].map((match) => match[0])
+  const header = await readFile(new URL('../components/layout/AppHeader.tsx', import.meta.url), 'utf8')
+  const anchors = [...sidebar.matchAll(/<a\b[\s\S]*?\n\s*>/g)].map((match) => match[0])
 
-  assert.ok(links.length >= 5, 'expected all desktop and mobile sidebar links')
-  links.forEach((link) => assert.match(link, /prefetch=\{false\}/))
+  assert.ok(anchors.length >= 5, 'expected all desktop and mobile sidebar anchors')
+  anchors.forEach((anchor) => assert.doesNotMatch(anchor, /onClick|prefetch/))
+  assert.doesNotMatch(sidebar, /import Link from ['"]next\/link['"]/)
+  assert.doesNotMatch(sidebar, /<Link\b/)
+  assert.doesNotMatch(header, /import Link from ['"]next\/link['"]/)
+  assert.doesNotMatch(header, /<Link\b/)
   assert.doesNotMatch(sidebar, /onMouseEnter/)
   assert.doesNotMatch(sidebar, /router\.prefetch/)
   assert.doesNotMatch(sidebar, /pageDataPrefetchers/)
@@ -170,10 +175,10 @@ test('navigation-events module is removed', async () => {
   )
 })
 
-test('Sidebar uses plain Links without onClick navigation handlers', async () => {
+test('Sidebar avoids client-router navigation handlers', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
 
   assert.doesNotMatch(sidebar, /navigationEvents/)
   assert.doesNotMatch(sidebar, /handleNavigationStart/)
-  assert.doesNotMatch(sidebar, /prefetch=\{true\}/)
+  assert.doesNotMatch(sidebar, /prefetch=/)
 })
