@@ -73,10 +73,10 @@ test('study plan question-bank tasks open the exact assigned backend question', 
   assert.equal(question.questionType, 'agree_disagree')
   assert.equal(question.generatedSource, 'static-bank')
 
-  const [assignedQuestionRoute, writingPage, studyPlanPage] = await Promise.all([
+  const [assignedQuestionRoute, writingPage, studyPlanDialogs] = await Promise.all([
     readFile(new URL('../app/api/study-plan/tasks/[id]/question/route.ts', import.meta.url), 'utf8'),
     readFile(new URL('../app/write/[mode]/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
+    readFile(new URL('../components/study-plan/StudyPlanDialogs.tsx', import.meta.url), 'utf8')
   ])
   assert.match(assignedQuestionRoute, /\.eq\('user_id', check\.user\.id\)/)
   assert.match(assignedQuestionRoute, /export async function POST/)
@@ -87,7 +87,7 @@ test('study plan question-bank tasks open the exact assigned backend question', 
   assert.match(writingPage, /loadAssignedPracticeQuestion/)
   assert.match(writingPage, /let question: WritingQuestion \| null = assignedQuestionResult\.question/)
   assert.match(writingPage, /router\.replace\(studyPlanTaskId \? '\/study-plan' : '\/ielts\/past-papers'\)/)
-  assert.match(studyPlanPage, /studyPlanWritingHref\(task\)/)
+  assert.match(studyPlanDialogs, /studyPlanWritingHref\(task\)/)
 })
 
 test('past-paper detail query uses only deployed columns and distinguishes database failures from missing questions', async () => {
