@@ -82,6 +82,50 @@ function redirectTo(request: NextRequest, target: string, sourceResponse: NextRe
   return redirectResponse
 }
 
+function isInvalidRefreshToken(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const code = 'code' in error ? String(error.code) : ''
+  const message = 'message' in error ? String(error.message) : ''
+  return (
+    code === 'refresh_token_not_found'
+    || code === 'invalid_refresh_token'
+    || /invalid refresh token|refresh token not found/i.test(message)
+  )
+}
+
+function clearStaleAuthCookies(request: NextRequest, response: NextResponse) {
+  request.cookies
+    .getAll()
+    .filter(({ name }) => name.startsWith('sb-') && name.includes('auth-token'))
+    .forEach(({ name }) => {
+      response.cookies.set(name, '', {
+        path: '/',
+        sameSite: 'lax',
+        secure: request.nextUrl.protocol === 'https:',
+        maxAge: 0,
+        expires: new Date(0)
+      })
+    })
+  response.headers.set('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0')
+  response.headers.set('Expires', '0')
+  response.headers.set('Pragma', 'no-cache')
+  return response
+}
+
+function unauthenticatedResponse(
+  request: NextRequest,
+  pathname: string,
+  sourceResponse: NextResponse,
+  clearStaleSession = false
+) {
+  const target = resolveAuthRedirect({
+    pathname,
+    isAuthenticated: false
+  })
+  const response = target ? redirectTo(request, target, sourceResponse) : sourceResponse
+  return clearStaleSession ? clearStaleAuthCookies(request, response) : response
+}
+
 function createMiddlewareServiceClient(url: string, serviceRoleKey: string) {
   return createClient(url, serviceRoleKey, {
     auth: {
@@ -200,27 +244,42 @@ export async function updateSupabaseSession(request: NextRequest) {
       getAll() {
         return request.cookies.getAll()
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headersToSet) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
         response = NextResponse.next({ request })
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options)
         })
-        response.headers.set('Cache-Control', 'private, no-store')
+        Object.entries(headersToSet).forEach(([name, value]) => {
+          response.headers.set(name, value)
+        })
       }
     }
   })
 
   const pathname = request.nextUrl.pathname
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims()
+  let claimsData
+  let claimsError
+  try {
+    const claimsResult = await supabase.auth.getClaims()
+    claimsData = claimsResult.data
+    claimsError = claimsResult.error
+  } catch (error) {
+    if (isInvalidRefreshToken(error)) {
+      console.warn('[auth:proxy] cleared stale refresh token', { pathname })
+      return unauthenticatedResponse(request, pathname, response, true)
+    }
+    throw error
+  }
   const claims = claimsData?.claims
 
   if (claimsError || !claims?.sub) {
-    const target = resolveAuthRedirect({
+    return unauthenticatedResponse(
+      request,
       pathname,
-      isAuthenticated: false
-    })
-    return target ? redirectTo(request, target, response) : response
+      response,
+      isInvalidRefreshToken(claimsError)
+    )
   }
 
   const serviceRoleKey = getSupabaseServiceRoleKey()

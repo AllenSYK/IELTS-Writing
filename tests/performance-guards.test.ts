@@ -130,6 +130,17 @@ test('proxy matcher includes study-plan routes', async () => {
   assert.match(proxy, /\/study-plan\/:path\*/)
 })
 
+test('Supabase proxy clears stale refresh tokens and forwards required cache headers', async () => {
+  const middleware = await readFile(new URL('../lib/supabase/middleware.ts', import.meta.url), 'utf8')
+
+  assert.match(middleware, /refresh_token_not_found/)
+  assert.match(middleware, /clearStaleAuthCookies/)
+  assert.match(middleware, /name\.startsWith\('sb-'\) && name\.includes\('auth-token'\)/)
+  assert.match(middleware, /maxAge:\s*0/)
+  assert.match(middleware, /setAll\(cookiesToSet, headersToSet\)/)
+  assert.match(middleware, /Object\.entries\(headersToSet\)/)
+})
+
 test('study-plan API does not scan 100 writing records for bootstrap', async () => {
   const route = await readFile(new URL('../app/api/study-plan/route.ts', import.meta.url), 'utf8')
 
