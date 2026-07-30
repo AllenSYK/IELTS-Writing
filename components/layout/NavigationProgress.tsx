@@ -7,65 +7,39 @@ export function NavigationProgress() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [isLoading, setIsLoading] = useState(false)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const prevPathRef = useRef(pathname + searchParams.toString())
-  const startTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Detect navigation start by comparing path
-  // When a Link is clicked, the page starts loading. We show the progress bar
-  // immediately and hide it when the pathname changes (navigation completes).
+  // Only detect navigation completion via pathname change
   useEffect(() => {
     const currentPath = pathname + searchParams.toString()
     if (prevPathRef.current !== currentPath) {
-      // Navigation completed
       prevPathRef.current = currentPath
       setIsLoading(false)
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
-      }
     }
   }, [pathname, searchParams])
 
-  // Safety timeout
+  // Safety auto-hide after 5s
   useEffect(() => {
-    if (isLoading) {
-      timeoutRef.current = setTimeout(() => {
-        setIsLoading(false)
-      }, 5000)
-    } else {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
-      }
-    }
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      if (startTimerRef.current) clearTimeout(startTimerRef.current)
-    }
+    if (!isLoading) return
+    const timer = setTimeout(() => setIsLoading(false), 5000)
+    return () => clearTimeout(timer)
   }, [isLoading])
 
-  // Listen for click events on Links to detect navigation start
+  // Listen for Link clicks to show progress
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      const target = (e.target as HTMLElement).closest('a[href]')
-      if (!target) return
-      const href = (target as HTMLAnchorElement).getAttribute('href')
+      if (e.button !== 0) return
+      const link = (e.target as HTMLElement).closest?.('a[href]') as HTMLAnchorElement | null
+      if (!link) return
+      const href = link.getAttribute('href')
       if (!href || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:')) return
-      // Check if navigating to a different page
-      const currentPath = window.location.pathname
-      if (href === currentPath) return
-      // Show progress after a short delay to avoid flash for fast navigations
-      startTimerRef.current = setTimeout(() => {
-        setIsLoading(true)
-      }, 150)
+      if (href === window.location.pathname) return
+      // Don't preventDefault or stopPropagation - let the Link navigate normally
+      setIsLoading(true)
     }
 
-    document.addEventListener('click', handleClick, { capture: true })
-    return () => {
-      document.removeEventListener('click', handleClick, { capture: true })
-    }
+    document.addEventListener('click', handleClick)
+    return () => document.removeEventListener('click', handleClick)
   }, [])
 
   if (!isLoading) return null

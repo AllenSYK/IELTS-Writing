@@ -149,7 +149,7 @@ test('NavigationProgress detects navigation via click events', async () => {
   const navProgress = await readFile(new URL('../components/layout/NavigationProgress.tsx', import.meta.url), 'utf8')
 
   assert.match(navProgress, /handleClick/)
-  assert.match(navProgress, /click.*capture/s)
+  assert.match(navProgress, /addEventListener.*click/)
   assert.doesNotMatch(navProgress, /document\.readyState/)
   assert.doesNotMatch(navProgress, /setInterval/)
 })

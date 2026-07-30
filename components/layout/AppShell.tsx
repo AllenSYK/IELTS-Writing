@@ -4,7 +4,6 @@ import { Suspense, useLayoutEffect, useRef, useEffect, type ReactNode } from 're
 import { usePathname } from 'next/navigation'
 import { AppHeader } from './AppHeader'
 import { Sidebar } from './Sidebar'
-import { NavigationProgress } from './NavigationProgress'
 import { useAuth } from '@/components/auth/UserSessionProvider'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string }> = [
@@ -50,9 +49,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (fullScreenRoute) {
     return (
       <div className="app-route-root is-full-screen">
-        <Suspense fallback={null}>
-          <NavigationProgress />
-        </Suspense>
         {children}
       </div>
     )
@@ -60,9 +56,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-route-root">
-      <Suspense fallback={null}>
-        <NavigationProgress />
-      </Suspense>
       <div className="app-shell">
         <Sidebar />
         <div className="app-main">
