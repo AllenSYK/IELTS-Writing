@@ -166,6 +166,8 @@ export function WritingModeSelector({
     setStartingMode(mode)
     setLaunchProgress(18)
     let navigating = false
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15秒超时
     try {
       const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
       startRequestIdsRef.current[mode] = requestId
@@ -178,7 +180,9 @@ export function WritingModeSelector({
       navigating = true
       router.push(`/write/${mode}?${params.toString()}`)
     } catch (error) {
+      clearTimeout(timeoutId)
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+      const isTimeout = error instanceof DOMException && error.name === 'AbortError'
       const limitTab = code === 'DRAFT_LIMIT_REACHED_TASK2'
         ? 'task2'
         : code === 'DRAFT_LIMIT_REACHED_FULL_TEST'
@@ -191,10 +195,11 @@ export function WritingModeSelector({
       }
       pushToast({
         kind: 'error',
-        title: '暂时无法创建草稿',
-        message: DraftErrorMessages[code] || (error instanceof Error ? error.message : '请稍后重试。')
+        title: isTimeout ? '创建草稿超时' : '暂时无法创建草稿',
+        message: isTimeout ? '网络请求超时，请检查网络后重试。' : DraftErrorMessages[code] || (error instanceof Error ? error.message : '请稍后重试。')
       })
     } finally {
+      clearTimeout(timeoutId)
       if (!navigating) {
         startingRef.current = false
         setStartingMode(null)
@@ -416,6 +421,18 @@ export function WritingModeSelector({
               <span style={{ width: `${launchProgress}%` }} />
             </div>
             <small>{launchProgress}%</small>
+            <button
+              className="ui-secondary-button"
+              type="button"
+              style={{ marginTop: 12, fontSize: 13 }}
+              onClick={() => {
+                startingRef.current = false
+                setStartingMode(null)
+                setLaunchProgress(0)
+              }}
+            >
+              取消
+            </button>
           </section>
         </div>
       ) : null}

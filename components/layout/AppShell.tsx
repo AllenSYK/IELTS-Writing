@@ -1,10 +1,9 @@
 'use client'
 
-import { Suspense, useLayoutEffect, useRef, useEffect, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
 import { AppHeader } from './AppHeader'
 import { Sidebar } from './Sidebar'
-import { useAuth } from '@/components/auth/UserSessionProvider'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string }> = [
   { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心' },
@@ -28,7 +27,6 @@ function pageMeta(pathname: string) {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const contentRef = useRef<HTMLDivElement>(null)
-  const { userId, status: sessionStatus } = useAuth()
   const fullScreenRoute =
     pathname.startsWith('/write') ||
     pathname.startsWith('/admin') ||

@@ -87,11 +87,10 @@ test('UserSessionProvider tracks status to prevent permanent loading', async () 
   assert.match(provider, /currentStatusRef\.current === nextStatus/)
 })
 
-test('AppShell uses lightweight useAuth instead of useUserSession', async () => {
+test('AppShell does not import auth hooks directly', async () => {
   const shell = await readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
 
-  assert.match(shell, /import.*useAuth.*from/)
-  assert.match(shell, /const \{ userId, status.*\} = useAuth\(\)/)
+  assert.doesNotMatch(shell, /useAuth/)
   assert.doesNotMatch(shell, /useUserSession/)
 })
 
