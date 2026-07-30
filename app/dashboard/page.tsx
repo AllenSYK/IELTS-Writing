@@ -16,8 +16,8 @@ const WritingActivityHeatmap = dynamic(
   }
 )
 
-const AccountSettingsWithProvider = dynamic(
-  () => import('@/components/dashboard/AccountSettingsWithProvider').then((m) => ({ default: m.AccountSettingsWithProvider })),
+const AccountSettings = dynamic(
+  () => import('@/components/dashboard/AccountSettings').then((m) => ({ default: m.AccountSettings })),
   { loading: () => null }
 )
 
@@ -82,7 +82,7 @@ export default async function DashboardPage() {
 
         <WritingActivityHeatmap userId={user.id} />
 
-        <AccountSettingsWithProvider />
+        <AccountSettings />
       </section>
     </main>
   )

@@ -452,10 +452,12 @@ export function AppInteractionProvider({ children }: { children: ReactNode }) {
 
   const context = useMemo(() => ({ pushToast, dismissToast, updateToast }), [dismissToast, pushToast, updateToast])
 
+  const openCommand = useCallback(() => setCommandOpen(true), [])
+
   return (
     <ToastContext.Provider value={context}>
       <MotionContext.Provider value={motion}>
-        <GlobalShortcuts onCommand={() => setCommandOpen(true)} />
+        <GlobalShortcuts onCommand={openCommand} />
         <NetworkBanner online={online} />
         <div className="route-stage" data-route-key={routeKey}>
           {children}

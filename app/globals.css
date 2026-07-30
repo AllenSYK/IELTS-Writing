@@ -130,6 +130,7 @@ body {
 
 body.modal-open {
   overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
 button,
@@ -7979,11 +7980,23 @@ img {
   font-weight: 700;
 }
 
-.command-layer,
+.command-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: start center;
+  padding: 12vh 18px 18px;
+  background: rgba(45, 48, 57, 0.18);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: overlay-enter var(--motion-medium) var(--ease-out) both;
+}
+
 .dialog-layer {
   position: fixed;
   inset: 0;
-  z-index: 110;
+  z-index: 115;
   display: grid;
   place-items: start center;
   padding: 12vh 18px 18px;

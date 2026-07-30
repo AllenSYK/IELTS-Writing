@@ -22,11 +22,7 @@ export function UserPerformanceProvider({ children }: { children: ReactNode }) {
     <SWRConfig
       value={{
         provider: () => cacheRef.current,
-        dedupingInterval: 30_000,
         keepPreviousData: true,
-        revalidateOnFocus: false,
-        revalidateOnReconnect: false,
-        shouldRetryOnError: false
       }}
     >
       {children}

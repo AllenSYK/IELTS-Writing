@@ -18,6 +18,8 @@ export const config = {
     '/result/:path*',
     '/analytics/:path*',
     '/study-plan/:path*',
+    '/settings/:path*',
+    '/support/:path*',
     '/admin',
     '/admin/:path*'
   ]

@@ -142,18 +142,10 @@ export function DraftManager({
   }, [])
 
   useEffect(() => {
-    if (!userId || !open) return
-    // 使用 setTimeout 避免在 effect 中直接调用 setState
-    const timer = setTimeout(() => {
-      void loadDrafts()
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [userId, open, loadDrafts])
-
-  useEffect(() => {
     if (!userId) return
+    // Load on mount and when dialog opens
     const timer = window.setTimeout(() => {
-      void loadDrafts(true)
+      void loadDrafts(open)
     }, 0)
     const handlePracticeVisited = () => {
       void loadDrafts(true)
@@ -163,7 +155,7 @@ export function DraftManager({
       window.clearTimeout(timer)
       window.removeEventListener('ielts-writing:practice-visited', handlePracticeVisited)
     }
-  }, [loadDrafts, userId])
+  }, [loadDrafts, userId, open])
 
   const counts = {
     task1: drafts.filter((d) => d.taskType === 'task1').length,

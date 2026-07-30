@@ -53,7 +53,11 @@ type OccurrencesData = {
   total: number
 }
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json())
+const fetcher = async (url: string) => {
+  const r = await fetch(url)
+  if (!r.ok) throw new Error(`请求失败 (${r.status})`)
+  return r.json()
+}
 
 export default function ErrorNotebookPage() {
   const { userId } = useUserSession()

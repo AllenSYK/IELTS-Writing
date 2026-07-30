@@ -295,6 +295,7 @@ export default function WritePage() {
   const pendingSaveRef = useRef(false)
   const lastSavedFingerprintRef = useRef('')
   const mountedRef = useRef(true)
+  const persistEditorPositionRef = useRef(0)
   const timeLeftRef = useRef(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
   const abortControllerRef = useRef<AbortController | null>(null)
   const pendingEvaluationsRef = useRef(new Map<string, Promise<EssayEvaluation>>())
@@ -848,23 +849,32 @@ export default function WritePage() {
     }
   }
 
+  // Use refs for callbacks accessed in keydown handler to avoid re-registering listener
+  const saveNowRef = useRef(saveNow)
+  const hasWordShortfallRef = useRef(hasWordShortfall)
+
+  useEffect(() => {
+    saveNowRef.current = saveNow
+    hasWordShortfallRef.current = hasWordShortfall
+  })
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return
       const modifier = event.metaKey || event.ctrlKey
       if (modifier && event.key.toLowerCase() === 's') {
         event.preventDefault()
-        void saveNow()
+        void saveNowRef.current()
       }
       if (modifier && event.key === 'Enter') {
         event.preventDefault()
-        if (hasWordShortfall()) setShowShortfallConfirm(true)
+        if (hasWordShortfallRef.current()) setShowShortfallConfirm(true)
         else setShowSubmitConfirm(true)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  })
+  }, [])
 
   useEffect(() => {
     if (!positionKey) return
@@ -885,6 +895,11 @@ export default function WritePage() {
 
   const persistEditorPosition = useCallback(() => {
     if (!textareaRef.current || !positionKey) return
+    // Throttle: only persist every 500ms to avoid localStorage writes on every keystroke
+    const now = Date.now()
+    const last = persistEditorPositionRef.current
+    if (now - last < 500) return
+    persistEditorPositionRef.current = now
     window.localStorage.setItem(
       positionKey,
       JSON.stringify({
@@ -969,7 +984,7 @@ export default function WritePage() {
     setElapsedTime(0)
     try {
       await saveAllDrafts(false)
-      await new Promise((resolve) => window.setTimeout(resolve, 180))
+      await new Promise((resolve) => window.setTimeout(resolve, 50))
       if (abortController.signal.aborted) {
         throw new WritingEvaluationError('cancelled', '批改已取消。')
       }
@@ -987,12 +1002,12 @@ export default function WritePage() {
         throw new WritingEvaluationError('cancelled', '批改已取消。')
       }
       setStageIndex(2)
-      await new Promise((resolve) => window.setTimeout(resolve, 100))
+      await new Promise((resolve) => window.setTimeout(resolve, 30))
       setStageIndex(3)
 
       setSubmitStatus('organizing')
       setStageIndex(4)
-      await new Promise((resolve) => window.setTimeout(resolve, 150))
+      await new Promise((resolve) => window.setTimeout(resolve, 40))
 
       const now = new Date().toISOString()
       const record: WritingRecord = {
@@ -1106,7 +1121,7 @@ export default function WritePage() {
     setElapsedTime(0)
     try {
       await saveAllDrafts(false)
-      await new Promise((resolve) => window.setTimeout(resolve, 180))
+      await new Promise((resolve) => window.setTimeout(resolve, 50))
       setSubmitStatus('submitting')
       setStageIndex(1)
 
@@ -1176,7 +1191,7 @@ export default function WritePage() {
       setStageIndex(3)
       setSubmitStatus('organizing')
       setStageIndex(4)
-      await new Promise((resolve) => window.setTimeout(resolve, 150))
+      await new Promise((resolve) => window.setTimeout(resolve, 40))
 
       const now = new Date().toISOString()
       const elapsedSeconds = durationMinutes * 60 - timeLeftRef.current

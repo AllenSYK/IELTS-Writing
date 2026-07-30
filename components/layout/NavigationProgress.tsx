@@ -32,7 +32,7 @@ export function NavigationProgress() {
       const link = (e.target as HTMLElement).closest?.('a[href]') as HTMLAnchorElement | null
       if (!link) return
       const href = link.getAttribute('href')
-      if (!href || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+      if (!href || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('#') || href.startsWith('?')) return
       if (href === window.location.pathname) return
       // Don't preventDefault or stopPropagation - let the Link navigate normally
       setIsLoading(true)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
 import {
@@ -128,6 +128,7 @@ export function WritingModeSelector({
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const startingRef = useRef(false)
+  const mountedRef = useRef(true)
   const startRequestIdsRef = useRef<Partial<Record<WritingTaskType, string>>>({})
   const [selection, setSelection] = useState<PromptSelection>(() => {
     if (typeof window === 'undefined' || !userId) return DefaultPromptSelection
@@ -143,6 +144,11 @@ export function WritingModeSelector({
   const [launchProgress, setLaunchProgress] = useState(0)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
+
+  // Safety: reset overlay state on unmount to prevent permanent blocking
+  useEffect(() => {
+    return () => { mountedRef.current = false }
+  }, [])
 
   function updateSelection(patch: Partial<PromptSelection>) {
     setSelection((current) => {
@@ -200,7 +206,7 @@ export function WritingModeSelector({
       })
     } finally {
       clearTimeout(timeoutId)
-      if (!navigating) {
+      if (!navigating && mountedRef.current) {
         startingRef.current = false
         setStartingMode(null)
         setLaunchProgress(0)

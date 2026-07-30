@@ -342,7 +342,7 @@ test('public authentication pages stay outside the signed-in data runtime and re
   assert.match(runtime, /'\/forgot-password'/)
   assert.match(runtime, /'\/reset-password'/)
   assert.match(runtime, /if \(isPublicAuthRoute\(pathname\)\)[\s\S]*?return <AppShell>\{children\}<\/AppShell>/)
-  assert.doesNotMatch(runtime, /UserProfileProvider/)
+  assert.match(runtime, /UserProfileProvider/)
   assert.match(runtime, /UserPerformanceProvider/)
   assert.match(shell, /pathname\.startsWith\('\/forgot-password'\)/)
   assert.match(shell, /pathname\.startsWith\('\/reset-password'\)/)

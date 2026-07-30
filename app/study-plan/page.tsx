@@ -346,15 +346,17 @@ export default function StudyPlanPage() {
   }, [])
 
   // Safety timeout: if still in 'resolving' after 5 seconds, force transition to failed with retry
+  // Only start timer after auth is complete to avoid premature failure
   useEffect(() => {
     if (state.viewMode !== 'resolving') return
+    if (authStatus === 'loading') return
     const timer = window.setTimeout(() => {
       if (mountedRef.current && state.viewMode === 'resolving') {
         dispatch({ type: 'BOOT_FAILED' })
       }
     }, 5000)
     return () => window.clearTimeout(timer)
-  }, [state.viewMode])
+  }, [state.viewMode, authStatus])
 
   // Boot resolution: decide initial viewMode from SWR data only (not blocked by job restoration)
   // Must wait for auth to be complete before resolving
@@ -585,7 +587,7 @@ export default function StudyPlanPage() {
       const prevCounts = prevSnapshot.counts as Record<string, number> | undefined
       const newCounts = newSnapshot.counts as Record<string, number> | undefined
       if (prevCounts && newCounts) {
-        const newEssays = (newCounts.total ?? 0) - (newCounts.total ?? 0)
+        const newEssays = (newCounts.total ?? 0) - (prevCounts.total ?? 0)
         if (newEssays >= 3) reasons.push(`新增了 ${newEssays} 篇已批改作文`)
       }
       const prevScores = prevSnapshot.scores as Record<string, number | null> | undefined

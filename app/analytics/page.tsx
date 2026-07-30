@@ -23,7 +23,7 @@ import {
   type EssayEvaluation,
   type WritingRecord
 } from '@/lib/writing-records'
-import { UserProfileProvider, useUserProfile } from '@/stores/user-profile-store'
+import { useUserProfile } from '@/stores/user-profile-store'
 import { userScopedStorageKey } from '@/lib/user-storage'
 
 type AnalyticsRange = '7' | '30' | 'all'
@@ -163,11 +163,7 @@ function AnalyticsSkeleton() {
 }
 
 export default function AnalyticsPage() {
-  return (
-    <UserProfileProvider>
-      <AnalyticsContent />
-    </UserProfileProvider>
-  )
+  return <AnalyticsContent />
 }
 
 function AnalyticsContent() {
