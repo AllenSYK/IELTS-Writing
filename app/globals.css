@@ -9552,10 +9552,6 @@ body.is-resizing-editor * {
   cursor: pointer;
 }
 
-.mode-card-trigger:disabled {
-  cursor: wait;
-}
-
 .mode-card-trigger:focus-visible {
   border-radius: 48px;
   outline: 3px solid rgba(0, 88, 188, 0.2);

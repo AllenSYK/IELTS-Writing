@@ -1,9 +1,7 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
-import { useToast } from '@/components/interaction-system'
 import {
   DefaultPromptSelection,
   Task1ChartLabels,
@@ -20,7 +18,6 @@ import {
 import type { WritingTaskType } from '@/lib/writing-records'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { userScopedStorageKey } from '@/lib/user-storage'
-import { createDraftRequestId, createManagedDraft, DraftErrorMessages } from '@/lib/writing-drafts'
 import { UploadedTaskPanel } from '@/components/practice/UploadedTaskPanel'
 import { DraftManager } from '@/components/practice/DraftManager'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
@@ -124,12 +121,7 @@ export function WritingModeSelector({
   initialDraftsOpen?: boolean
   initialDraftTab?: WritingTaskType
 }) {
-  const router = useRouter()
-  const { userId, refreshUser } = useUserSession()
-  const { pushToast } = useToast()
-  const startingRef = useRef(false)
-  const mountedRef = useRef(true)
-  const startRequestIdsRef = useRef<Partial<Record<WritingTaskType, string>>>({})
+  const { userId } = useUserSession()
   const [selection, setSelection] = useState<PromptSelection>(() => {
     if (typeof window === 'undefined' || !userId) return DefaultPromptSelection
     try {
@@ -139,15 +131,9 @@ export function WritingModeSelector({
     }
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [startingMode, setStartingMode] = useState<WritingTaskType | null>(null)
   const [pendingMode, setPendingMode] = useState<WritingTaskType | null>(null)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
-
-  useEffect(() => {
-    mountedRef.current = true
-    return () => { mountedRef.current = false }
-  }, [])
 
   function updateSelection(patch: Partial<PromptSelection>) {
     setSelection((current) => {
@@ -168,81 +154,15 @@ export function WritingModeSelector({
     })
   }
 
-  function prefetchMode(mode: WritingTaskType) {
-    router.prefetch(buildHref(mode, selection))
-  }
-
-  async function startMode(mode: WritingTaskType) {
-    if (startingRef.current) return
-    startingRef.current = true
-    setStartingMode(mode)
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 15000)
-    try {
-      const activeUserId = userId ?? await refreshUser()
-      if (!activeUserId) {
-        pushToast({
-          kind: 'warning',
-          title: '登录状态已失效',
-          message: '请重新登录后开始写作练习。'
-        })
-        router.replace(`/login?next=${encodeURIComponent('/practice')}`)
-        return
-      }
-
-      const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
-      startRequestIdsRef.current[mode] = requestId
-      const payload = await createManagedDraft(mode, selection, requestId, controller.signal)
-      const params = searchParamsForSelection(mode, selection)
-      params.set('draft', payload.draft.id)
-      const destination = `/write/${mode}?${params.toString()}`
-      router.push(destination)
-      window.setTimeout(() => {
-        if (window.location.pathname === '/practice') {
-          window.location.assign(destination)
-        }
-      }, 1200)
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
-      const isTimeout = error instanceof DOMException && error.name === 'AbortError'
-      const limitTab = code === 'DRAFT_LIMIT_REACHED_TASK2'
-        ? 'task2'
-        : code === 'DRAFT_LIMIT_REACHED_FULL_TEST'
-          ? 'mock'
-          : code === 'DRAFT_LIMIT_REACHED_TASK1'
-            ? 'task1'
-            : null
-      if (limitTab) {
-        router.push(`/practice?drafts=1&draftTab=${limitTab}`)
-      }
-      pushToast({
-        kind: 'error',
-        title: isTimeout ? '创建草稿超时' : '暂时无法创建草稿',
-        message: isTimeout ? '网络请求超时，请检查网络后重试。' : DraftErrorMessages[code] || (error instanceof Error ? error.message : '请稍后重试。')
-      })
-    } finally {
-      window.clearTimeout(timeoutId)
-      startingRef.current = false
-      if (mountedRef.current) {
-        setStartingMode(null)
-      }
-    }
-  }
-
   return (
     <>
       <div className="mode-grid">
         {modes.map((mode) => (
-          <button
+          <a
             key={mode.mode}
             className={`mode-card-trigger mode-card ui-glass ui-glass-1 ui-hover-glow ui-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}
-            type="button"
+            href={buildHref(mode.mode, selection)}
             aria-label={`开始 ${mode.title}`}
-            disabled={startingMode !== null}
-            aria-busy={startingMode === mode.mode || undefined}
-            onClick={() => void startMode(mode.mode)}
-            onPointerEnter={() => prefetchMode(mode.mode)}
-            onFocus={() => prefetchMode(mode.mode)}
           >
             <span className="mode-card-header">
               <span className="mode-icon">
@@ -271,14 +191,14 @@ export function WritingModeSelector({
                 {mode.words}
               </span>
               <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
-                {startingMode === mode.mode ? '正在创建…' : mode.action}
+                {mode.action}
               </span>
             </span>
-          </button>
+          </a>
         ))}
       </div>
 
-      <button className="draft-entry-button" type="button" onClick={() => router.push('/ielts/past-papers')}>
+      <a className="draft-entry-button" href="/ielts/past-papers">
         <span className="draft-entry-icon">
           <MaterialIcon name="auto_stories" size={22} />
         </span>
@@ -287,7 +207,7 @@ export function WritingModeSelector({
           <small>浏览高频、次高频及不同题型的雅思写作真题</small>
         </span>
         <MaterialIcon name="arrow_forward" size={18} />
-      </button>
+      </a>
 
       <DraftManager initialOpen={initialDraftsOpen} initialTab={initialDraftTab} />
 
@@ -317,12 +237,9 @@ export function WritingModeSelector({
                   key={mode.mode}
                   className="choice-chip choice-link"
                   type="button"
-                  disabled={startingMode !== null}
                   onClick={() => setPendingMode(mode.mode)}
-                  onPointerEnter={() => prefetchMode(mode.mode)}
-                  onFocus={() => prefetchMode(mode.mode)}
                 >
-                  {startingMode === mode.mode ? '正在创建…' : mode.title}
+                  {mode.title}
                 </button>
               ))}
             </div>
@@ -403,7 +320,7 @@ export function WritingModeSelector({
               onClick={() => {
                 const mode = pendingMode
                 setPendingMode(null)
-                if (mode) void startMode(mode)
+                if (mode) window.location.assign(buildHref(mode, selection))
               }}
             >
               确认开始
