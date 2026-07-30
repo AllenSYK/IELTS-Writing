@@ -145,25 +145,26 @@ test('study-plan API does not scan 100 writing records for bootstrap', async () 
   assert.match(route, /analysis_snapshot/)
 })
 
-test('NavigationProgress uses event-driven approach', async () => {
+test('NavigationProgress detects navigation via click events', async () => {
   const navProgress = await readFile(new URL('../components/layout/NavigationProgress.tsx', import.meta.url), 'utf8')
 
-  assert.match(navProgress, /navigationEvents/)
+  assert.match(navProgress, /handleClick/)
+  assert.match(navProgress, /click.*capture/s)
   assert.doesNotMatch(navProgress, /document\.readyState/)
   assert.doesNotMatch(navProgress, /setInterval/)
 })
 
-test('navigation-events module provides clean API', async () => {
-  const mod = await readFile(new URL('../lib/navigation-events.ts', import.meta.url), 'utf8')
-
-  assert.match(mod, /start\(\)/)
-  assert.match(mod, /complete\(\)/)
-  assert.match(mod, /subscribe\(listener/)
-  assert.doesNotMatch(mod, /setInterval/)
+test('navigation-events module is removed', async () => {
+  await assert.rejects(
+    () => readFile(new URL('../lib/navigation-events.ts', import.meta.url), 'utf8'),
+    (err: unknown) => err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT'
+  )
 })
 
-test('Sidebar mobile drawer triggers navigationEvents.start on link click', async () => {
+test('Sidebar uses plain Links without onClick navigation handlers', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
 
-  assert.match(sidebar, /handleNavigationStart.*item\.href/s)
+  assert.doesNotMatch(sidebar, /navigationEvents/)
+  assert.doesNotMatch(sidebar, /handleNavigationStart/)
+  assert.doesNotMatch(sidebar, /prefetch=\{true\}/)
 })

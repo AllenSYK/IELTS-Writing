@@ -2,12 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
 import { BRAND_NAME } from '@/lib/brand'
-import { navigationEvents } from '@/lib/navigation-events'
 import type { UserRouteCacheKey } from '@/lib/user-route-cache'
 
 type SidebarItem = {
@@ -63,12 +62,6 @@ export function Sidebar() {
     return matches.sort((a, b) => b.href.length - a.href.length)[0].id
   }, [pathname])
 
-  const handleNavigationStart = useCallback((href: string, e: React.MouseEvent) => {
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-    if (href === pathname) return
-    navigationEvents.start()
-  }, [pathname])
-
   useEffect(() => {
     if (!mobileOpen) return
     const previousOverflow = document.body.style.overflow
@@ -90,7 +83,6 @@ export function Sidebar() {
         href="/practice"
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
-        onClick={(e) => handleNavigationStart('/practice', e)}
       >
         <BrandLogo size="md" showName />
       </Link>
@@ -113,7 +105,6 @@ export function Sidebar() {
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
             aria-current={activeId === item.id ? 'page' : undefined}
-            onClick={(e) => handleNavigationStart(item.href, e)}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>
@@ -177,10 +168,7 @@ export function Sidebar() {
                   href={item.href}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
-                  onClick={(e) => {
-                    setMobileOpen(false)
-                    handleNavigationStart(item.href, e)
-                  }}
+                  onClick={() => setMobileOpen(false)}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>

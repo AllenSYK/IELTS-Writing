@@ -2,7 +2,6 @@
 
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { navigationEvents } from '@/lib/navigation-events'
 
 export function NavigationProgress() {
   const pathname = usePathname()
@@ -10,30 +9,30 @@ export function NavigationProgress() {
   const [isLoading, setIsLoading] = useState(false)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const prevPathRef = useRef(pathname + searchParams.toString())
+  const startTimerRef = useRef<NodeJS.Timeout | null>(null)
 
-  useEffect(() => {
-    const unsubscribe = navigationEvents.subscribe(() => {
-      const navigating = navigationEvents.getIsNavigating()
-      requestAnimationFrame(() => setIsLoading(navigating))
-    })
-    return unsubscribe
-  }, [])
-
-  // Complete navigation when pathname/searchParams actually change
+  // Detect navigation start by comparing path
+  // When a Link is clicked, the page starts loading. We show the progress bar
+  // immediately and hide it when the pathname changes (navigation completes).
   useEffect(() => {
     const currentPath = pathname + searchParams.toString()
     if (prevPathRef.current !== currentPath) {
+      // Navigation completed
       prevPathRef.current = currentPath
-      navigationEvents.complete()
+      setIsLoading(false)
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
     }
   }, [pathname, searchParams])
 
-  // Safety timeout to ensure progress bar doesn't stay forever
+  // Safety timeout
   useEffect(() => {
     if (isLoading) {
       timeoutRef.current = setTimeout(() => {
-        navigationEvents.complete()
-      }, 8000)
+        setIsLoading(false)
+      }, 5000)
     } else {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
@@ -42,8 +41,32 @@ export function NavigationProgress() {
     }
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      if (startTimerRef.current) clearTimeout(startTimerRef.current)
     }
   }, [isLoading])
+
+  // Listen for click events on Links to detect navigation start
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const target = (e.target as HTMLElement).closest('a[href]')
+      if (!target) return
+      const href = (target as HTMLAnchorElement).getAttribute('href')
+      if (!href || href.startsWith('http') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+      // Check if navigating to a different page
+      const currentPath = window.location.pathname
+      if (href === currentPath) return
+      // Show progress after a short delay to avoid flash for fast navigations
+      startTimerRef.current = setTimeout(() => {
+        setIsLoading(true)
+      }, 150)
+    }
+
+    document.addEventListener('click', handleClick, { capture: true })
+    return () => {
+      document.removeEventListener('click', handleClick, { capture: true })
+    }
+  }, [])
 
   if (!isLoading) return null
 
