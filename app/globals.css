@@ -572,7 +572,7 @@ img {
   text-underline-offset: 4px;
 }
 
-.mode-card header,
+.mode-card-header,
 .analytics-card header {
   display: flex;
   align-items: flex-start;
@@ -680,7 +680,8 @@ img {
   font-weight: 700;
 }
 
-.mode-card h2 {
+.mode-card-title {
+  display: block;
   margin: var(--stack-md) 0 8px;
   font-size: 20px;
   font-weight: 600;
@@ -688,6 +689,7 @@ img {
 }
 
 .mode-subtitle {
+  display: block;
   margin: 0 0 16px;
   color: var(--primary);
   font-size: 13px;
@@ -8423,8 +8425,7 @@ img {
   z-index: 20;
 }
 
-.writing-route-loading-spinner,
-.practice-launch-spinner {
+.writing-route-loading-spinner {
   width: 34px;
   height: 34px;
   border: 3px solid rgba(0, 88, 188, 0.16);
@@ -8446,8 +8447,7 @@ img {
   line-height: 1.55;
 }
 
-.writing-route-progress,
-.practice-launch-progress {
+.writing-route-progress {
   grid-column: 1 / -1;
   height: 8px;
   overflow: hidden;
@@ -9541,11 +9541,12 @@ body.is-resizing-editor * {
 }
 
 .mode-card-trigger {
+  width: 100%;
+  height: 100%;
   min-width: 0;
-  display: block;
-  border: 0;
-  background: transparent;
-  padding: 0;
+  appearance: none;
+  display: flex;
+  flex-direction: column;
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -9581,55 +9582,6 @@ body.is-resizing-editor * {
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 700;
-}
-
-.practice-launch-layer {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(236, 242, 253, 0.74);
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
-  z-index: 1200;
-}
-
-.practice-launch-card {
-  width: min(420px, calc(100vw - 32px));
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.88);
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 28px;
-  box-shadow: 0 24px 80px rgba(24, 44, 78, 0.2);
-  text-align: center;
-}
-
-.practice-launch-card strong {
-  margin-top: 4px;
-  font-size: 18px;
-}
-
-.practice-launch-card p,
-.practice-launch-card small {
-  margin: 0;
-  color: var(--on-surface-variant);
-  font-size: 13px;
-}
-
-.practice-launch-progress {
-  width: 100%;
-  margin-top: 8px;
-}
-
-.practice-launch-progress span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--primary), #6aa8ff);
-  transition: width 240ms ease;
 }
 
 .draft-entry-button {
@@ -9869,7 +9821,6 @@ body.is-resizing-editor * {
 }
 
 .reduce-motion .writing-route-loading-spinner,
-.reduce-motion .practice-launch-spinner,
 .reduce-motion .draft-loading-spinner,
 .reduce-motion .writing-route-progress span,
 .reduce-motion .writing-route-stages li.is-active::before {

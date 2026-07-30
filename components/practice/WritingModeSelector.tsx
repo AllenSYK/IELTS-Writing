@@ -125,7 +125,7 @@ export function WritingModeSelector({
   initialDraftTab?: WritingTaskType
 }) {
   const router = useRouter()
-  const { userId } = useUserSession()
+  const { userId, refreshUser } = useUserSession()
   const { pushToast } = useToast()
   const startingRef = useRef(false)
   const mountedRef = useRef(true)
@@ -144,8 +144,8 @@ export function WritingModeSelector({
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
 
-  // Safety: reset overlay state on unmount to prevent permanent blocking
   useEffect(() => {
+    mountedRef.current = true
     return () => { mountedRef.current = false }
   }, [])
 
@@ -156,7 +156,14 @@ export function WritingModeSelector({
         ...patch,
         task1Subtype: patch.task1ChartType && !(selectedTask1SubtypeOptions(patch.task1ChartType) as readonly string[]).includes(current.task1Subtype) ? 'random' : (patch.task1Subtype ?? current.task1Subtype)
       }
-      if (userId) window.sessionStorage.setItem(userScopedStorageKey('ielts-writing-prompt-selection-v1', userId), JSON.stringify(next))
+      if (userId) {
+        try {
+          const storageKey = userScopedStorageKey('ielts-writing-prompt-selection-v1', userId)
+          window.sessionStorage.setItem(storageKey, JSON.stringify(next))
+        } catch {
+          // Keep the in-memory selection usable when storage is blocked or full.
+        }
+      }
       return next
     })
   }
@@ -166,23 +173,36 @@ export function WritingModeSelector({
   }
 
   async function startMode(mode: WritingTaskType) {
-    if (!userId || startingRef.current) return
+    if (startingRef.current) return
     startingRef.current = true
     setStartingMode(mode)
-    let navigating = false
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000)
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000)
     try {
+      const activeUserId = userId ?? await refreshUser()
+      if (!activeUserId) {
+        pushToast({
+          kind: 'warning',
+          title: '登录状态已失效',
+          message: '请重新登录后开始写作练习。'
+        })
+        router.replace(`/login?next=${encodeURIComponent('/practice')}`)
+        return
+      }
+
       const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
       startRequestIdsRef.current[mode] = requestId
       const payload = await createManagedDraft(mode, selection, requestId, controller.signal)
-      delete startRequestIdsRef.current[mode]
       const params = searchParamsForSelection(mode, selection)
       params.set('draft', payload.draft.id)
-      navigating = true
-      router.push(`/write/${mode}?${params.toString()}`)
+      const destination = `/write/${mode}?${params.toString()}`
+      router.push(destination)
+      window.setTimeout(() => {
+        if (window.location.pathname === '/practice') {
+          window.location.assign(destination)
+        }
+      }, 1200)
     } catch (error) {
-      clearTimeout(timeoutId)
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
       const isTimeout = error instanceof DOMException && error.name === 'AbortError'
       const limitTab = code === 'DRAFT_LIMIT_REACHED_TASK2'
@@ -201,9 +221,9 @@ export function WritingModeSelector({
         message: isTimeout ? '网络请求超时，请检查网络后重试。' : DraftErrorMessages[code] || (error instanceof Error ? error.message : '请稍后重试。')
       })
     } finally {
-      clearTimeout(timeoutId)
-      if (!navigating && mountedRef.current) {
-        startingRef.current = false
+      window.clearTimeout(timeoutId)
+      startingRef.current = false
+      if (mountedRef.current) {
         setStartingMode(null)
       }
     }
@@ -215,7 +235,7 @@ export function WritingModeSelector({
         {modes.map((mode) => (
           <button
             key={mode.mode}
-            className="mode-card-trigger"
+            className={`mode-card-trigger mode-card ui-glass ui-glass-1 ui-hover-glow ui-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}
             type="button"
             aria-label={`开始 ${mode.title}`}
             disabled={startingMode !== null}
@@ -224,38 +244,36 @@ export function WritingModeSelector({
             onPointerEnter={() => prefetchMode(mode.mode)}
             onFocus={() => prefetchMode(mode.mode)}
           >
-            <GlassPanel className={`mode-card ui-hover-glow ui-clickable-card ${mode.featured ? 'is-featured' : ''} ${mode.recommended ? 'is-recommended' : ''}`}>
-              <header>
-                <span className="mode-icon">
-                  <MaterialIcon name={mode.icon} filled={mode.featured} size={28} />
+            <span className="mode-card-header">
+              <span className="mode-icon">
+                <MaterialIcon name={mode.icon} filled={mode.featured} size={28} />
+              </span>
+              {mode.minutes ? (
+                <span className="mode-badge">
+                  <MaterialIcon name="schedule" size={16} />
+                  <span className="ui-label">{mode.minutes}</span>
                 </span>
-                {mode.minutes ? (
-                  <span className="mode-badge">
-                    <MaterialIcon name="schedule" size={16} />
-                    <span className="ui-label">{mode.minutes}</span>
-                  </span>
-                ) : null}
-              </header>
-              <h2>{mode.title}</h2>
-              <p className="mode-subtitle">
-                {mode.subtitle.includes('+') ? (
-                  <>
-                    Task 1 <MaterialIcon name="add" size={14} /> Task 2
-                  </>
-                ) : (
-                  mode.subtitle
-                )}
-              </p>
-              <div className="mode-card-footer">
-                <span className="mode-meta">
-                  <MaterialIcon name="description" size={18} />
-                  {mode.words}
-                </span>
-                <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
-                  {startingMode === mode.mode ? '正在创建…' : mode.action}
-                </span>
-              </div>
-            </GlassPanel>
+              ) : null}
+            </span>
+            <span className="mode-card-title">{mode.title}</span>
+            <span className="mode-subtitle">
+              {mode.subtitle.includes('+') ? (
+                <>
+                  Task 1 <MaterialIcon name="add" size={14} /> Task 2
+                </>
+              ) : (
+                mode.subtitle
+              )}
+            </span>
+            <span className="mode-card-footer">
+              <span className="mode-meta">
+                <MaterialIcon name="description" size={18} />
+                {mode.words}
+              </span>
+              <span className={mode.featured ? 'ui-dark-button' : mode.primary ? 'ui-primary-button' : 'ui-secondary-button'}>
+                {startingMode === mode.mode ? '正在创建…' : mode.action}
+              </span>
+            </span>
           </button>
         ))}
       </div>

@@ -123,6 +123,12 @@ test('practice page exposes a centered draft manager and complete-test configura
 
   assert.match(selector, /<DraftManager/)
   assert.match(selector, /createManagedDraft\(mode, selection, requestId, controller\.signal\)/)
+  assert.match(selector, /const activeUserId = userId \?\? await refreshUser\(\)/)
+  assert.match(selector, /startingRef\.current = false[\s\S]*?setStartingMode\(null\)/)
+  assert.doesNotMatch(selector, /let navigating = false/)
+  assert.match(selector, /window\.location\.assign\(destination\)/)
+  assert.match(selector, /className="mode-card-header"/)
+  assert.doesNotMatch(selector, /<button[\s\S]*?<GlassPanel className=\{`mode-card/)
   assert.match(selector, /Task 1 题型/)
   assert.match(selector, /Task 2 题型/)
   assert.match(selector, /Task 2 主题/)
