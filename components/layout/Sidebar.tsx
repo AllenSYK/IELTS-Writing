@@ -81,6 +81,7 @@ export function Sidebar() {
       <Link
         className="sidebar-logo"
         href="/practice"
+        prefetch={false}
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
       >
@@ -104,6 +105,7 @@ export function Sidebar() {
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
+            prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
@@ -166,6 +168,7 @@ export function Sidebar() {
                   key={item.id}
                   className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
+                  prefetch={false}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
                   onClick={() => setMobileOpen(false)}

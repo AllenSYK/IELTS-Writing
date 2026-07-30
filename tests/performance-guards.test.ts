@@ -12,10 +12,12 @@ test('web fonts use compressed sources without changing the declared families or
   assert.doesNotMatch(css, /url\("\/fonts\/[^"]+\.ttf"\)/)
 })
 
-test('global navigation uses prefetch={false} with no hover prefetching', async () => {
+test('every user sidebar link disables automatic prefetching with no hover prefetching', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
+  const links = [...sidebar.matchAll(/<Link\b[\s\S]*?\n\s*>/g)].map((match) => match[0])
 
-  assert.match(sidebar, /prefetch=\{false\}/)
+  assert.ok(links.length >= 5, 'expected all desktop and mobile sidebar links')
+  links.forEach((link) => assert.match(link, /prefetch=\{false\}/))
   assert.doesNotMatch(sidebar, /onMouseEnter/)
   assert.doesNotMatch(sidebar, /router\.prefetch/)
   assert.doesNotMatch(sidebar, /pageDataPrefetchers/)
