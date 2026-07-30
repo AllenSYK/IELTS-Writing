@@ -141,7 +141,6 @@ export function WritingModeSelector({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [startingMode, setStartingMode] = useState<WritingTaskType | null>(null)
   const [pendingMode, setPendingMode] = useState<WritingTaskType | null>(null)
-  const [launchProgress, setLaunchProgress] = useState(0)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
 
@@ -170,33 +169,19 @@ export function WritingModeSelector({
     if (!userId || startingRef.current) return
     startingRef.current = true
     setStartingMode(mode)
-    setLaunchProgress(18)
     let navigating = false
-    let resolved = false
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15秒超时
-    // Safety: unconditionally reset overlay after 20 seconds
-    const safetyTimeoutId = setTimeout(() => {
-      if (!resolved && mountedRef.current) {
-        startingRef.current = false
-        setStartingMode(null)
-        setLaunchProgress(0)
-      }
-    }, 20000)
+    const timeoutId = setTimeout(() => controller.abort(), 15000)
     try {
       const requestId = startRequestIdsRef.current[mode] || createDraftRequestId()
       startRequestIdsRef.current[mode] = requestId
       const payload = await createManagedDraft(mode, selection, requestId, controller.signal)
-      resolved = true
-      setLaunchProgress(62)
       delete startRequestIdsRef.current[mode]
       const params = searchParamsForSelection(mode, selection)
       params.set('draft', payload.draft.id)
-      setLaunchProgress(90)
       navigating = true
       router.push(`/write/${mode}?${params.toString()}`)
     } catch (error) {
-      resolved = true
       clearTimeout(timeoutId)
       const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
       const isTimeout = error instanceof DOMException && error.name === 'AbortError'
@@ -217,11 +202,9 @@ export function WritingModeSelector({
       })
     } finally {
       clearTimeout(timeoutId)
-      clearTimeout(safetyTimeoutId)
       if (!navigating && mountedRef.current) {
         startingRef.current = false
         setStartingMode(null)
-        setLaunchProgress(0)
       }
     }
   }
@@ -421,39 +404,6 @@ export function WritingModeSelector({
           </span>
         </div>
       </CenteredDialog>
-
-      {startingMode ? (
-        <div className="practice-launch-layer" role="status" aria-live="polite" aria-label="正在打开写作练习">
-          <section className="practice-launch-card">
-            <span className="practice-launch-spinner" aria-hidden="true" />
-            <strong>正在打开{startingMode === 'mock' ? '完整测试' : startingMode === 'task1' ? ' Task 1' : ' Task 2'}</strong>
-            <p>{launchProgress < 50 ? '正在建立练习…' : launchProgress < 80 ? '正在准备题目与草稿…' : '即将打开写作编辑器…'}</p>
-            <div
-              className="practice-launch-progress"
-              role="progressbar"
-              aria-label="练习加载进度"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={launchProgress}
-            >
-              <span style={{ width: `${launchProgress}%` }} />
-            </div>
-            <small>{launchProgress}%</small>
-            <button
-              className="ui-secondary-button"
-              type="button"
-              style={{ marginTop: 12, fontSize: 13 }}
-              onClick={() => {
-                startingRef.current = false
-                setStartingMode(null)
-                setLaunchProgress(0)
-              }}
-            >
-              取消
-            </button>
-          </section>
-        </div>
-      ) : null}
     </>
   )
 }

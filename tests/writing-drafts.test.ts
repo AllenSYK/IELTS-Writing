@@ -134,7 +134,7 @@ test('practice page exposes a centered draft manager and complete-test configura
   assert.match(manager, /draft-loading-spinner/)
   assert.match(manager, /ielts-writing:practice-visited/)
   assert.match(selector, /确认开始/)
-  assert.match(selector, /practice-launch-progress/)
+  assert.doesNotMatch(selector, /practice-launch-layer/)
   assert.match(loading, /正在准备写作练习/)
   assert.match(css, /\.draft-loading-spinner\s*\{[\s\S]*?animation:/)
   assert.match(css, /\.writing-route-progress span\s*\{[\s\S]*?animation:/)
