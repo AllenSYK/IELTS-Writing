@@ -134,11 +134,13 @@ test('Supabase proxy clears stale refresh tokens and forwards required cache hea
   const middleware = await readFile(new URL('../lib/supabase/middleware.ts', import.meta.url), 'utf8')
 
   assert.match(middleware, /refresh_token_not_found/)
+  assert.match(middleware, /validation_failed/)
   assert.match(middleware, /clearStaleAuthCookies/)
   assert.match(middleware, /name\.startsWith\('sb-'\) && name\.includes\('auth-token'\)/)
   assert.match(middleware, /maxAge:\s*0/)
   assert.match(middleware, /setAll\(cookiesToSet, headersToSet\)/)
   assert.match(middleware, /Object\.entries\(headersToSet\)/)
+  assert.match(middleware, /X-Auth-Session-Recovered/)
 })
 
 test('study-plan API does not scan 100 writing records for bootstrap', async () => {

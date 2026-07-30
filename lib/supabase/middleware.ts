@@ -89,7 +89,8 @@ function isInvalidRefreshToken(error: unknown) {
   return (
     code === 'refresh_token_not_found'
     || code === 'invalid_refresh_token'
-    || /invalid refresh token|refresh token not found/i.test(message)
+    || (code === 'validation_failed' && /refresh token/i.test(message))
+    || /invalid refresh token|refresh token (?:is )?not (?:found|valid)/i.test(message)
   )
 }
 
@@ -109,6 +110,7 @@ function clearStaleAuthCookies(request: NextRequest, response: NextResponse) {
   response.headers.set('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0')
   response.headers.set('Expires', '0')
   response.headers.set('Pragma', 'no-cache')
+  response.headers.set('X-Auth-Session-Recovered', '1')
   return response
 }
 
