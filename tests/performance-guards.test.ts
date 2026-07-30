@@ -111,7 +111,7 @@ test('study-plan SWR key includes userId', async () => {
 test('study-plan boot resolution does not depend on jobRestored', async () => {
   const page = await readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
 
-  const bootEffect = page.match(/Boot resolution[\s\S]*?\}, \[data, error, isLoading\]/)
+  const bootEffect = page.match(/Boot resolution[\s\S]*?\}, \[data, error, isLoading, authStatus\]/)
   assert.ok(bootEffect, 'Boot resolution effect should exist')
   assert.doesNotMatch(bootEffect[0], /jobRestored/)
 })

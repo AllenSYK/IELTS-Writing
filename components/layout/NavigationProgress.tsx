@@ -13,11 +13,13 @@ export function NavigationProgress() {
 
   useEffect(() => {
     const unsubscribe = navigationEvents.subscribe(() => {
-      setIsLoading(navigationEvents.getIsNavigating())
+      const navigating = navigationEvents.getIsNavigating()
+      requestAnimationFrame(() => setIsLoading(navigating))
     })
     return unsubscribe
   }, [])
 
+  // Complete navigation when pathname/searchParams actually change
   useEffect(() => {
     const currentPath = pathname + searchParams.toString()
     if (prevPathRef.current !== currentPath) {
@@ -26,6 +28,7 @@ export function NavigationProgress() {
     }
   }, [pathname, searchParams])
 
+  // Safety timeout to ensure progress bar doesn't stay forever
   useEffect(() => {
     if (isLoading) {
       timeoutRef.current = setTimeout(() => {

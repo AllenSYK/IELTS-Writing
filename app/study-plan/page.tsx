@@ -312,9 +312,12 @@ async function fetchPlan(): Promise<PlanData> {
 }
 
 export default function StudyPlanPage() {
-  const { userId } = useAuth()
+  const { userId, status: authStatus } = useAuth()
   const { pushToast } = useToast()
-  const { data, error, mutate, isLoading } = useSWR(userId ? ['study-plan', userId] : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
+
+  // Only fetch when auth is complete and user is authenticated
+  const shouldFetch = authStatus === 'authenticated' && !!userId
+  const { data, error, mutate, isLoading } = useSWR(shouldFetch ? ['study-plan', userId] : null, fetchPlan, { revalidateOnFocus: false, shouldRetryOnError: false })
 
   const [state, dispatch] = useReducer(studyPlanReducer, initialState)
   const [analysisJob, setAnalysisJob] = useState<GenerationJob | null>(null)
@@ -354,8 +357,11 @@ export default function StudyPlanPage() {
   }, [state.viewMode])
 
   // Boot resolution: decide initial viewMode from SWR data only (not blocked by job restoration)
+  // Must wait for auth to be complete before resolving
   useEffect(() => {
     if (bootResolvedRef.current) return
+    if (authStatus === 'loading') return
+    if (authStatus === 'unauthenticated') return
     if (isLoading && !data && !error) return
 
     bootResolvedRef.current = true
@@ -370,7 +376,7 @@ export default function StudyPlanPage() {
     } else {
       dispatch({ type: 'BOOT_RESOLVED_WITHOUT_PLAN' })
     }
-  }, [data, error, isLoading])
+  }, [data, error, isLoading, authStatus])
 
   // Restore active job on mount (with timeout, non-blocking)
   // Only request if localStorage indicates an active job was in progress

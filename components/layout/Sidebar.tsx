@@ -90,7 +90,6 @@ export function Sidebar() {
         href="/practice"
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
-        prefetch={false}
         onClick={(e) => handleNavigationStart('/practice', e)}
       >
         <BrandLogo size="md" showName />
@@ -113,7 +112,6 @@ export function Sidebar() {
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
-            prefetch={false}
             aria-current={activeId === item.id ? 'page' : undefined}
             onClick={(e) => handleNavigationStart(item.href, e)}
           >
@@ -183,7 +181,6 @@ export function Sidebar() {
                     setMobileOpen(false)
                     handleNavigationStart(item.href, e)
                   }}
-                  prefetch={false}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>
