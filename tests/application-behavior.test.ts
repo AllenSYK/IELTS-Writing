@@ -86,7 +86,7 @@ test('study plan question-bank tasks open the exact assigned backend question', 
   assert.match(assignedQuestionRoute, /\.eq\('status', 'published'\)/)
   assert.match(writingPage, /loadAssignedPracticeQuestion/)
   assert.match(writingPage, /let question: WritingQuestion \| null = assignedQuestionResult\.question/)
-  assert.match(writingPage, /router\.replace\(studyPlanTaskId \? '\/study-plan' : '\/ielts\/past-papers'\)/)
+  assert.match(writingPage, /window\.location\.replace\(studyPlanTaskId \? '\/study-plan' : '\/ielts\/past-papers'\)/)
   assert.match(studyPlanDialogs, /studyPlanWritingHref\(task\)/)
 })
 
@@ -375,9 +375,21 @@ test('auth submit buttons share one animated spinner across email and phone flow
 
 test('registration card uses a compact responsive width without fixed height clipping', async () => {
   const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  assert.match(css, /\.auth-page\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?align-items:\s*center;/)
+  assert.match(css, /\.auth-page\s*>\s*\.auth-panel\s*\{[\s\S]*?margin-block:\s*auto;/)
   assert.match(css, /\.auth-register-panel\s*\{[\s\S]*?width:\s*min\(100%, 460px\);/)
   assert.doesNotMatch(css, /\.auth-register-panel\s*\{[^}]*height:/)
+  assert.match(css, /@media \(max-height:\s*900px\)[\s\S]*?\.auth-register-panel\s*\{[\s\S]*?padding-block:\s*18px;/)
+  assert.match(css, /@media \(max-height:\s*900px\)[\s\S]*?\.auth-register-panel \.brand-logo-lg\s*\{[\s\S]*?--brand-logo-size:\s*58px;/)
   assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.auth-register-panel\s*\{[\s\S]*?padding:\s*20px;/)
+})
+
+test('favicon metadata remains React-owned across client navigation', async () => {
+  const layout = await readFile(new URL('../app/layout.tsx', import.meta.url), 'utf8')
+
+  assert.match(layout, /icons:\s*\{[\s\S]*?kongyumeng-tab-icon-20260725-v2\.png/)
+  assert.doesNotMatch(layout, /BrandFaviconRefresher/)
+  assert.doesNotMatch(layout, /document\.head|querySelectorAll|removeChild|appendChild/)
 })
 
 test('settings profile exposes account identity and a confirmed cache-safe logout', async () => {
@@ -398,11 +410,34 @@ test('settings profile exposes account identity and a confirmed cache-safe logou
   assert.match(logout, /supabase\.auth\.signOut\(\)/)
   assert.match(logout, /clearUserRouteMemoryCaches\(userId\)/)
   assert.match(logout, /prepareForLogout\(\)/)
+  assert.match(logout, /window\.location\.replace\('\/login'\)/)
+  assert.doesNotMatch(logout, /router\.(?:replace|refresh)\(/)
   assert.match(logout, /loading \? '正在退出' : '退出登录'/)
   assert.doesNotMatch(dashboard, /dashboard-header|练习概览|<LogoutButton/)
   assert.match(dashboard, /<section className="dashboard-main">\s*<section className="dashboard-grid">/)
   assert.doesNotMatch(css, /\.dashboard-header\s*\{/)
   assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.app-header\s*\{[\s\S]*?flex:\s*0 0 auto;/)
+})
+
+test('email auth entry pages switch reliably without a loading gate or redundant method overlay', async () => {
+  const [login, register, css] = await Promise.all([
+    readFile(new URL('../app/login/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
+  ])
+
+  assert.match(login, /<a href="\/register">立即注册<\/a>/)
+  assert.match(register, /<a href="\/login">登录<\/a>/)
+  assert.doesNotMatch(login, /import Link from ['"]next\/link['"]/)
+  assert.doesNotMatch(register, /import Link from ['"]next\/link['"]/)
+  assert.doesNotMatch(login, /sessionStatus === 'loading'/)
+  assert.doesNotMatch(login, /<h1>加载中/)
+  assert.match(login, /className="auth-kicker">邮箱登录/)
+  assert.match(register, /className="auth-kicker">邮箱注册/)
+  assert.doesNotMatch(login, /auth-method-tabs/)
+  assert.doesNotMatch(register, /auth-method-tabs/)
+  assert.doesNotMatch(css, /\.auth-method-tabs/)
+  assert.match(css, /\.app-route-root\.is-full-screen\s*\{[\s\S]*?overflow-y:\s*auto;/)
 })
 
 test('legal pages share the current contact email, AI notice, and final terms effective date', async () => {
@@ -441,7 +476,7 @@ test('practice settings include automatic uploaded-task recognition and direct w
   assert.match(css, /@media \(max-width: 820px\)[\s\S]*?\.practice-setting-row,[\s\S]*?grid-template-columns:\s*1fr/)
   assert.match(uploadPanel, /image\/png,image\/jpeg,image\/webp/)
   assert.match(uploadPanel, /自动判断 Task 1 \/ Task 2/)
-  assert.match(uploadPanel, /router\.push\(data\.redirectUrl\)/)
+  assert.match(uploadPanel, /window\.location\.assign\(data\.redirectUrl\)/)
   assert.doesNotMatch(uploadPanel, /确认题目|taskType.*setTaskType|form\.set\('taskType'/)
   assert.match(parseRoute, /requireActiveWebLicense/)
   assert.match(parseRoute, /validateImageUpload/)

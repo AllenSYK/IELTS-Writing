@@ -1,8 +1,7 @@
 'use client'
 
-import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
   CalendarPlus,
@@ -78,7 +77,6 @@ const statusFilters = [
 ] as const
 
 export function AdminBindingsClient() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const licenseId = searchParams.get('licenseId') || ''
   const email = searchParams.get('email') || ''
@@ -117,7 +115,7 @@ export function AdminBindingsClient() {
   function clearFilter(key: 'licenseId' | 'email' | 'userId') {
     const params = new URLSearchParams(searchParams.toString())
     params.delete(key)
-    router.replace(`/admin/bindings${params.size ? `?${params.toString()}` : ''}`)
+    window.location.replace(`/admin/bindings${params.size ? `?${params.toString()}` : ''}`)
   }
 
   async function patchBinding(id: string, action: 'extend' | 'revoke' | 'rebind', days?: number) {
@@ -230,12 +228,12 @@ export function AdminBindingsClient() {
                   return (
                     <tr key={binding.id}>
                       <td data-label="用户邮箱">
-                        <Link className="admin-table-link" href={`/admin/users?userId=${binding.user_id}`}><strong>{binding.email}</strong></Link>
+                        <a className="admin-table-link" href={`/admin/users?userId=${binding.user_id}`}><strong>{binding.email}</strong></a>
                       </td>
                       <td data-label="激活码">
-                        <Link className="admin-table-link" href={`/admin/licenses?licenseId=${license?.id || binding.license_id}`}>
+                        <a className="admin-table-link" href={`/admin/licenses?licenseId=${license?.id || binding.license_id}`}>
                           <code>{maskLicensePrefix(license?.code_prefix)}</code>
-                        </Link>
+                        </a>
                       </td>
                       <td data-label="套餐"><span className="admin-plan-pill">{license?.plan || '—'}</span></td>
                       <td data-label="绑定状态"><AdminBadge value={binding.binding_status} /></td>
@@ -247,8 +245,8 @@ export function AdminBindingsClient() {
                       <td data-label="操作">
                         <div className="admin-row-actions">
                           <button className="admin-icon-button" type="button" onClick={() => setSelected(binding)} aria-label="查看详情" title="查看详情"><Eye size={15} /></button>
-                          <Link className="admin-icon-button" href={`/admin/users?userId=${binding.user_id}`} aria-label="查看用户" title="查看用户"><UserRound size={15} /></Link>
-                          <Link className="admin-icon-button" href={`/admin/licenses?licenseId=${license?.id || binding.license_id}`} aria-label="查看激活码" title="查看激活码"><KeyRound size={15} /></Link>
+                          <a className="admin-icon-button" href={`/admin/users?userId=${binding.user_id}`} aria-label="查看用户" title="查看用户"><UserRound size={15} /></a>
+                          <a className="admin-icon-button" href={`/admin/licenses?licenseId=${license?.id || binding.license_id}`} aria-label="查看激活码" title="查看激活码"><KeyRound size={15} /></a>
                           {['active', 'expiring', 'expired'].includes(binding.binding_status) ? (
                             <button className="admin-icon-button success" type="button" disabled={submitting} onClick={() => void patchBinding(binding.id, 'extend', 30)} aria-label="延长有效期" title="延长有效期 30 天"><CalendarPlus size={15} /></button>
                           ) : null}
@@ -305,8 +303,8 @@ export function AdminBindingsClient() {
               <div><dt>撤销或解绑原因</dt><dd>{selected.binding_status === 'unbound' ? '管理员已解绑邮箱' : selected.revoked_reason || '—'}</dd></div>
             </dl>
             <div className="admin-dialog-action-grid">
-              <Link className="admin-secondary-button" href={`/admin/users?userId=${selected.user_id}`}><UserRound size={15} />查看用户</Link>
-              <Link className="admin-secondary-button" href={`/admin/licenses?licenseId=${selected.license_codes?.id || selected.license_id}`}><KeyRound size={15} />查看激活码</Link>
+              <a className="admin-secondary-button" href={`/admin/users?userId=${selected.user_id}`}><UserRound size={15} />查看用户</a>
+              <a className="admin-secondary-button" href={`/admin/licenses?licenseId=${selected.license_codes?.id || selected.license_id}`}><KeyRound size={15} />查看激活码</a>
               {['active', 'expiring', 'expired'].includes(selected.binding_status) ? (
                 <button className="admin-secondary-button" type="button" disabled={submitting} onClick={() => void patchBinding(selected.id, 'extend', 30)}><CalendarPlus size={15} />延长有效期 30 天</button>
               ) : null}

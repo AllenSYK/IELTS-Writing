@@ -1,12 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Loader2, LogOut } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 
 export function AdminLogoutButton() {
-  const router = useRouter()
   const [loading, setLoading] = useState(false)
 
   async function logout() {
@@ -17,8 +15,7 @@ export function AdminLogoutButton() {
       const supabase = createSupabaseBrowserClient()
       await supabase.auth.signOut()
       await fetch('/api/admin/logout', { method: 'POST', cache: 'no-store' }).catch(() => null)
-      router.replace('/admin/login')
-      router.refresh()
+      window.location.replace('/admin/login')
     } finally {
       setLoading(false)
     }

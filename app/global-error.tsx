@@ -54,7 +54,7 @@ export default function GlobalError({
             抱歉，页面加载过程中发生了问题。请尝试刷新页面。
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <button
+            <button type="button"
               onClick={reset}
               style={{
                 padding: '10px 24px',

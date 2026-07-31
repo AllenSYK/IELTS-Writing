@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { MaterialIcon } from '@/components/app-ui'
 import type { PracticeRecommendation } from '@/lib/learning-analytics'
 
@@ -45,10 +44,10 @@ export function PracticePlan({ recommendations }: { recommendations: PracticeRec
                     <dd>0%</dd>
                   </div>
                 </dl>
-                <Link className="ui-primary-button" href={item.href} prefetch={false}>
+                <a className="ui-primary-button" href={item.href}>
                   开始练习
                   <MaterialIcon name="arrow_forward" size={16} />
-                </Link>
+                </a>
               </article>
             ))}
           </div>

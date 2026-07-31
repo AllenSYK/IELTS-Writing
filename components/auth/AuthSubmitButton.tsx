@@ -24,7 +24,7 @@ export function AuthSubmitButton({
   ...props
 }: AuthSubmitButtonProps) {
   return (
-    <button
+    <button type="button"
       {...props}
       className={`ui-primary-button auth-submit auth-main-button auth-submit-button ${className}`.trim()}
       disabled={Boolean(disabled || loading)}

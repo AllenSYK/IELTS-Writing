@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { MaterialIcon } from '@/components/app-ui'
 import type { SupportFaq } from '@/lib/support-feedback'
@@ -34,9 +33,9 @@ export function FaqDialog({
               {action.label}
             </button>
           ) : action.href ? (
-            <Link key={action.label} className="ui-secondary-button" href={action.href} onClick={onClose}>
+            <a key={action.label} className="ui-secondary-button" href={action.href}>
               {action.label}
-            </Link>
+            </a>
           ) : null)}
           <button className="ui-secondary-button" type="button" onClick={onClose}>
             关闭

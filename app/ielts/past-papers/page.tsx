@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
@@ -237,9 +236,9 @@ export default function PastPapersPage() {
         <section className="analytics-main" style={{ paddingTop: 40 }}>
           <header className="page-section-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Link href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
+              <a href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
                 <MaterialIcon name="arrow_back" size={18} />
-              </Link>
+              </a>
               <h1 className="ui-title-display">雅思真题</h1>
             </div>
           </header>
@@ -252,9 +251,9 @@ export default function PastPapersPage() {
                 <MaterialIcon name="refresh" size={18} />
                 重新加载
               </button>
-              <Link href="/practice" className="ui-secondary-button">
+              <a href="/practice" className="ui-secondary-button">
                 返回练习
-              </Link>
+              </a>
             </div>
           </GlassPanel>
         </section>
@@ -271,9 +270,9 @@ export default function PastPapersPage() {
       <section className="analytics-main" style={{ paddingTop: 40 }}>
         <header className="page-section-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Link href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
+            <a href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
               <MaterialIcon name="arrow_back" size={18} />
-            </Link>
+            </a>
             <h1 className="ui-title-display">雅思真题</h1>
           </div>
         </header>
@@ -421,9 +420,9 @@ export default function PastPapersPage() {
 
         {totalPages > 1 && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
-            <button className="ui-secondary-button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</button>
+            <button type="button" className="ui-secondary-button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</button>
             <span className="ui-label" style={{ alignSelf: 'center' }}>{page} / {totalPages}</span>
-            <button className="ui-secondary-button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>下一页</button>
+            <button type="button" className="ui-secondary-button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>下一页</button>
           </div>
         )}
       </section>
@@ -557,9 +556,9 @@ function PaperCard({ item }: { item: PastPaperListItem }) {
           )}
         </div>
         {canPractice ? (
-          <Link className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
+          <a className="ui-primary-button" href={`/write/${item.taskType === 'task2' ? 'task2' : 'task1'}?pastPaper=${item.id}`} style={{ fontSize: 13, padding: '6px 14px' }}>
             开始练习
-          </Link>
+          </a>
         ) : (
           <span className="ui-label" style={{ color: 'var(--on-surface-variant)' }}>题目不完整</span>
         )}

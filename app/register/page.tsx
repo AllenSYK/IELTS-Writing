@@ -1,8 +1,6 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { CrossBorderConsentCheckbox } from '@/components/auth/CrossBorderConsent'
@@ -66,7 +64,6 @@ function formatSeconds(seconds: number) {
 }
 
 export default function RegisterPage() {
-  const router = useRouter()
   const codeRefs = useRef<Array<HTMLInputElement | null>>([])
   const [step, setStep] = useState<RegisterStep>('account')
   const [email, setEmail] = useState('')
@@ -104,9 +101,9 @@ export default function RegisterPage() {
 
   useEffect(() => {
     if (step !== 'success') return undefined
-    const timer = window.setTimeout(() => router.replace('/login'), 2000)
+    const timer = window.setTimeout(() => window.location.replace('/login'), 2000)
     return () => window.clearTimeout(timer)
-  }, [router, step])
+  }, [step])
 
   function validateAccount() {
     const normalized = normalizeEmail(email)
@@ -271,26 +268,20 @@ export default function RegisterPage() {
       <section className="auth-panel auth-panel-modern auth-register-panel">
         <AuthBrandHeader />
 
-        {step !== 'success' ? (
-          <div className="auth-method-tabs auth-method-tabs-single">
-            <p className="auth-method-label">邮箱注册</p>
-          </div>
-        ) : null}
-
         {step === 'success' ? (
           <div className="auth-success-state">
             <span className="auth-success-orb"><CheckCircle2 size={34} /></span>
             <p className="auth-kicker">邮箱验证成功</p>
             <h1>您的账号已创建</h1>
             <p>{message || '现在可以登录，并使用软件激活码开通网站使用权限。'}</p>
-            <Link className="ui-primary-button auth-main-button" href="/login">前往登录</Link>
+            <a className="ui-primary-button auth-main-button" href="/login">前往登录</a>
           </div>
         ) : null}
 
         {step === 'account' ? (
           <>
             <header className="auth-copy">
-              <p className="auth-kicker">创建账号</p>
+              <p className="auth-kicker">邮箱注册</p>
               <h1>注册账号</h1>
               <p>先验证邮箱，再创建账号；注册后需要输入软件激活码开通使用权限。</p>
             </header>
@@ -376,7 +367,7 @@ export default function RegisterPage() {
             </form>
 
             <p className="auth-switch">
-              已有账号？<Link href="/login">登录</Link>
+              已有账号？<a href="/login">登录</a>
             </p>
           </>
         ) : null}

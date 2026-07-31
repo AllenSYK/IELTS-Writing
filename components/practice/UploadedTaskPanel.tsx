@@ -1,7 +1,6 @@
 'use client'
 
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { MaterialIcon } from '@/components/app-ui'
 import { validateImageUpload } from '@/lib/uploaded-writing-task'
@@ -55,7 +54,6 @@ function wait(milliseconds: number) {
 }
 
 export function UploadedTaskPanel() {
-  const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const inFlightRef = useRef(false)
   const progressTimersRef = useRef<number[]>([])
@@ -144,7 +142,7 @@ export function UploadedTaskPanel() {
       await wait(220)
       setProgressStage(4)
       await wait(180)
-      router.push(data.redirectUrl)
+      window.location.assign(data.redirectUrl)
     } catch (caught) {
       clearProgressTimers()
       setStatus('error')

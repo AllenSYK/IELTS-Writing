@@ -1,7 +1,6 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { RefreshCw } from 'lucide-react'
 import { ConfirmDialog, EmptyState, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
@@ -90,9 +89,9 @@ const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { 
           ))}
         </div>
         <div className="history-buttons">
-          <Link className="ui-primary-button" href={`/result?id=${record.id}`} prefetch={false}>
+          <a className="ui-primary-button" href={`/result?id=${record.id}`}>
             查看详情
-          </Link>
+          </a>
           <button className="danger-link history-delete" type="button" aria-label="删除记录" onClick={() => onDelete(record)}>
             <MaterialIcon name="delete" size={18} />
           </button>

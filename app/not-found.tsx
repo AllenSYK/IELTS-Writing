@@ -1,4 +1,3 @@
-import Link from 'next/link'
 
 export default function NotFound() {
   return (
@@ -10,8 +9,8 @@ export default function NotFound() {
           请检查链接是否正确，或返回首页继续操作。
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <Link className="ui-primary-button" href="/dashboard">返回首页</Link>
-          <Link className="ui-secondary-button" href="/practice">开始写作</Link>
+          <a className="ui-primary-button" href="/dashboard">返回首页</a>
+          <a className="ui-secondary-button" href="/practice">开始写作</a>
         </div>
       </section>
     </main>

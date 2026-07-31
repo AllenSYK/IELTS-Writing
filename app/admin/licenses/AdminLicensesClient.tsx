@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
@@ -370,7 +369,7 @@ export function AdminLicensesClient() {
                       <td data-label="操作">
                         <div className="admin-row-actions">
                           <button className="admin-icon-button" type="button" onClick={() => setSelected(license)} aria-label="查看详情" title="查看详情"><FileText size={15} /></button>
-                          <Link className="admin-icon-button" href={`/admin/bindings?licenseId=${license.id}`} aria-label="查看绑定记录" title="查看绑定记录"><UsersRound size={15} /></Link>
+                          <a className="admin-icon-button" href={`/admin/bindings?licenseId=${license.id}`} aria-label="查看绑定记录" title="查看绑定记录"><UsersRound size={15} /></a>
                           {license.status === 'disabled' ? (
                             <button className="admin-icon-button success" type="button" onClick={() => void updateLicense(license.id, { status: license.activation_count ? 'active' : 'unused' }, '激活码已启用')} aria-label="启用" title="启用">
                               <CheckCircle2 size={15} />
@@ -548,7 +547,7 @@ export function AdminLicensesClient() {
                 <span className="admin-list-icon"><UsersRound size={18} /></span>
                 <div><strong>当前已绑定 {selected.activation_count} 个邮箱</strong><p>邮箱、账号到期时间和权限状态在独立页面中管理。</p></div>
               </div>
-              <Link className="admin-primary-button" href={`/admin/bindings?licenseId=${selected.id}`}>查看全部绑定邮箱</Link>
+              <a className="admin-primary-button" href={`/admin/bindings?licenseId=${selected.id}`}>查看全部绑定邮箱</a>
             </section>
             <div className="admin-danger-zone">
               <div><strong>危险操作</strong><p>撤销后会保留激活码、绑定历史和审计记录，但不能重新启用。</p></div>

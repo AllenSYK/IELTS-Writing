@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
+import ts from 'typescript'
+
+async function readTsxTree(relativeRoot: string) {
+  const root = new URL(relativeRoot, import.meta.url)
+  const paths = await readdir(root, { recursive: true })
+  return Promise.all(
+    paths
+      .filter((path) => path.endsWith('.tsx'))
+      .map(async (path) => ({
+        path,
+        source: await readFile(new URL(path, root), 'utf8')
+      }))
+  )
+}
 
 test('web fonts use compressed sources without changing the declared families or weights', async () => {
   const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
@@ -26,6 +40,35 @@ test('user shell navigation uses native anchors without client-side prefetching'
   assert.doesNotMatch(sidebar, /onMouseEnter/)
   assert.doesNotMatch(sidebar, /router\.prefetch/)
   assert.doesNotMatch(sidebar, /pageDataPrefetchers/)
+})
+
+test('user and admin navigation use one-click browser navigation', async () => {
+  const sources = [
+    ...await readTsxTree('../app/'),
+    ...await readTsxTree('../components/')
+  ]
+
+  for (const { path, source } of sources) {
+    assert.doesNotMatch(source, /from ['"]next\/link['"]/, `${path} must use a native anchor`)
+    assert.doesNotMatch(source, /<Link\b/, `${path} must not intercept anchor clicks`)
+    assert.doesNotMatch(source, /\buseRouter\(/, `${path} must not depend on client-router click handling`)
+    assert.doesNotMatch(source, /\brouter\.(?:push|replace|refresh)\(/, `${path} must use browser navigation`)
+
+    const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    const visit = (node: ts.Node) => {
+      if (
+        (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node))
+        && node.tagName.getText(sourceFile) === 'button'
+      ) {
+        const hasExplicitType = node.attributes.properties.some(
+          (attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(sourceFile) === 'type'
+        )
+        assert.equal(hasExplicitType, true, `${path} has a button with implicit form behavior`)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
 })
 
 test('past-paper filters cancel superseded and unmounted requests', async () => {
@@ -159,13 +202,11 @@ test('study-plan API does not scan 100 writing records for bootstrap', async () 
   assert.match(route, /analysis_snapshot/)
 })
 
-test('NavigationProgress detects navigation via click events', async () => {
-  const navProgress = await readFile(new URL('../components/layout/NavigationProgress.tsx', import.meta.url), 'utf8')
-
-  assert.match(navProgress, /handleClick/)
-  assert.match(navProgress, /addEventListener.*click/)
-  assert.doesNotMatch(navProgress, /document\.readyState/)
-  assert.doesNotMatch(navProgress, /setInterval/)
+test('global navigation does not install a document click interceptor', async () => {
+  await assert.rejects(
+    () => readFile(new URL('../components/layout/NavigationProgress.tsx', import.meta.url), 'utf8'),
+    (err: unknown) => err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT'
+  )
 })
 
 test('navigation-events module is removed', async () => {

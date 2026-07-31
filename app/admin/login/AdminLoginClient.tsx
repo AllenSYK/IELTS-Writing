@@ -1,8 +1,6 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   Eye,
@@ -49,7 +47,6 @@ export function AdminLoginClient({
   currentEmail?: string
   initialReason?: string
 }) {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -75,8 +72,7 @@ export function AdminLoginClient({
       setActiveEmail('')
       setEmail('')
       setPassword('')
-      router.replace('/admin/login')
-      router.refresh()
+      window.location.replace('/admin/login')
     } catch {
       setError('退出当前账号失败，请刷新页面后重试。')
     } finally {
@@ -103,8 +99,7 @@ export function AdminLoginClient({
         return
       }
 
-      router.replace(data.redirectTo || '/admin')
-      router.refresh()
+      window.location.replace(data.redirectTo || '/admin')
     } catch (caught) {
       setError(
         caught instanceof DOMException && caught.name === 'AbortError'
@@ -201,10 +196,10 @@ export function AdminLoginClient({
               {switching ? '正在退出当前账号' : '退出并切换管理员账号'}
             </button>
           ) : null}
-          <Link className="ui-secondary-button" href="/">
+          <a className="ui-secondary-button" href="/">
             <ArrowLeft size={17} />
             返回用户端
-          </Link>
+          </a>
         </div>
       </section>
     </main>

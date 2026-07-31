@@ -1,7 +1,6 @@
 'use client'
 
 import { MaterialIcon } from '@/components/app-ui'
-import Link from 'next/link'
 
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
@@ -17,9 +16,9 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             <button className="ui-primary-button" type="button" onClick={reset}>
               重试
             </button>
-            <Link className="ui-secondary-button" href="/dashboard">
+            <a className="ui-secondary-button" href="/dashboard">
               返回首页
-            </Link>
+            </a>
           </div>
         </div>
       </section>

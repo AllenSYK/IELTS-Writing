@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { ErrorDistributionBars } from '@/components/analytics/ErrorDistributionBars'
 import { GoalStatusPanel } from '@/components/analytics/GoalStatusPanel'
 import { IeltsRadarChart } from '@/components/analytics/IeltsRadarChart'
@@ -415,10 +414,10 @@ function AnalyticsContent() {
         <GlassPanel level={2} className="plan-card">
           <PracticePlan recommendations={recommendations} />
           {recommendations.length === 0 ? (
-            <Link className="ui-secondary-button" href="/practice" style={{ marginTop: 18 }}>
+            <a className="ui-secondary-button" href="/practice" style={{ marginTop: 18 }}>
               先完成一篇练习
               <MaterialIcon name="arrow_forward" size={16} />
-            </Link>
+            </a>
           ) : null}
         </GlassPanel>
       </section>

@@ -271,7 +271,6 @@
 .criterion-card:hover {
   background: rgba(255, 255, 255, 0.75);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  transform: translateY(-1px);
 }
 
 .criterion-card:focus-visible {
@@ -324,10 +323,6 @@
 
 .criteria-detail-btn:hover {
   background: rgba(216, 226, 255, 0.5);
-}
-
-.criteria-detail-btn:active {
-  transform: scale(0.97);
 }
 
 /* ── Criteria detail dialog ── */

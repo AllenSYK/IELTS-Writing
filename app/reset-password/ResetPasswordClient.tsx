@@ -1,8 +1,7 @@
 'use client'
 
 import { FormEvent, useEffect, useState } from 'react'
-import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { CheckCircle2, Eye, EyeOff, Loader2, LockKeyhole } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
@@ -10,7 +9,6 @@ import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
 
 export function ResetPasswordClient() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -86,7 +84,7 @@ export function ResetPasswordClient() {
       }
       await supabase.auth.signOut()
       setMessage('密码已更新，请使用新密码登录。')
-      window.setTimeout(() => router.replace('/login'), 1200)
+      window.setTimeout(() => window.location.replace('/login'), 1200)
     } catch (caught) {
       setError(toChineseAuthError(caught instanceof Error ? caught.message : null))
     } finally {
@@ -157,7 +155,7 @@ export function ResetPasswordClient() {
       </form>
 
       <p className="auth-switch">
-        <Link href="/forgot-password">重新发送重置邮件</Link>
+        <a href="/forgot-password">重新发送重置邮件</a>
       </p>
     </section>
   )

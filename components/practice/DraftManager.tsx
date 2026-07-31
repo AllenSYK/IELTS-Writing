@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { MaterialIcon } from '@/components/app-ui'
 import { AsyncButton, useToast } from '@/components/interaction-system'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
@@ -97,7 +96,6 @@ export function DraftManager({
   initialOpen?: boolean
   initialTab?: DraftTab
 }) {
-  const router = useRouter()
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const [open, setOpen] = useState(initialOpen)
@@ -166,7 +164,7 @@ export function DraftManager({
 
   async function continueDraft(record: DraftListItem) {
     setOpen(false)
-    router.push(`/write/${record.taskType}?draft=${encodeURIComponent(record.id)}`)
+    window.location.assign(`/write/${record.taskType}?draft=${encodeURIComponent(record.id)}`)
   }
 
   async function confirmDelete() {

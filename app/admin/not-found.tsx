@@ -1,4 +1,3 @@
-import Link from 'next/link'
 
 export default function AdminNotFound() {
   return (
@@ -17,7 +16,7 @@ export default function AdminNotFound() {
         <p style={{ fontSize: 14, color: '#6b7280', margin: '0 0 20px' }}>
           请检查链接是否正确。
         </p>
-        <Link
+        <a
           href="/admin"
           style={{
             padding: '8px 20px',
@@ -31,7 +30,7 @@ export default function AdminNotFound() {
           }}
         >
           返回管理首页
-        </Link>
+        </a>
       </div>
     </div>
   )

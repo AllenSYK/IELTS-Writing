@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import Image from 'next/image'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { AsyncButton, ConfirmDialog, useDebouncedValue, useNetworkStatus, useToast } from '@/components/interaction-system'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
@@ -279,7 +279,6 @@ function questionFromDraftTask(task: DraftTask | undefined, taskType: MockTaskTy
 
 export default function WritePage() {
   const params = useParams()
-  const router = useRouter()
   const { userId } = useUserSession()
   const { pushToast } = useToast()
   const online = useNetworkStatus()
@@ -546,7 +545,7 @@ export default function WritePage() {
             : code === 'DRAFT_LIMIT_REACHED_FULL_TEST'
               ? 'mock'
               : mode
-          router.replace(`/practice?drafts=1&draftTab=${draftTab}`)
+          window.location.replace(`/practice?drafts=1&draftTab=${draftTab}`)
           return
         }
 
@@ -564,7 +563,7 @@ export default function WritePage() {
             title: studyPlanTaskId ? '无法读取学习规划中的题目' : '无法读取题库题目',
             message: assignedQuestionResult.error.message
           })
-          router.replace(studyPlanTaskId ? '/study-plan' : '/ielts/past-papers')
+          window.location.replace(studyPlanTaskId ? '/study-plan' : '/ielts/past-papers')
           return
         }
         setPromptSelection(selection)
@@ -734,7 +733,7 @@ export default function WritePage() {
     return () => {
       cancelled = true
     }
-  }, [mode, router, userId])
+  }, [mode, pushToast, userId])
 
   useEffect(() => {
     if (!hydrated || !splitKey || loadedSplitKeyRef.current === splitKey) return
@@ -841,7 +840,7 @@ export default function WritePage() {
     setExitSaveError('')
     try {
       await saveNow({ force: true })
-      router.push('/practice')
+      window.location.assign('/practice')
     } catch (error) {
       setExitSaveError(error instanceof Error ? error.message : '草稿保存失败，请重试')
     } finally {
@@ -1065,7 +1064,7 @@ export default function WritePage() {
       setSubmitStatus('success')
       succeeded = true
       pushToast({ kind: 'success', title: '批改完成', message: '正在打开结果页。' })
-      router.push(`/result?id=${record.id}`)
+      window.location.assign(`/result?id=${record.id}`)
     } catch (caught) {
       const presentation = evaluationErrorMessage(caught)
       if (caught instanceof WritingEvaluationError && caught.kind === 'cancelled') {
@@ -1315,7 +1314,7 @@ export default function WritePage() {
       } else {
         pushToast({ kind: 'success', title: '模考批改完成', message: '正在打开完整结果。' })
       }
-      router.push(`/result?id=${record.id}`)
+      window.location.assign(`/result?id=${record.id}`)
     } catch (caught) {
       const presentation = evaluationErrorMessage(caught)
       if (caught instanceof WritingEvaluationError && caught.kind === 'cancelled') {
@@ -1789,7 +1788,7 @@ export default function WritePage() {
         cancelLabel={exitSaveError ? '放弃保存并退出' : '留下'}
         onCancel={() => {
           if (exitSaveError) {
-            router.push('/practice')
+            window.location.assign('/practice')
           } else {
             setShowExitConfirm(false)
           }

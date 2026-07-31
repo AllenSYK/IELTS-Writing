@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import useSWR from 'swr'
 import {
   ArrowRight,
@@ -105,7 +104,7 @@ export function AdminOverviewClient() {
             <button className="admin-secondary-button" type="button" onClick={exportOverview} disabled={!data}>
               <Download size={16} />导出数据
             </button>
-            <Link className="admin-primary-button" href="/admin/licenses?create=1"><Plus size={16} />生成激活码</Link>
+            <a className="admin-primary-button" href="/admin/licenses?create=1"><Plus size={16} />生成激活码</a>
           </>
         )}
       />
@@ -124,9 +123,9 @@ export function AdminOverviewClient() {
             <div><p className="admin-eyebrow">QUICK ENTRIES</p><h2>独立管理入口</h2></div>
           </div>
           <div className="admin-quick-grid">
-            <Link href="/admin/licenses"><KeyRound size={19} /><span><strong>管理激活码</strong><small>生成、禁用、撤销、删除和导出激活码</small></span></Link>
-            <Link href="/admin/bindings"><Link2 size={19} /><span><strong>查看邮箱绑定</strong><small>管理邮箱与激活码之间的权限关系</small></span></Link>
-            <Link href="/admin/users"><UsersRound size={19} /><span><strong>用户管理</strong><small>查看账号角色、验证和激活状态</small></span></Link>
+            <a href="/admin/licenses"><KeyRound size={19} /><span><strong>管理激活码</strong><small>生成、禁用、撤销、删除和导出激活码</small></span></a>
+            <a href="/admin/bindings"><Link2 size={19} /><span><strong>查看邮箱绑定</strong><small>管理邮箱与激活码之间的权限关系</small></span></a>
+            <a href="/admin/users"><UsersRound size={19} /><span><strong>用户管理</strong><small>查看账号角色、验证和激活状态</small></span></a>
             <button type="button" onClick={exportOverview}><Download size={19} /><span><strong>导出数据</strong><small>下载当前总览快照</small></span></button>
           </div>
         </article>
@@ -134,18 +133,18 @@ export function AdminOverviewClient() {
         <article className="admin-panel">
           <div className="admin-panel-heading">
             <div><p className="admin-eyebrow">RECENT LICENSES</p><h2>最近生成的激活码</h2></div>
-            <Link className="admin-text-button" href="/admin/licenses">查看全部 <ArrowRight size={15} /></Link>
+            <a className="admin-text-button" href="/admin/licenses">查看全部 <ArrowRight size={15} /></a>
           </div>
           {loading ? <AdminTableSkeleton columns={4} rows={5} /> : data?.recentLicenses.length ? (
             <div className="admin-compact-list">
               {data.recentLicenses.map((license) => (
-                <Link key={license.id} href={`/admin/licenses?licenseId=${license.id}`} prefetch={false}>
+                <a key={license.id} href={`/admin/licenses?licenseId=${license.id}`}>
                   <span className="admin-list-icon"><KeyRound size={17} /></span>
                   <span><strong>{license.code_prefix}-••••-••••</strong><small>{license.plan} · {formatAdminDate(license.created_at)}</small></span>
                   <span>{license.activation_count}/{license.max_activations}</span>
                   <AdminBadge value={license.status} />
                   <ArrowRight size={16} />
-                </Link>
+                </a>
               ))}
             </div>
           ) : <AdminEmpty title="还没有激活码" message="生成第一批激活码后，它们会显示在这里。" />}
@@ -154,20 +153,20 @@ export function AdminOverviewClient() {
         <article className="admin-panel admin-panel-span-2">
           <div className="admin-panel-heading">
             <div><p className="admin-eyebrow">RECENT BINDINGS</p><h2>最近邮箱绑定</h2></div>
-            <Link className="admin-text-button" href="/admin/bindings">查看全部 <ArrowRight size={15} /></Link>
+            <a className="admin-text-button" href="/admin/bindings">查看全部 <ArrowRight size={15} /></a>
           </div>
           {loading ? <AdminTableSkeleton columns={4} rows={5} /> : data?.recentBindings.length ? (
             <div className="admin-compact-list">
               {data.recentBindings.map((binding) => {
                 const license = Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes
                 return (
-                  <Link key={binding.id} href={`/admin/bindings?userId=${binding.user_id}`} prefetch={false}>
+                  <a key={binding.id} href={`/admin/bindings?userId=${binding.user_id}`}>
                     <span className="admin-list-icon"><Link2 size={17} /></span>
                     <span><strong>{binding.email}</strong><small>{license?.code_prefix || '未知激活码'} · {formatAdminDate(binding.activated_at)}</small></span>
                     <span>{license?.plan || '—'}</span>
                     <AdminBadge value={binding.binding_status} />
                     <ArrowRight size={16} />
-                  </Link>
+                  </a>
                 )
               })}
             </div>
@@ -177,7 +176,7 @@ export function AdminOverviewClient() {
         <article className="admin-panel">
           <div className="admin-panel-heading">
             <div><p className="admin-eyebrow">NEW USERS</p><h2>最近注册用户</h2></div>
-            <Link className="admin-text-button" href="/admin/users">用户管理</Link>
+            <a className="admin-text-button" href="/admin/users">用户管理</a>
           </div>
           {loading ? <AdminTableSkeleton columns={3} rows={5} /> : data?.recentUsers.length ? (
             <div className="admin-timeline">

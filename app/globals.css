@@ -270,12 +270,6 @@ img {
   background: rgba(255, 255, 255, 0.4);
 }
 
-.ui-nav-link:active,
-.ui-bottom-nav a:active,
-.ui-icon-button:active {
-  transform: scale(0.95);
-}
-
 .ui-nav-link.is-active {
   color: var(--primary);
   font-weight: 700;
@@ -392,7 +386,6 @@ img {
 }
 
 .ui-hover-glow:hover {
-  transform: translateY(-2px);
   background: rgba(255, 255, 255, 0.85);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.04), 0 0 20px rgba(0, 88, 188, 0.1), inset 0 1px 0 rgba(255, 255, 255, 1);
 }
@@ -480,11 +473,6 @@ img {
 .primary-button:hover {
   background: rgba(0, 88, 188, 0.88);
   box-shadow: 0 12px 32px rgba(0, 88, 188, 0.4);
-}
-
-.ui-primary-button:active,
-.primary-button:active {
-  transform: scale(0.97);
 }
 
 .ui-secondary-button,
@@ -2581,10 +2569,6 @@ img {
   border-color: rgba(0, 88, 188, 0.24);
 }
 
-.annotation-filter:active {
-  transform: scale(0.985);
-}
-
 .annotation-filter.is-active {
   color: var(--primary);
   background: rgba(216, 226, 255, 0.5);
@@ -2950,10 +2934,6 @@ img {
 
 .annotation-accept-all:hover {
   background: rgba(216, 226, 255, 0.46);
-}
-
-.annotation-accept-all:active {
-  transform: scale(0.985);
 }
 
 .modified-essay-preview,
@@ -4376,7 +4356,6 @@ img {
 .admin-mini-list button:hover,
 .admin-drawer-actions button:hover,
 .admin-icon-button:hover {
-  transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(24, 28, 35, 0.08);
 }
 
@@ -4994,8 +4973,9 @@ img {
 
 .auth-page {
   min-height: 100dvh;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding:
     max(20px, env(safe-area-inset-top))
     16px
@@ -5003,6 +4983,11 @@ img {
   background:
     linear-gradient(150deg, rgba(255, 255, 255, 0.94), rgba(239, 247, 255, 0.88) 48%, rgba(247, 250, 252, 0.96)),
     linear-gradient(180deg, #ffffff 0%, #eef4f8 100%);
+}
+
+.auth-page > .auth-panel {
+  flex: 0 0 auto;
+  margin-block: auto;
 }
 
 .auth-page-modern {
@@ -5053,6 +5038,81 @@ img {
   padding: 24px 26px;
 }
 
+@media (max-height: 900px) {
+  .auth-register-panel {
+    gap: 12px;
+    padding-block: 18px;
+  }
+
+  .auth-register-panel .auth-brand-block {
+    gap: 5px;
+  }
+
+  .auth-register-panel .brand-logo-stacked {
+    gap: 5px;
+  }
+
+  .auth-register-panel .brand-logo-lg {
+    --brand-logo-size: 58px;
+  }
+
+  .auth-register-panel .auth-brand-block p {
+    font-size: 13px;
+    line-height: 1.35;
+  }
+
+  .auth-register-panel .auth-copy {
+    gap: 4px;
+  }
+
+  .auth-register-panel .auth-copy h1 {
+    font-size: 26px;
+  }
+
+  .auth-register-panel .auth-copy p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .auth-register-panel .auth-form-modern {
+    gap: 10px;
+  }
+
+  .auth-register-panel .auth-form label {
+    gap: 6px;
+  }
+
+  .auth-register-panel .auth-form input,
+  .auth-register-panel .auth-input-shell {
+    min-height: 44px;
+  }
+
+  .auth-register-panel .auth-input-shell input {
+    min-height: 42px;
+  }
+
+  .auth-register-panel .password-strength {
+    gap: 6px;
+    margin-top: -4px;
+  }
+
+  .auth-register-panel .password-checks {
+    gap: 6px;
+  }
+
+  .auth-register-panel .password-checks span {
+    padding: 3px 7px;
+  }
+
+  .auth-register-panel .auth-form .agreement-consent {
+    line-height: 1.4;
+  }
+
+  .auth-register-panel .auth-main-button {
+    min-height: 44px;
+  }
+}
+
 .auth-brand-block {
   display: grid;
   justify-items: center;
@@ -5075,33 +5135,6 @@ img {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.45;
-}
-
-.auth-method-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  border: 1px solid rgba(10, 102, 255, 0.12);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.48);
-  padding: 4px;
-}
-
-.auth-method-tabs-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.auth-method-label {
-  margin: 0;
-  min-height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  color: #0a66ff;
-  background: rgba(216, 226, 255, 0.88);
-  box-shadow: 0 6px 18px rgba(10, 102, 255, 0.08);
-  font-size: 13px;
-  font-weight: 800;
 }
 
 .phone-input-row {
@@ -6120,6 +6153,8 @@ img {
 .app-route-root.is-full-screen {
   height: 100dvh;
   overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .sidebar {
@@ -6219,10 +6254,6 @@ img {
 .sidebar-link:hover {
   color: var(--primary);
   background: rgba(255, 255, 255, 0.58);
-}
-
-.sidebar-link:active {
-  transform: scale(0.985);
 }
 
 .sidebar-link.is-active {
@@ -7206,7 +7237,6 @@ img {
   border-color: var(--primary);
   background: rgba(216, 226, 255, 0.42);
   outline: none;
-  transform: translateY(-1px);
 }
 
 .custom-task-dropzone strong {
@@ -7552,7 +7582,6 @@ img {
   border-color: rgba(0, 88, 188, 0.18);
   background: rgba(255, 255, 255, 0.72);
   color: var(--primary);
-  transform: translateY(-1px);
 }
 
 .faq-list button span {
@@ -7787,16 +7816,6 @@ img {
   user-select: none;
 }
 
-.ui-primary-button:active,
-.primary-button:active,
-.ui-secondary-button:active,
-.glass-button:active,
-.ui-dark-button:active,
-.submit-essay-button:active,
-.danger-action-button:active {
-  transform: scale(0.985);
-}
-
 .ui-primary-button[aria-busy="true"],
 .ui-secondary-button[aria-busy="true"],
 .submit-essay-button[aria-busy="true"] {
@@ -7862,10 +7881,6 @@ img {
 .ui-hover-glow {
   will-change: transform;
   transition: box-shadow var(--motion-medium) var(--ease-standard), transform var(--motion-medium) var(--ease-standard), background var(--motion-medium) var(--ease-standard), border-color var(--motion-medium) var(--ease-standard);
-}
-
-.ui-hover-glow:active {
-  transform: translateY(0) scale(0.995);
 }
 
 .ui-clickable-card {
@@ -8104,10 +8119,6 @@ img {
 .command-item.is-active,
 .command-item:hover {
   background: rgba(216, 226, 255, 0.45);
-}
-
-.command-item:active {
-  transform: scale(0.99);
 }
 
 .command-icon {

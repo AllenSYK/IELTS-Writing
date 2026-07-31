@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useCallback, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
@@ -149,10 +148,10 @@ export default function ErrorNotebookPage() {
               自动汇总你在雅思写作中反复出现的错误，针对性复习。
             </p>
           </div>
-          <Link href="/study-plan" className="ui-secondary-button" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <a href="/study-plan" className="ui-secondary-button" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <MaterialIcon name="arrow_back" size={18} />
             返回学习规划
-          </Link>
+          </a>
         </header>
 
         {hasRecords && hasRemaining && (
@@ -186,9 +185,9 @@ export default function ErrorNotebookPage() {
             <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
               完成更多作文批改后，错误会自动汇总到这里。
             </p>
-            <Link className="ui-primary-button" href="/practice" style={{ marginTop: 16, display: 'inline-flex' }}>
+            <a className="ui-primary-button" href="/practice" style={{ marginTop: 16, display: 'inline-flex' }}>
               开始写作
-            </Link>
+            </a>
           </GlassPanel>
         )}
 

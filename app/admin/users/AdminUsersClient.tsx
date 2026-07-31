@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
@@ -574,7 +573,7 @@ export function AdminUsersClient() {
                 <section>
                   <div className="admin-panel-heading">
                     <div><p className="admin-eyebrow">EMAIL BINDINGS</p><h3>邮箱绑定记录</h3></div>
-                    <Link className="admin-text-button" href={`/admin/bindings?userId=${selected.id}`}>查看此邮箱的绑定记录</Link>
+                    <a className="admin-text-button" href={`/admin/bindings?userId=${selected.id}`}>查看此邮箱的绑定记录</a>
                   </div>
                   <section className="admin-binding-summary">
                     <div>
@@ -584,7 +583,7 @@ export function AdminUsersClient() {
                         <p>{selected.isBound ? '套餐、账号到期时间和绑定状态请进入邮箱绑定页面查看。' : '当前账号尚无绑定关系。'}</p>
                       </div>
                     </div>
-                    <Link className="admin-primary-button" href={`/admin/bindings?userId=${selected.id}`}>查看绑定历史</Link>
+                    <a className="admin-primary-button" href={`/admin/bindings?userId=${selected.id}`}>查看绑定历史</a>
                   </section>
                   {!selected.isBound ? (
                     <form className="admin-inline-bind" onSubmit={bindUser}>

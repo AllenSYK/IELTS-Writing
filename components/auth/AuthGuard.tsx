@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/auth/UserSessionProvider'
 import { PageSkeleton } from '@/components/loading/PageSkeleton'
 
@@ -11,14 +10,13 @@ type AuthGuardProps = {
 }
 
 export function AuthGuard({ children, fallback }: AuthGuardProps) {
-  const router = useRouter()
   const { userId, status } = useAuth()
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`)
+      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`)
     }
-  }, [status, router])
+  }, [status])
 
   if (status === 'loading') {
     return fallback ?? <PageSkeleton />

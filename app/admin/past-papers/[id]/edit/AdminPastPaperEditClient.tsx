@@ -1,8 +1,6 @@
 'use client'
 
-import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminTableSkeleton, AdminError } from '@/components/admin/AdminUI'
 import { useToast } from '@/components/interaction-system'
@@ -68,7 +66,6 @@ type QuestionData = {
 }
 
 export function AdminPastPaperEditClient({ questionId }: { questionId: string }) {
-  const router = useRouter()
   const { pushToast } = useToast()
   const [question, setQuestion] = useState<QuestionData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -211,7 +208,7 @@ export function AdminPastPaperEditClient({ questionId }: { questionId: string })
         description={`ID: ${question.id}`}
         actions={
           <div style={{ display: 'flex', gap: 8 }}>
-            <Link className="admin-secondary-button" href="/admin/past-papers">返回列表</Link>
+            <a className="admin-secondary-button" href="/admin/past-papers">返回列表</a>
             <button className="admin-secondary-button" type="button" onClick={() => void fetchQuestion()}>刷新</button>
           </div>
         }
@@ -536,7 +533,7 @@ export function AdminPastPaperEditClient({ questionId }: { questionId: string })
             </button>
           )}
         </div>
-        <Link className="admin-secondary-button" href="/admin/past-papers">取消</Link>
+        <a className="admin-secondary-button" href="/admin/past-papers">取消</a>
       </div>
     </main>
   )

@@ -1,7 +1,6 @@
 'use client'
 
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { readStorageValue } from '@/lib/user-storage'
 import {
   createContext,
@@ -204,7 +203,6 @@ function writeRecent(id: string) {
 }
 
 function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const router = useRouter()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -223,7 +221,7 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         title: '查看当前草稿',
         subtitle: '打开草稿记录并选择要继续的练习',
         icon: 'draft',
-        run: () => router.push('/practice?drafts=1'),
+        run: () => window.location.assign('/practice?drafts=1'),
         keywords: 'draft 草稿 current'
       },
       {
@@ -231,11 +229,11 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
         title: '搜索历史记录',
         subtitle: '跳转到历史并带上当前搜索词',
         icon: 'search',
-        run: () => router.push(`/history${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`),
+        run: () => window.location.assign(`/history${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`),
         keywords: 'search history 搜索 历史'
       }
     ],
-    [query, router]
+    [query]
   )
 
   const recents = useMemo(() => (open ? readRecents() : []), [open])
@@ -254,10 +252,10 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
       onOpenChange(false)
       setQuery('')
       setSelected(0)
-      if (action.href) router.push(action.href)
+      if (action.href) window.location.assign(action.href)
       else action.run?.()
     },
-    [onOpenChange, router]
+    [onOpenChange]
   )
 
   useEffect(() => {
@@ -345,7 +343,6 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 }
 
 function GlobalShortcuts({ onCommand }: { onCommand: () => void }) {
-  const router = useRouter()
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -357,17 +354,17 @@ function GlobalShortcuts({ onCommand }: { onCommand: () => void }) {
       }
       if (modifier && event.key === '1') {
         event.preventDefault()
-        router.push('/write/task1')
+        window.location.assign('/write/task1')
         return
       }
       if (modifier && event.key === '2') {
         event.preventDefault()
-        router.push('/write/task2')
+        window.location.assign('/write/task2')
         return
       }
       if (modifier && event.key === ',') {
         event.preventDefault()
-        router.push('/dashboard')
+        window.location.assign('/dashboard')
         return
       }
       if (event.key === '/' && !modifier && !isTypingTarget(event.target)) {
@@ -381,7 +378,7 @@ function GlobalShortcuts({ onCommand }: { onCommand: () => void }) {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onCommand, router])
+  }, [onCommand])
 
   return null
 }
@@ -637,9 +634,9 @@ export function EmptyState({ title, message, href, action }: { title: string; me
       <h2 className="ui-title-md">{title}</h2>
       <p className="ui-body-md">{message}</p>
       {href && action ? (
-        <Link className="ui-primary-button" href={href}>
+        <a className="ui-primary-button" href={href}>
           {action}
-        </Link>
+        </a>
       ) : null}
     </section>
   )

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import useSWR from 'swr'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminTableSkeleton, AdminEmpty, AdminError, AdminBadge, formatAdminDate } from '@/components/admin/AdminUI'
@@ -184,10 +183,10 @@ export function AdminPastPapersClient() {
                   <td>{formatAdminDate(item.createdAt)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      <Link className="admin-secondary-button" href={`/admin/past-papers/${item.id}/edit`} prefetch={false}>编辑</Link>
+                      <a className="admin-secondary-button" href={`/admin/past-papers/${item.id}/edit`}>编辑</a>
                       {item.status !== 'published' && <button className="admin-secondary-button" type="button" disabled={Boolean(pendingId)} onClick={() => setStatusConfirm({ id: item.id, action: 'publish', title: item.title })}>发布</button>}
                       {item.status === 'published' && <button className="admin-secondary-button" type="button" disabled={Boolean(pendingId)} onClick={() => setStatusConfirm({ id: item.id, action: 'unpublish', title: item.title })}>下架</button>}
-                      <button className="admin-secondary-button" onClick={() => setShowAnalyze(item.id)}>AI 分析</button>
+                      <button type="button" className="admin-secondary-button" onClick={() => setShowAnalyze(item.id)}>AI 分析</button>
                     </div>
                   </td>
                 </tr>
@@ -199,9 +198,9 @@ export function AdminPastPapersClient() {
 
       {total > 20 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
-          <button className="admin-secondary-button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</button>
+          <button type="button" className="admin-secondary-button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</button>
           <span style={{ alignSelf: 'center' }}>{page} / {Math.ceil(total / 20)}</span>
-          <button className="admin-secondary-button" disabled={items.length < 20} onClick={() => setPage((p) => p + 1)}>下一页</button>
+          <button type="button" className="admin-secondary-button" disabled={items.length < 20} onClick={() => setPage((p) => p + 1)}>下一页</button>
         </div>
       )}
 
@@ -315,8 +314,8 @@ function AnalyzeDialog({ questionId, onClose, onAnalyze }: { questionId: string;
       <section className="confirm-dialog" style={{ maxWidth: 500, width: '90%' }} onMouseDown={(e) => e.stopPropagation()}>
         <h2 className="ui-title-md">AI 分析</h2>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button className={mode === 'text' ? 'admin-primary-button' : 'admin-secondary-button'} onClick={() => setMode('text')}>文字分析</button>
-          <button className={mode === 'image' ? 'admin-primary-button' : 'admin-secondary-button'} onClick={() => setMode('image')}>图片分析</button>
+          <button type="button" className={mode === 'text' ? 'admin-primary-button' : 'admin-secondary-button'} onClick={() => setMode('text')}>文字分析</button>
+          <button type="button" className={mode === 'image' ? 'admin-primary-button' : 'admin-secondary-button'} onClick={() => setMode('image')}>图片分析</button>
         </div>
         {mode === 'text' ? (
           <textarea value={rawText} onChange={(e) => setRawText(e.target.value)} rows={6} placeholder="粘贴题目文字..." style={{ width: '100%', padding: 8, borderRadius: 8 }} />

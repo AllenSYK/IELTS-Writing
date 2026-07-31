@@ -1,8 +1,6 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, LockKeyhole, LogIn, Mail } from 'lucide-react'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
@@ -35,7 +33,6 @@ async function postWithTimeout<T>(url: string, payload: unknown, timeoutMs = 150
 }
 
 export default function LoginPage() {
-  const router = useRouter()
   const { refreshUser, status: sessionStatus } = useUserSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -46,22 +43,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (sessionStatus === 'authenticated') {
-      router.replace('/practice')
+      window.location.replace('/practice')
     }
-  }, [sessionStatus, router])
-
-  if (sessionStatus === 'loading') {
-    return (
-      <main className="auth-page auth-page-modern" data-main-content tabIndex={-1}>
-        <section className="auth-panel auth-panel-modern">
-          <AuthBrandHeader />
-          <header className="auth-copy">
-            <h1>加载中…</h1>
-          </header>
-        </section>
-      </main>
-    )
-  }
+  }, [sessionStatus])
 
   if (sessionStatus === 'authenticated') return null
 
@@ -90,7 +74,7 @@ export default function LoginPage() {
       }
 
       await refreshUser()
-      router.replace(data.redirectTo || '/activate')
+      window.location.replace(data.redirectTo || '/activate')
     } catch (caught) {
       setError(caught instanceof DOMException && caught.name === 'AbortError' ? '请求超时，请检查网络后重试。' : '登录失败，请稍后重试。')
     } finally {
@@ -104,13 +88,10 @@ export default function LoginPage() {
         <AuthBrandHeader />
 
         <header className="auth-copy">
+          <p className="auth-kicker">邮箱登录</p>
           <h1>欢迎回来</h1>
           <p>登录后将进入对应的账号页面。</p>
         </header>
-
-        <div className="auth-method-tabs auth-method-tabs-single">
-          <p className="auth-method-label">邮箱登录</p>
-        </div>
 
         <form className="auth-form auth-form-modern" onSubmit={handleSubmit}>
           <label>
@@ -152,7 +133,7 @@ export default function LoginPage() {
           </label>
 
           <div className="auth-row">
-            <Link href="/forgot-password">忘记密码</Link>
+            <a href="/forgot-password">忘记密码</a>
           </div>
 
           <AgreementConsent
@@ -175,7 +156,7 @@ export default function LoginPage() {
         </form>
 
         <p className="auth-switch">
-          没有账号？<Link href="/register">立即注册</Link>
+          没有账号？<a href="/register">立即注册</a>
         </p>
       </section>
     </main>

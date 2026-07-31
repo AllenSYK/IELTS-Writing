@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { ArrowLeft, MessageSquareText, Phone, RotateCcw, ShieldCheck } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
@@ -30,7 +29,6 @@ async function postJson<T>(url: string, body: unknown) {
 }
 
 export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
-  const router = useRouter()
   const { refreshUser } = useUserSession()
   const sendSingleFlight = useRef(createSingleFlight()).current
   const verifySingleFlight = useRef(createSingleFlight()).current
@@ -112,7 +110,7 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
         })
         if (!response.ok || !data.success) throw new Error(data.message || '验证码错误')
         await refreshUser()
-        router.replace(data.redirectTo || '/activate')
+        window.location.replace(data.redirectTo || '/activate')
       } catch (caught) {
         setError(caught instanceof DOMException && caught.name === 'AbortError'
           ? '请求超时，请检查网络后重试。'

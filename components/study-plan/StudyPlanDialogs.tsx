@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useState, useMemo } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
@@ -513,10 +512,10 @@ export function TaskDetailDialog({ task, onClose, onMutate }: {
             <button className="ui-secondary-button" type="button" onClick={handleSkip}>跳过</button>
           )}
           {task.status === 'completed' && task.writingRecordId && (
-            <Link className="ui-primary-button" href={`/result?id=${task.writingRecordId}`} prefetch={false}>查看结果</Link>
+            <a className="ui-primary-button" href={`/result?id=${task.writingRecordId}`}>查看结果</a>
           )}
           {task.status !== 'completed' && writingHref && (
-            <Link className="ui-primary-button" href={writingHref}>开始写作</Link>
+            <a className="ui-primary-button" href={writingHref}>开始写作</a>
           )}
         </div>
       }

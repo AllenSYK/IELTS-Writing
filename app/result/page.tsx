@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
 import { AnnotatedEssay } from '@/components/evaluation/AnnotatedEssay'
 import { AnnotationDialog } from '@/components/evaluation/AnnotationDialog'
 import { EvaluationLayout } from '@/components/evaluation/EvaluationLayout'
@@ -116,9 +115,9 @@ function EmptyResult() {
         <GlassPanel level={2} className="empty-state">
           <h1 className="ui-title-headline">暂无真实批改结果</h1>
           <p className="ui-body-md">提交作文并完成批改后，这里会展示总分、四项评分、逐句问题和改写建议。</p>
-          <Link className="ui-primary-button" href="/practice" style={{ marginTop: 24 }}>
+          <a className="ui-primary-button" href="/practice" style={{ marginTop: 24 }}>
             开始写作
-          </Link>
+          </a>
         </GlassPanel>
       </section>
     </main>
@@ -423,23 +422,23 @@ export default function ResultPage() {
 
         <div className="result-actions-row">
           {Boolean((record as Record<string, unknown>).studyPlanTaskId) && (
-            <Link className="ui-primary-button" href="/study-plan">
+            <a className="ui-primary-button" href="/study-plan">
               <MaterialIcon name="school" size={18} />
               返回学习计划
-            </Link>
+            </a>
           )}
-          <Link className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} prefetch={false} title="基于原题重写一篇新作文">
+          <a className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="基于原题重写一篇新作文">
             <MaterialIcon name="edit_note" size={18} />
             基于原题重写
-          </Link>
+          </a>
           <button className="ui-secondary-button" type="button" onClick={handleRewrite} disabled={rewriting} title="保留原稿，基于反馈创建新版本">
             <MaterialIcon name="auto_fix_high" size={18} />
             {rewriting ? '创建中…' : '根据反馈重写'}
           </button>
-          <Link className="ui-secondary-button" href={`/write/${record.taskType}`} prefetch={false}>
+          <a className="ui-secondary-button" href={`/write/${record.taskType}`}>
             <MaterialIcon name="replay" size={18} />
             重新练习
-          </Link>
+          </a>
           <button className="ui-secondary-button" type="button" onClick={saveToMistakes} disabled={mistakeSaved}>
             <MaterialIcon name={mistakeSaved ? 'bookmark' : 'bookmark_add'} size={18} />
             {mistakeSaved ? '已保存到错题本' : '保存到错题本'}

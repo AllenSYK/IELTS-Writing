@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { AlertTriangle, RefreshCw, Home, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface AdminErrorProps {
@@ -10,7 +9,6 @@ interface AdminErrorProps {
 }
 
 export default function AdminError({ error, reset }: AdminErrorProps) {
-  const router = useRouter()
   const [showDetails, setShowDetails] = useState(false)
   const [isResetting, setIsResetting] = useState(false)
 
@@ -39,9 +37,9 @@ export default function AdminError({ error, reset }: AdminErrorProps) {
   // 401 错误自动跳转登录
   useEffect(() => {
     if (is401) {
-      router.push('/login?returnTo=/admin')
+      window.location.assign('/login?returnTo=/admin')
     }
-  }, [is401, router])
+  }, [is401])
 
   // Abort 错误不显示
   if (isAbortError) {
@@ -99,7 +97,7 @@ export default function AdminError({ error, reset }: AdminErrorProps) {
 
         <div className="admin-error-actions">
           {!is401 && (
-            <button
+            <button type="button"
               onClick={handleReset}
               disabled={isResetting}
               className="admin-primary-button"
@@ -110,8 +108,8 @@ export default function AdminError({ error, reset }: AdminErrorProps) {
           )}
           
           {!is401 && !is403 && (
-            <button
-              onClick={() => router.push('/admin')}
+            <button type="button"
+              onClick={() => window.location.assign('/admin')}
               className="admin-secondary-button"
             >
               <Home size={16} />
@@ -120,8 +118,8 @@ export default function AdminError({ error, reset }: AdminErrorProps) {
           )}
 
           {is401 && (
-            <button
-              onClick={() => router.push('/login?returnTo=/admin')}
+            <button type="button"
+              onClick={() => window.location.assign('/login?returnTo=/admin')}
               className="admin-primary-button"
             >
               重新登录
@@ -131,7 +129,7 @@ export default function AdminError({ error, reset }: AdminErrorProps) {
 
         {process.env.NODE_ENV === 'development' && (
           <div className="admin-error-debug">
-            <button
+            <button type="button"
               onClick={() => setShowDetails(!showDetails)}
               className="admin-error-toggle"
             >

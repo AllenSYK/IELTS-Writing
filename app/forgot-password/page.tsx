@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { FormEvent, useState } from 'react'
 import { ArrowLeft, Mail, Send } from 'lucide-react'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
@@ -97,7 +96,7 @@ export default function ForgotPasswordPage() {
         </form>
 
         <p className="auth-switch">
-          <Link href="/login"><ArrowLeft size={15} /> 返回登录</Link>
+          <a href="/login"><ArrowLeft size={15} /> 返回登录</a>
         </p>
       </section>
     </main>

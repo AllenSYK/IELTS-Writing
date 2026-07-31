@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { LogOut } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
@@ -11,7 +10,6 @@ import { AuthSpinner } from '@/components/auth/AuthSubmitButton'
 import { useToast } from '@/components/interaction-system'
 
 export function LogoutButton() {
-  const router = useRouter()
   const { pushToast } = useToast()
   const { userId, prepareForLogout } = useUserSession()
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -27,8 +25,7 @@ export function LogoutButton() {
       if (userId) clearUserRouteMemoryCaches(userId)
       prepareForLogout()
       setConfirmOpen(false)
-      router.replace('/login')
-      router.refresh()
+      window.location.replace('/login')
     } catch (error) {
       pushToast({
         kind: 'error',

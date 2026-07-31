@@ -1,14 +1,12 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
-import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { Bell, Menu, Plus, Search, X } from 'lucide-react'
 import { getAdminRouteMeta } from '@/lib/admin/admin-routes'
 
 export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMenu: () => void }) {
   const pathname = usePathname()
-  const router = useRouter()
   const searchParams = useSearchParams()
   const urlSearch = searchParams.get('search') || ''
   const [search, setSearch] = useState(urlSearch)
@@ -28,18 +26,18 @@ export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMen
     
     if (!query) {
       // 清空搜索时恢复默认列表
-      router.push(searchConfig.targetPath)
+      window.location.assign(searchConfig.targetPath)
       return
     }
     
-    router.push(`${searchConfig.targetPath}?${searchConfig.paramName}=${encodeURIComponent(query)}`)
+    window.location.assign(`${searchConfig.targetPath}?${searchConfig.paramName}=${encodeURIComponent(query)}`)
   }
 
   function clearSearch() {
     setSearch('')
     const searchConfig = meta.search
     if (searchConfig) {
-      router.push(searchConfig.targetPath)
+      window.location.assign(searchConfig.targetPath)
     }
   }
 
@@ -83,10 +81,10 @@ export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMen
         <button className="admin-icon-button" type="button" aria-label="通知" title="暂无新通知">
           <Bell size={18} aria-hidden="true" />
         </button>
-        <Link className="admin-primary-button admin-header-create" href="/admin/licenses?create=1">
+        <a className="admin-primary-button admin-header-create" href="/admin/licenses?create=1">
           <Plus size={17} aria-hidden="true" />
           <span>生成激活码</span>
-        </Link>
+        </a>
         <span className="admin-header-avatar" title={adminEmail || '管理员'}>
           {(adminEmail || 'A').slice(0, 1).toUpperCase()}
         </span>
