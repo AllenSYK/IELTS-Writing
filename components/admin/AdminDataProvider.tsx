@@ -60,6 +60,8 @@ export const ADMIN_CACHE_KEYS = {
   PAST_PAPERS: '/api/admin/past-papers',
   // 管理设置
   SETTINGS: '/api/admin/settings',
+  // AI 模型配置
+  MODELS: '/api/admin/models',
 } as const
 
 /**
@@ -93,5 +95,8 @@ export const CACHE_INVALIDATION = {
   // 设置变更后
   afterSettingsChange: [
     ADMIN_CACHE_KEYS.SETTINGS,
+  ],
+  afterModelsChange: [
+    ADMIN_CACHE_KEYS.MODELS,
   ],
 } as const

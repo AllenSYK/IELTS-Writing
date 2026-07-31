@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getVisionAiConfig, getAiConfig, AiProviderError, AiConfigurationError } from '@/lib/ai-provider'
+import { getEffectiveVisionAiConfig, getEffectiveAiConfig, AiProviderError, AiConfigurationError } from '@/lib/ai-provider'
 
 const AnalyzeSchema = z.object({
   questionId: z.string().uuid(),
@@ -35,10 +35,14 @@ export async function POST(request: Request) {
     let analysisResult: Record<string, unknown>
 
     if (body.imageUrl) {
-      const visionConfig = getVisionAiConfig()
+      const visionConfig = await getEffectiveVisionAiConfig()
       analysisResult = await analyzeWithVision(visionConfig, body.imageUrl)
     } else if (body.rawText) {
-      const textConfig = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen-plus' })
+      const textConfig = await getEffectiveAiConfig({
+        slot: 'studyPlanModel',
+        modelEnv: 'QWEN_STUDY_PLAN_MODEL',
+        defaultModel: 'qwen-plus'
+      })
       analysisResult = await analyzeWithText(textConfig, body.rawText)
     } else {
       return json({ success: false, message: 'Either imageUrl or rawText required' }, { status: 400 })

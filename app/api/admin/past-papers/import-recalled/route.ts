@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
-import { getAiConfig, AiProviderError, AiConfigurationError } from '@/lib/ai-provider'
+import { getEffectiveAiConfig, AiProviderError, AiConfigurationError } from '@/lib/ai-provider'
 import type { RecalledExamImportResult, ExamMode, ExamSession, QuestionCompleteness } from '@/lib/past-paper-types'
 
 const AnalyzeSchema = z.object({
@@ -27,7 +27,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const config = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen3.5-plus' })
+    const config = await getEffectiveAiConfig({
+      slot: 'studyPlanModel',
+      modelEnv: 'QWEN_STUDY_PLAN_MODEL',
+      defaultModel: 'qwen3.5-plus'
+    })
     const result = await analyzeRecalledExam(config, body.rawText, body.defaultYear, body.defaultRegion, body.defaultMode)
 
     const { service } = admin

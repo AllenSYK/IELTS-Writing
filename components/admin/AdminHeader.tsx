@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Bell, Menu, Plus, Search, X } from 'lucide-react'
+import { BrainCircuit, Menu, Plus, Search, X } from 'lucide-react'
 import { getAdminRouteMeta } from '@/lib/admin/admin-routes'
 
 export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMenu: () => void }) {
@@ -78,9 +78,14 @@ export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMen
       )}
 
       <div className="admin-topbar-actions">
-        <button className="admin-icon-button" type="button" aria-label="通知" title="暂无新通知">
-          <Bell size={18} aria-hidden="true" />
-        </button>
+        <a
+          className={`admin-secondary-button admin-header-models ${pathname.startsWith('/admin/models') ? 'is-active' : ''}`}
+          href="/admin/models"
+          aria-current={pathname.startsWith('/admin/models') ? 'page' : undefined}
+        >
+          <BrainCircuit size={17} aria-hidden="true" />
+          <span>模型配置</span>
+        </a>
         <a className="admin-primary-button admin-header-create" href="/admin/licenses?create=1">
           <Plus size={17} aria-hidden="true" />
           <span>生成激活码</span>

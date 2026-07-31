@@ -2,8 +2,8 @@ import {
   AiProviderError,
   AiResponseError,
   createAiRequestId,
-  getVisionAiConfig,
-  getVisionFallbackAiConfig,
+  getEffectiveVisionAiConfig,
+  getEffectiveVisionFallbackAiConfig,
   requestValidatedJson,
   type AiConfig,
   type AiMessage
@@ -115,7 +115,7 @@ export async function parseUploadedWritingTask({
   signedImageUrl: string
   requestId?: string
 }): Promise<{ result: UploadedWritingTaskResult; model: string; requestId: string }> {
-  const primaryConfig = getVisionAiConfig()
+  const primaryConfig = await getEffectiveVisionAiConfig()
   const messages: AiMessage[] = [
     {
       role: 'system',
@@ -158,7 +158,7 @@ export async function parseUploadedWritingTask({
       throw error
     }
 
-    const fallbackConfig = getVisionFallbackAiConfig()
+    const fallbackConfig = await getEffectiveVisionFallbackAiConfig()
     console.warn('[uploaded-task-vision-fallback]', {
       requestId,
       primaryModel: primaryConfig.model,

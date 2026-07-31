@@ -83,8 +83,14 @@ export const adminRouteMeta: AdminRouteMeta[] = [
   // 管理设置
   {
     match: (path) => path.startsWith('/admin/settings'),
-    title: '管理设置',
+    title: '系统设置',
     eyebrow: 'Settings',
+  },
+  // AI 模型配置
+  {
+    match: (path) => path.startsWith('/admin/models'),
+    title: '模型配置',
+    eyebrow: 'AI Models',
   },
   // 管理概览 - 默认兜底
   {
@@ -113,7 +119,8 @@ export const adminPageTitles: Record<string, string> = {
   '/admin/users': '用户管理',
   '/admin/past-papers': '真题题库',
   '/admin/past-papers/new': '新增真题',
-  '/admin/settings': '管理设置',
+  '/admin/models': '模型配置',
+  '/admin/settings': '系统设置',
 }
 
 /**

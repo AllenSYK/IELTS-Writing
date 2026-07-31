@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
   createAiRequestId,
-  getGradingAiConfig,
+  getEffectiveGradingAiConfig,
   requestValidatedJson
 } from '@/lib/ai-provider'
 import type { WritingRecord } from '@/lib/writing-records'
@@ -60,7 +60,7 @@ export async function generateEssayDerivative(
   record: WritingRecord,
   kind: EssayDerivativeKind
 ) {
-  const config = getGradingAiConfig()
+  const config = await getEffectiveGradingAiConfig()
   const requestId = createAiRequestId('eval')
   const result = await requestValidatedJson({
     config,

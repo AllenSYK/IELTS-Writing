@@ -1,7 +1,7 @@
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
-import { getAiConfig, AiProviderError } from '@/lib/ai-provider'
+import { getEffectiveAiConfig, AiProviderError } from '@/lib/ai-provider'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadWritingRecordsFromServer } from '@/lib/writing-records'
 import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
@@ -79,7 +79,11 @@ export async function POST(request: Request) {
   let tasks: Array<Record<string, unknown>> = []
 
   try {
-    const aiConfig = getAiConfig({ modelEnv: 'QWEN_STUDY_PLAN_MODEL', defaultModel: 'qwen3.5-plus' })
+    const aiConfig = await getEffectiveAiConfig({
+      slot: 'studyPlanModel',
+      modelEnv: 'QWEN_STUDY_PLAN_MODEL',
+      defaultModel: 'qwen3.5-plus'
+    })
     const aiTasks = await generatePlanWithAI(aiConfig, { diagnosis, preferences, goals, records: records.slice(0, 20) })
     tasks = aiTasks
   } catch {

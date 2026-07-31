@@ -1,13 +1,13 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { requireWebAdmin } from '@/lib/web-license/auth'
-import { AdminSettingsClient } from './AdminSettingsClient'
+import { AdminModelsClient } from './AdminModelsClient'
 
 export const metadata: Metadata = {
-  title: '系统设置',
+  title: '模型配置'
 }
 
-export default async function AdminSettingsPage() {
+export default async function AdminModelsPage() {
   try {
     await requireWebAdmin()
   } catch (error) {
@@ -15,5 +15,6 @@ export default async function AdminSettingsPage() {
     if (error instanceof Response && error.status === 403) redirect('/admin/login?reason=not_admin')
     throw error
   }
-  return <AdminSettingsClient />
+
+  return <AdminModelsClient />
 }

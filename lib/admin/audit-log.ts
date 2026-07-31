@@ -20,6 +20,7 @@ export type AuditAction =
   | 'ai_classify'
   | 'update_past_paper'
   | 'update_settings'
+  | 'update_ai_models'
   | 'import_recalled'
   | 'batch_publish'
   | 'batch_archive'

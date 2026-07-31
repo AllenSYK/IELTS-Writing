@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   AiResponseError,
   createAiRequestId,
-  getGradingAiConfig,
+  getEffectiveGradingAiConfig,
   parseAiJsonObject,
   requestValidatedJson,
   type AiConfig,
@@ -1083,7 +1083,7 @@ export async function evaluateEssayWithAi(
   input: EssayEvaluationInput,
   options: { requestId?: string; cacheScope?: string } = {}
 ): Promise<EssayEvaluation> {
-  const config = getGradingAiConfig()
+  const config = await getEffectiveGradingAiConfig()
   const phase = input.phase || 'full'
   const requestId = options.requestId || createAiRequestId('eval')
   const cacheKey = getEvaluationCacheKey({

@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import {
+  BrainCircuit,
   BookOpen,
   FileText,
   KeyRound,
@@ -16,12 +17,28 @@ import { BRAND_NAME } from '@/lib/brand'
 import { AdminLogoutButton } from './AdminLogoutButton'
 
 const navigation = [
-  { href: '/admin', label: '总览', icon: LayoutDashboard, exact: true },
-  { href: '/admin/licenses', label: '激活码管理', icon: KeyRound },
-  { href: '/admin/bindings', label: '邮箱绑定', icon: Link2 },
-  { href: '/admin/users', label: '用户管理', icon: UsersRound },
-  { href: '/admin/past-papers', label: '真题题库', icon: FileText },
-  { href: '/admin/settings', label: '设置', icon: Settings }
+  {
+    label: '工作台',
+    items: [
+      { href: '/admin', label: '总览', icon: LayoutDashboard, exact: true }
+    ]
+  },
+  {
+    label: '业务管理',
+    items: [
+      { href: '/admin/licenses', label: '激活码管理', icon: KeyRound },
+      { href: '/admin/bindings', label: '邮箱绑定', icon: Link2 },
+      { href: '/admin/users', label: '用户管理', icon: UsersRound },
+      { href: '/admin/past-papers', label: '真题题库', icon: FileText }
+    ]
+  },
+  {
+    label: '系统',
+    items: [
+      { href: '/admin/models', label: '模型配置', icon: BrainCircuit },
+      { href: '/admin/settings', label: '系统设置', icon: Settings }
+    ]
+  }
 ]
 
 export function AdminSidebar({
@@ -55,21 +72,26 @@ export function AdminSidebar({
         </div>
 
         <nav className="admin-sidebar-nav">
-          {navigation.map((item) => {
-            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
-            const Icon = item.icon
-            return (
-              <a
-                key={item.href}
-                className={`admin-sidebar-item ${active ? 'is-active' : ''}`}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-              >
-                <Icon size={19} aria-hidden="true" />
-                <span>{item.label}</span>
-              </a>
-            )
-          })}
+          {navigation.map((section) => (
+            <div className="admin-sidebar-group" key={section.label}>
+              <span className="admin-sidebar-group-label">{section.label}</span>
+              {section.items.map((item) => {
+                const active = 'exact' in item && item.exact ? pathname === item.href : pathname.startsWith(item.href)
+                const Icon = item.icon
+                return (
+                  <a
+                    key={item.href}
+                    className={`admin-sidebar-item ${active ? 'is-active' : ''}`}
+                    href={item.href}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <Icon size={19} aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </a>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="admin-sidebar-bottom">

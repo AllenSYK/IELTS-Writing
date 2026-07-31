@@ -4,7 +4,7 @@ import {
   AiResponseError,
   createAiRequestId,
   fetchAiCompletion,
-  getAiConfig,
+  getEffectiveAiConfig,
   parseAiJsonObject,
   type AiMessage
 } from '@/lib/ai-provider'
@@ -706,7 +706,7 @@ function task1FallbackQuestion(input: PromptGenerationInput, requestId: string):
 }
 
 export async function generateWritingPromptWithAi(input: PromptGenerationInput): Promise<WritingQuestion> {
-  const config = getAiConfig()
+  const config = await getEffectiveAiConfig({ slot: 'promptModel' })
   const requestId = createAiRequestId('gen')
   const messages: AiMessage[] = [
     {

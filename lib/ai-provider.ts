@@ -1,5 +1,13 @@
 import { z } from 'zod'
 import { measureGradingStage } from '@/lib/grading-performance'
+import { createSupabaseServiceRoleClient } from '@/lib/supabase/service'
+import {
+  AI_MODEL_SETTINGS_ID,
+  AiModelSettingsSchema,
+  type AiModelSettings,
+  type AiModelSlot,
+  DEFAULT_AI_MODEL_SETTINGS
+} from '@/lib/ai-model-settings'
 
 export type AiConfig = {
   provider: string
@@ -99,6 +107,37 @@ function normalizeBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
 }
 
+export function getAiModelEnvironmentDefaults(): AiModelSettings {
+  return {
+    enabled: true,
+    provider: env('AI_PROVIDER') || DEFAULT_AI_MODEL_SETTINGS.provider,
+    baseUrl: normalizeBaseUrl(env('AI_BASE_URL') || DEFAULT_AI_MODEL_SETTINGS.baseUrl),
+    promptModel: env('AI_MODEL') || DEFAULT_AI_MODEL_SETTINGS.promptModel,
+    gradingModel: env('QWEN_GRADING_MODEL') || DEFAULT_AI_MODEL_SETTINGS.gradingModel,
+    studyPlanModel: env('QWEN_STUDY_PLAN_MODEL') || DEFAULT_AI_MODEL_SETTINGS.studyPlanModel,
+    visionModel: env('QWEN_VISION_MODEL') || DEFAULT_AI_MODEL_SETTINGS.visionModel,
+    visionFallbackModel: env('QWEN_VISION_FALLBACK_MODEL') || DEFAULT_AI_MODEL_SETTINGS.visionFallbackModel
+  }
+}
+
+async function getStoredAiModelSettings(): Promise<AiModelSettings | null> {
+  try {
+    const service = createSupabaseServiceRoleClient()
+    const { data, error } = await service
+      .from('admin_settings')
+      .select('setting_value')
+      .eq('id', AI_MODEL_SETTINGS_ID)
+      .maybeSingle()
+
+    if (error) throw error
+    const parsed = AiModelSettingsSchema.safeParse(data?.setting_value)
+    return parsed.success && parsed.data.enabled ? parsed.data : null
+  } catch (error) {
+    console.warn('[ai-model-settings-fallback]', error instanceof Error ? error.message : 'unknown error')
+    return null
+  }
+}
+
 export function getAiConfig({
   modelEnv = 'AI_MODEL',
   defaultModel
@@ -156,6 +195,53 @@ export function getVisionFallbackAiConfig() {
     throw new AiConfigurationError([`QWEN_VISION_FALLBACK_MODEL=${QWEN_VISION_FALLBACK_MODEL}`])
   }
   return config
+}
+
+export async function getEffectiveAiConfig({
+  slot,
+  modelEnv = 'AI_MODEL',
+  defaultModel
+}: {
+  slot: AiModelSlot
+  modelEnv?: string
+  defaultModel?: string
+}): Promise<AiConfig> {
+  const settings = await getStoredAiModelSettings()
+  if (!settings) return getAiConfig({ modelEnv, defaultModel })
+
+  const apiKey = env('AI_API_KEY')
+  if (!apiKey) throw new AiConfigurationError(['AI_API_KEY'])
+
+  return {
+    provider: settings.provider,
+    apiKey,
+    baseUrl: normalizeBaseUrl(settings.baseUrl),
+    model: settings[slot]
+  }
+}
+
+export function getEffectiveGradingAiConfig() {
+  return getEffectiveAiConfig({
+    slot: 'gradingModel',
+    modelEnv: 'QWEN_GRADING_MODEL',
+    defaultModel: 'qwen3.5-plus'
+  })
+}
+
+export function getEffectiveVisionAiConfig() {
+  return getEffectiveAiConfig({
+    slot: 'visionModel',
+    modelEnv: 'QWEN_VISION_MODEL',
+    defaultModel: REQUIRED_QWEN_VISION_MODEL
+  })
+}
+
+export function getEffectiveVisionFallbackAiConfig() {
+  return getEffectiveAiConfig({
+    slot: 'visionFallbackModel',
+    modelEnv: 'QWEN_VISION_FALLBACK_MODEL',
+    defaultModel: QWEN_VISION_FALLBACK_MODEL
+  })
 }
 
 export function createAiRequestId(prefix: 'eval' | 'gen' | 'parse') {
@@ -259,7 +345,7 @@ export async function fetchAiCompletion(
       body: JSON.stringify({
         model: config.model,
         messages,
-        enable_thinking: false,
+        ...(config.provider.toLowerCase() === 'qwen' ? { enable_thinking: false } : {}),
         temperature: 0.2,
         max_tokens: options.maxTokens,
         stream: true,
@@ -356,7 +442,7 @@ export async function fetchAiNonStreamingCompletion(
       body: JSON.stringify({
         model: config.model,
         messages,
-        enable_thinking: false,
+        ...(config.provider.toLowerCase() === 'qwen' ? { enable_thinking: false } : {}),
         temperature: 0.2,
         max_tokens: options.maxTokens,
         stream: false,

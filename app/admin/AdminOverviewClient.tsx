@@ -3,6 +3,7 @@
 import useSWR from 'swr'
 import {
   ArrowRight,
+  BrainCircuit,
   CircleCheckBig,
   Download,
   KeyRound,
@@ -126,7 +127,7 @@ export function AdminOverviewClient() {
             <a href="/admin/licenses"><KeyRound size={19} /><span><strong>管理激活码</strong><small>生成、禁用、撤销、删除和导出激活码</small></span></a>
             <a href="/admin/bindings"><Link2 size={19} /><span><strong>查看邮箱绑定</strong><small>管理邮箱与激活码之间的权限关系</small></span></a>
             <a href="/admin/users"><UsersRound size={19} /><span><strong>用户管理</strong><small>查看账号角色、验证和激活状态</small></span></a>
-            <button type="button" onClick={exportOverview}><Download size={19} /><span><strong>导出数据</strong><small>下载当前总览快照</small></span></button>
+            <a href="/admin/models"><BrainCircuit size={19} /><span><strong>模型配置</strong><small>分配批改、生成、计划与图片识别模型</small></span></a>
           </div>
         </article>
 

@@ -157,8 +157,8 @@ export function AdminSettingsClient() {
     <main className="admin-section" data-main-content tabIndex={-1}>
       <AdminPageHeader
         eyebrow="ADMIN SETTINGS"
-        title="管理设置"
-        description="配置激活码默认规则、提醒窗口和后台数据展示偏好。"
+        title="系统设置"
+        description="配置激活码默认规则、提醒窗口和后台数据展示偏好；AI 服务请前往模型配置。"
       />
 
       {error && !isLoading ? (

@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
-import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
-import { assertSupabasePublicConfig, assertSupabaseServiceConfig } from './env'
+import { assertSupabasePublicConfig } from './env'
+export { createSupabaseServiceRoleClient } from './service'
 
 export async function createSupabaseServerClient() {
   const { url, key } = assertSupabasePublicConfig()
@@ -21,16 +21,6 @@ export async function createSupabaseServerClient() {
           // Server Components cannot write cookies; middleware refreshes sessions.
         }
       }
-    }
-  })
-}
-
-export function createSupabaseServiceRoleClient() {
-  const { url, key } = assertSupabaseServiceConfig()
-  return createClient(url, key, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
     }
   })
 }
