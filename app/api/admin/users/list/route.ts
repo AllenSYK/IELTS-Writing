@@ -2,7 +2,41 @@ import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { UNBOUND_BINDING_REASON } from '@/lib/web-license/admin-license-data'
 import { toQueryParamNumber } from '@/lib/admin/number-utils'
+import { summarizeUsageRecords, type UserUsageSummary } from '@/lib/admin/user-usage-summary'
 import type { User } from '@supabase/supabase-js'
+
+type AdminService = Awaited<ReturnType<typeof requireAdminService>>['service']
+
+async function loadUsageSummary(service: AdminService, userIds: string[]): Promise<UserUsageSummary[]> {
+  if (userIds.length === 0) return []
+
+  const rpcResult = await service.rpc('get_admin_usage_summary', { p_user_ids: userIds })
+  if (!rpcResult.error) return rpcResult.data || []
+
+  // Older deployments may not have the optional aggregation RPC yet. Usage
+  // statistics must never prevent the core user directory from loading.
+  console.warn('[admin-users-usage-rpc-fallback]', {
+    code: rpcResult.error.code,
+    message: rpcResult.error.message
+  })
+
+  const fallbackResult = await service
+    .from('usage_records')
+    .select('user_id, created_at')
+    .in('user_id', userIds)
+    .order('created_at', { ascending: false })
+    .limit(10_000)
+
+  if (fallbackResult.error) {
+    console.warn('[admin-users-usage-unavailable]', {
+      code: fallbackResult.error.code,
+      message: fallbackResult.error.message
+    })
+    return []
+  }
+
+  return summarizeUsageRecords(fallbackResult.data || [])
+}
 
 export async function GET(request: Request) {
   try {
@@ -33,7 +67,7 @@ export async function GET(request: Request) {
     }
 
     const userIds = listedUsers.map((user) => user.id)
-    const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, { data: usage, error: usageError }] = await Promise.all([
+    const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, usage] = await Promise.all([
       userIds.length
         ? service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at').in('id', userIds)
         : Promise.resolve({ data: [], error: null }),
@@ -44,14 +78,11 @@ export async function GET(request: Request) {
             .in('user_id', userIds)
             .order('expires_at', { ascending: false })
         : Promise.resolve({ data: [], error: null }),
-      userIds.length
-        ? service.rpc('get_admin_usage_summary', { p_user_ids: userIds })
-        : Promise.resolve({ data: [], error: null })
+      loadUsageSummary(service, userIds)
     ])
 
     if (profilesError) throw profilesError
     if (activationsError) throw activationsError
-    if (usageError) throw usageError
 
     const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]))
     const activationMap = new Map<string, (typeof activations)[number]>()
@@ -70,7 +101,7 @@ export async function GET(request: Request) {
       }
     }
     const usageMap = new Map<string, { count: number; lastUsedAt: string | null }>()
-    for (const item of usage || []) {
+    for (const item of usage) {
       usageMap.set(item.user_id, {
         count: Number(item.evaluation_count || 0),
         lastUsedAt: item.last_used_at || null
