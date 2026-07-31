@@ -32,6 +32,7 @@ const ProviderDefaults: Record<string, Pick<AiConfig, 'baseUrl' | 'model'>> = {
 
 const DEFAULT_AI_TIMEOUT_MS = 240_000
 export const REQUIRED_QWEN_VISION_MODEL = 'qwen3.5-plus'
+export const QWEN_VISION_FALLBACK_MODEL = 'qwen3.5-flash'
 
 const StreamChunkSchema = z.object({
   choices: z.array(z.object({
@@ -86,6 +87,7 @@ export class AiResponseError extends AiProviderError {
 export function apiStatusForAiError(error: AiProviderError) {
   if (error.code === 'ai_rate_limited') return 429
   if (error.code === 'ai_request_timeout') return 504
+  if (error.code === 'ai_quota_exhausted') return 503
   return 502
 }
 
@@ -145,6 +147,17 @@ export function getVisionAiConfig() {
   return config
 }
 
+export function getVisionFallbackAiConfig() {
+  const config = getAiConfig({
+    modelEnv: 'QWEN_VISION_FALLBACK_MODEL',
+    defaultModel: QWEN_VISION_FALLBACK_MODEL
+  })
+  if (config.model !== QWEN_VISION_FALLBACK_MODEL) {
+    throw new AiConfigurationError([`QWEN_VISION_FALLBACK_MODEL=${QWEN_VISION_FALLBACK_MODEL}`])
+  }
+  return config
+}
+
 export function createAiRequestId(prefix: 'eval' | 'gen' | 'parse') {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -154,7 +167,18 @@ function configuredTimeoutMs() {
   return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_AI_TIMEOUT_MS
 }
 
-function providerHttpError(status: number) {
+function providerHttpError(status: number, body?: unknown) {
+  const detail = providerErrorText(body)
+  if (
+    status === 403 &&
+    /(AllocationQuota\.FreeTierOnly|free quota exhausted|quota exhausted|insufficient balance|余额不足|额度.*耗尽)/i.test(detail)
+  ) {
+    return new AiProviderError(
+      'AI 服务额度已用完，请稍后重试。',
+      status,
+      'ai_quota_exhausted'
+    )
+  }
   if (status === 401) {
     return new AiProviderError('API Key错误：请检查 AI_API_KEY。', status, 'ai_api_key_invalid')
   }
@@ -202,7 +226,7 @@ function nonStreamingProviderHttpError(status: number, body: unknown) {
       'vision_model_image_input_unsupported'
     )
   }
-  return providerHttpError(status)
+  return providerHttpError(status, body)
 }
 
 function readStreamChunk(data: string) {
@@ -244,7 +268,8 @@ export async function fetchAiCompletion(
     })
 
     if (!response.ok) {
-      throw providerHttpError(response.status)
+      const payload = await response.json().catch(() => null) as unknown
+      throw providerHttpError(response.status, payload)
     }
     if (!response.body) {
       throw new AiProviderError('AI 服务未返回流式响应。', undefined, 'ai_no_stream')

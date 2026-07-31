@@ -17,6 +17,8 @@ import {
 } from '@/lib/uploaded-writing-task'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 
+export const maxDuration = 300
+
 const UploadBucket = 'writing-task-uploads'
 const UploadRequestSchema = z.object({
   requestId: z.string().min(8).max(120).regex(/^[a-zA-Z0-9_-]+$/)
@@ -337,6 +339,14 @@ export async function POST(request: Request) {
           '当前配置的图片识别模型暂时无法处理图片。',
           requestId,
           422
+        )
+      }
+      if (error.code === 'ai_quota_exhausted') {
+        return errorResponse(
+          'VISION_SERVICE_QUOTA_EXHAUSTED',
+          '图片识别服务额度暂时不足，请稍后再试。',
+          requestId,
+          503
         )
       }
       return errorResponse(

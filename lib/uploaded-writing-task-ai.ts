@@ -1,4 +1,13 @@
-import { AiResponseError, createAiRequestId, getVisionAiConfig, requestValidatedJson } from '@/lib/ai-provider'
+import {
+  AiProviderError,
+  AiResponseError,
+  createAiRequestId,
+  getVisionAiConfig,
+  getVisionFallbackAiConfig,
+  requestValidatedJson,
+  type AiConfig,
+  type AiMessage
+} from '@/lib/ai-provider'
 import {
   UploadedWritingTaskResultSchema,
   type UploadedWritingTaskResult
@@ -106,26 +115,28 @@ export async function parseUploadedWritingTask({
   signedImageUrl: string
   requestId?: string
 }): Promise<{ result: UploadedWritingTaskResult; model: string; requestId: string }> {
-  const config = getVisionAiConfig()
-  const result = await requestValidatedJson({
+  const primaryConfig = getVisionAiConfig()
+  const messages: AiMessage[] = [
+    {
+      role: 'system',
+      content: [{ type: 'text', text: uploadedTaskSystemPrompt }]
+    },
+    {
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: signedImageUrl } },
+        { type: 'text', text: uploadedTaskUserPrompt }
+      ]
+    }
+  ]
+
+  const parseWithConfig = async (config: AiConfig) => requestValidatedJson({
     config,
     requestId,
     stage: 'uploaded-task-vision-parse',
     maxTokens: 10_000,
     responseMode: 'non-stream',
-    messages: [
-      {
-        role: 'system',
-        content: [{ type: 'text', text: uploadedTaskSystemPrompt }]
-      },
-      {
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: signedImageUrl } },
-          { type: 'text', text: uploadedTaskUserPrompt }
-        ]
-      }
-    ],
+    messages,
     validate(value) {
       const parsed = UploadedWritingTaskResultSchema.safeParse(value)
       if (!parsed.success) {
@@ -139,5 +150,22 @@ export async function parseUploadedWritingTask({
     }
   })
 
-  return { result, model: config.model, requestId }
+  try {
+    const result = await parseWithConfig(primaryConfig)
+    return { result, model: primaryConfig.model, requestId }
+  } catch (error) {
+    if (!(error instanceof AiProviderError) || error.code !== 'ai_quota_exhausted') {
+      throw error
+    }
+
+    const fallbackConfig = getVisionFallbackAiConfig()
+    console.warn('[uploaded-task-vision-fallback]', {
+      requestId,
+      primaryModel: primaryConfig.model,
+      fallbackModel: fallbackConfig.model,
+      reason: error.code
+    })
+    const result = await parseWithConfig(fallbackConfig)
+    return { result, model: fallbackConfig.model, requestId }
+  }
 }

@@ -90,6 +90,21 @@ test('study plan question-bank tasks open the exact assigned backend question', 
   assert.match(studyPlanDialogs, /studyPlanWritingHref\(task\)/)
 })
 
+test('study plan background work stays attached to the serverless lifecycle', async () => {
+  const [generationRoute, retryRoute, analysisRoute] = await Promise.all([
+    readFile(new URL('../app/api/study-plan/generation-jobs/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/study-plan/generation-jobs/[id]/retry/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/study-plan/analysis-refresh/route.ts', import.meta.url), 'utf8')
+  ])
+
+  for (const route of [generationRoute, retryRoute, analysisRoute]) {
+    assert.match(route, /import \{ after \} from 'next\/server'/)
+    assert.match(route, /export const maxDuration = 300/)
+    assert.match(route, /after\(async \(\) => \{/)
+    assert.doesNotMatch(route, /process(?:Generation|AnalysisRefresh)Job\([^)]*\)\.catch/)
+  }
+})
+
 test('past-paper detail query uses only deployed columns and distinguishes database failures from missing questions', async () => {
   const route = await readFile(
     new URL('../app/api/past-papers/[id]/route.ts', import.meta.url),
@@ -155,6 +170,7 @@ test('provider authentication failures stay server errors while rate limits rema
   assert.equal(apiStatusForAiError(new AiProviderError('bad key', 401, 'ai_api_key_invalid')), 502)
   assert.equal(apiStatusForAiError(new AiProviderError('busy', 429, 'ai_rate_limited')), 429)
   assert.equal(apiStatusForAiError(new AiProviderError('slow', undefined, 'ai_request_timeout')), 504)
+  assert.equal(apiStatusForAiError(new AiProviderError('quota', 403, 'ai_quota_exhausted')), 503)
 })
 
 test('settings and support pages use browser services only', async () => {
@@ -484,6 +500,7 @@ test('practice settings include automatic uploaded-task recognition and direct w
   assert.match(parseRoute, /confirmed_question:\s*question/)
   assert.match(parseRoute, /status:\s*'confirmed'/)
   assert.match(parseRoute, /redirectUrl/)
+  assert.match(parseRoute, /export const maxDuration = 300/)
   assert.match(parser, /responseMode:\s*'non-stream'/)
   assert.match(aiProvider, /stream:\s*false/)
   assert.match(writePage, /customTask/)

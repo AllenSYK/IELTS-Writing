@@ -1,7 +1,10 @@
+import { after } from 'next/server'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { processGenerationJob } from '@/lib/study-plan-generation'
+
+export const maxDuration = 300
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const check = await requireActiveWebLicense()
@@ -42,8 +45,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
     .eq('id', id)
 
-  processGenerationJob(id, check.user.id).catch((err) => {
-    console.error('[study-plan] Retry job failed:', err)
+  after(async () => {
+    try {
+      await processGenerationJob(id, check.user.id)
+    } catch (err) {
+      console.error('[study-plan] Retry job failed:', err)
+    }
   })
 
   return json({ success: true, jobId: id, status: 'queued' })

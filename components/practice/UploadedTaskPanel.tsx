@@ -31,6 +31,7 @@ const progressStages = [
 const errorMessages: Record<string, string> = {
   VISION_MODEL_NOT_CONFIGURED: '图片识别服务尚未配置，请稍后再试。',
   VISION_MODEL_IMAGE_INPUT_UNSUPPORTED: '当前配置的图片识别模型暂时无法处理图片。',
+  VISION_SERVICE_QUOTA_EXHAUSTED: '图片识别服务额度暂时不足，请稍后再试。',
   SIGNED_IMAGE_UNAVAILABLE: '题目图片暂时无法提供给识别服务，请直接重试。',
   TASK_IMAGE_PARSE_FAILED: '图片识别服务暂时不可用，请稍后直接重试。',
   MODEL_RESPONSE_INVALID: '识别结果格式异常，请直接重新识别。',

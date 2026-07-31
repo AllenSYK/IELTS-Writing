@@ -1,7 +1,10 @@
+import { after } from 'next/server'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { processAnalysisRefreshJob } from '@/lib/study-plan-analysis-refresh'
+
+export const maxDuration = 300
 
 export async function POST() {
   const check = await requireActiveWebLicense()
@@ -86,9 +89,13 @@ export async function POST() {
     return json({ success: false, message: error?.message || '创建任务失败' }, { status: 500 })
   }
 
-  // Start background processing
-  processAnalysisRefreshJob(job.id, userId).catch((err) => {
-    console.error('[analysis-refresh] Background job failed:', err)
+  // Keep the serverless invocation alive after returning the accepted response.
+  after(async () => {
+    try {
+      await processAnalysisRefreshJob(job.id, userId)
+    } catch (err) {
+      console.error('[analysis-refresh] Background job failed:', err)
+    }
   })
 
   return json({ success: true, jobId: job.id, status: 'queued' }, { status: 202 })

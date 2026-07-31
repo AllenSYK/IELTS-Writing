@@ -14,7 +14,8 @@ import {
   AiProviderError,
   fetchAiNonStreamingCompletion,
   getGradingAiConfig,
-  getVisionAiConfig
+  getVisionAiConfig,
+  getVisionFallbackAiConfig
 } from '../lib/ai-provider'
 import { validateBlockAnnotationResponse } from '../lib/essay-annotation-schema'
 import { applyAcceptedAnnotationChanges } from '../lib/essay-annotations'
@@ -664,18 +665,24 @@ test('grading model uses the dedicated qwen3.5-plus configuration', () => {
   }
 })
 
-test('vision model is fixed to qwen3.5-plus and never falls back to another model', () => {
+test('vision models are pinned to qwen3.5-plus with a qwen3.5-flash quota fallback', () => {
   const previousKey = process.env.AI_API_KEY
   const previousBaseUrl = process.env.AI_BASE_URL
   const previousVisionModel = process.env.QWEN_VISION_MODEL
+  const previousFallbackModel = process.env.QWEN_VISION_FALLBACK_MODEL
   process.env.AI_API_KEY = 'test-key'
   process.env.AI_BASE_URL = 'https://example.test/v1'
   delete process.env.QWEN_VISION_MODEL
+  delete process.env.QWEN_VISION_FALLBACK_MODEL
 
   try {
     assert.equal(getVisionAiConfig().model, 'qwen3.5-plus')
+    assert.equal(getVisionFallbackAiConfig().model, 'qwen3.5-flash')
     process.env.QWEN_VISION_MODEL = 'qwen3.7-plus'
     assert.throws(() => getVisionAiConfig(), /QWEN_VISION_MODEL=qwen3\.5-plus/)
+    process.env.QWEN_VISION_MODEL = 'qwen3.5-plus'
+    process.env.QWEN_VISION_FALLBACK_MODEL = 'qwen-vl-plus'
+    assert.throws(() => getVisionFallbackAiConfig(), /QWEN_VISION_FALLBACK_MODEL=qwen3\.5-flash/)
   } finally {
     if (previousKey === undefined) delete process.env.AI_API_KEY
     else process.env.AI_API_KEY = previousKey
@@ -683,6 +690,8 @@ test('vision model is fixed to qwen3.5-plus and never falls back to another mode
     else process.env.AI_BASE_URL = previousBaseUrl
     if (previousVisionModel === undefined) delete process.env.QWEN_VISION_MODEL
     else process.env.QWEN_VISION_MODEL = previousVisionModel
+    if (previousFallbackModel === undefined) delete process.env.QWEN_VISION_FALLBACK_MODEL
+    else process.env.QWEN_VISION_FALLBACK_MODEL = previousFallbackModel
   }
 })
 
@@ -757,6 +766,72 @@ test('uploaded-task recognition sends the signed image in OpenAI multimodal form
     else process.env.AI_BASE_URL = previousBaseUrl
     if (previousVisionModel === undefined) delete process.env.QWEN_VISION_MODEL
     else process.env.QWEN_VISION_MODEL = previousVisionModel
+  }
+})
+
+test('uploaded-task recognition falls back to qwen3.5-flash only when the primary quota is exhausted', async () => {
+  const originalFetch = globalThis.fetch
+  const originalWarn = console.warn
+  const previousKey = process.env.AI_API_KEY
+  const previousBaseUrl = process.env.AI_BASE_URL
+  const previousVisionModel = process.env.QWEN_VISION_MODEL
+  const previousFallbackModel = process.env.QWEN_VISION_FALLBACK_MODEL
+  process.env.AI_API_KEY = 'test-key'
+  process.env.AI_BASE_URL = 'https://example.test/v1'
+  process.env.QWEN_VISION_MODEL = 'qwen3.5-plus'
+  process.env.QWEN_VISION_FALLBACK_MODEL = 'qwen3.5-flash'
+  const requestedModels: string[] = []
+  const warnings: unknown[][] = []
+  console.warn = (...args: unknown[]) => warnings.push(args)
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    requestedModels.push(String(body.model))
+    if (requestedModels.length === 1) {
+      return new Response(JSON.stringify({
+        error: {
+          code: 'AllocationQuota.FreeTierOnly',
+          message: 'Free quota exhausted. Disable use free tier only mode.'
+        }
+      }), { status: 403, headers: { 'Content-Type': 'application/json' } })
+    }
+    return new Response(JSON.stringify({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            taskType: 'task2',
+            questionText: 'Some people prefer cities. To what extent do you agree or disagree?',
+            detectedQuestionType: 'agree_disagree',
+            requirements: ['To what extent do you agree or disagree?'],
+            minimumWords: 250,
+            suggestedMinutes: 40,
+            parseStatus: 'complete',
+            uncertainties: []
+          })
+        },
+        finish_reason: 'stop'
+      }]
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch
+
+  try {
+    const parsed = await parseUploadedWritingTask({
+      signedImageUrl: 'https://storage.example.test/signed/task.png',
+      requestId: 'parse-quota-fallback'
+    })
+    assert.deepEqual(requestedModels, ['qwen3.5-plus', 'qwen3.5-flash'])
+    assert.equal(parsed.model, 'qwen3.5-flash')
+    assert.equal(warnings.some((args) => args[0] === '[uploaded-task-vision-fallback]'), true)
+  } finally {
+    globalThis.fetch = originalFetch
+    console.warn = originalWarn
+    if (previousKey === undefined) delete process.env.AI_API_KEY
+    else process.env.AI_API_KEY = previousKey
+    if (previousBaseUrl === undefined) delete process.env.AI_BASE_URL
+    else process.env.AI_BASE_URL = previousBaseUrl
+    if (previousVisionModel === undefined) delete process.env.QWEN_VISION_MODEL
+    else process.env.QWEN_VISION_MODEL = previousVisionModel
+    if (previousFallbackModel === undefined) delete process.env.QWEN_VISION_FALLBACK_MODEL
+    else process.env.QWEN_VISION_FALLBACK_MODEL = previousFallbackModel
   }
 })
 

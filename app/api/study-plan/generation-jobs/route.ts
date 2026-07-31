@@ -1,9 +1,12 @@
+import { after } from 'next/server'
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { processGenerationJob } from '@/lib/study-plan-generation'
 import { studyPlanAdjustmentMonthRange } from '@/lib/study-plan-adjustments'
+
+export const maxDuration = 300
 
 const CreateJobSchema = z.object({
   overallTarget: z.number().min(5.5).max(9).optional(),
@@ -174,9 +177,13 @@ export async function POST(request: Request) {
     timestamp: now
   }))
 
-  // Start background processing
-  processGenerationJob(job.id, userId).catch((err) => {
-    console.error('[study-plan] Background job failed:', err)
+  // Keep the serverless invocation alive after returning the accepted response.
+  after(async () => {
+    try {
+      await processGenerationJob(job.id, userId)
+    } catch (err) {
+      console.error('[study-plan] Background job failed:', err)
+    }
   })
 
   return json({ success: true, jobId: job.id, status: 'queued' }, { status: 202 })
