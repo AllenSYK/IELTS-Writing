@@ -1,6 +1,6 @@
 # 邮箱验证码与品牌邮件配置
 
-本项目的网站注册验证码、欢迎邮件、密码重置邮件统一使用 Resend + React Email。
+本项目的网站注册验证码和欢迎邮件使用 Resend + React Email。密码恢复验证码由 Supabase Auth Recovery OTP 通过 Supabase 邮件模板与 SMTP 直接发送，应用服务器不读取验证码，也不生成重置链接。
 
 ## 本地预览
 
@@ -40,8 +40,9 @@ NEXT_PUBLIC_SITE_URL=https://www.ieltswriting.online
 ## 模板位置
 
 - `emails/RegisterVerificationEmail.tsx`
-- `emails/PasswordResetEmail.tsx`
 - `emails/WelcomeEmail.tsx`
 - `lib/email/brand.ts`
 
 品牌名、Logo、站点 URL、支持邮箱、主色、版权信息集中在 `emailBrand` 中。
+
+密码恢复邮件模板不在 React Email 预览页维护。请按 [`docs/supabase-password-recovery-otp-template.md`](./supabase-password-recovery-otp-template.md) 配置 Supabase Dashboard 中的 Recovery 模板。

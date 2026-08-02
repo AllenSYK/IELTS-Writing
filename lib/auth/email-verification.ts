@@ -1,17 +1,12 @@
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto'
+import { normalizeEmail } from './email-utils'
+
+export { isValidEmail, maskEmail, normalizeEmail } from './email-utils'
 
 export const REGISTER_CODE_TTL_SECONDS = 10 * 60
 export const REGISTER_TOKEN_TTL_SECONDS = 10 * 60
 export const REGISTER_CODE_RESEND_SECONDS = 60
 export const REGISTER_CODE_MAX_ATTEMPTS = 5
-
-export function normalizeEmail(email: string) {
-  return email.trim().toLowerCase()
-}
-
-export function isValidEmail(email: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
 
 function getHashSecret() {
   const secret =
@@ -53,6 +48,12 @@ export function hashIpAddress(ip: string | null) {
     .digest('hex')
 }
 
+export function hashEmailAddress(email: string) {
+  return createHmac('sha256', getHashSecret())
+    .update(`email:${normalizeEmail(email)}`)
+    .digest('hex')
+}
+
 export function getClientIp(request: Request) {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
   return forwarded || request.headers.get('x-real-ip')?.trim() || null
@@ -66,14 +67,6 @@ export function isSameHash(left: string, right: string) {
   } catch {
     return false
   }
-}
-
-export function maskEmail(email: string) {
-  const normalized = normalizeEmail(email)
-  const [name, domain] = normalized.split('@')
-  if (!name || !domain) return normalized
-  const visible = name.slice(0, 1)
-  return `${visible}${'*'.repeat(Math.max(3, Math.min(6, name.length - 1)))}@${domain}`
 }
 
 export function addSeconds(date: Date, seconds: number) {

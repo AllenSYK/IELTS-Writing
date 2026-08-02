@@ -368,19 +368,18 @@ test('runtime providers stay mounted across routes while public auth pages remai
 })
 
 test('auth submit buttons share one animated spinner across email and phone flows', async () => {
-  const [button, login, register, phone, forgot, reset, css] = await Promise.all([
+  const [button, login, register, phone, forgot, css] = await Promise.all([
     readFile(new URL('../components/auth/AuthSubmitButton.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/login/page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/auth/PhoneOtpForm.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/forgot-password/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/reset-password/ResetPasswordClient.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
   assert.match(button, /aria-busy=\{loading \|\| undefined\}/)
   assert.match(button, /disabled=\{Boolean\(disabled \|\| loading\)\}/)
-  for (const source of [login, register, phone, forgot, reset]) {
+  for (const source of [login, register, phone, forgot]) {
     assert.match(source, /AuthSubmitButton/)
   }
   assert.match(css, /\.auth-loading-spinner\s*\{[\s\S]*?animation:\s*auth-spin 900ms linear infinite;/)

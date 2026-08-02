@@ -1,5 +1,4 @@
 import { render } from '@react-email/render'
-import { PasswordResetEmail } from '@/emails/PasswordResetEmail'
 import { RegisterVerificationEmail } from '@/emails/RegisterVerificationEmail'
 import { WelcomeEmail } from '@/emails/WelcomeEmail'
 import { emailBrand, getEmailFrom, getSiteUrl } from './brand'
@@ -53,15 +52,5 @@ export async function sendWelcomeEmail(to: string) {
     subject: `欢迎使用 ${emailBrand.productName}`,
     html,
     text: `您的 ${emailBrand.productName} 账号已创建。请登录并输入软件激活码开通使用权限：${getSiteUrl()}/login`
-  })
-}
-
-export async function sendPasswordResetEmail(to: string, resetUrl: string) {
-  const html = await render(<PasswordResetEmail resetUrl={resetUrl} />)
-  return sendEmail({
-    to,
-    subject: `重设您的 ${emailBrand.productName} 密码`,
-    html,
-    text: `请打开以下链接重设您的 ${emailBrand.productName} 密码：${resetUrl}`
   })
 }

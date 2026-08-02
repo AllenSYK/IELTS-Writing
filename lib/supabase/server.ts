@@ -1,7 +1,24 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { assertSupabasePublicConfig } from './env'
+import { createFetchWithTimeout } from './fetch'
 export { createSupabaseServiceRoleClient } from './service'
+
+export function createSupabasePublicServerClient(requestTimeoutMs = 15000) {
+  const { url, key } = assertSupabasePublicConfig()
+
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
+    global: {
+      fetch: createFetchWithTimeout(requestTimeoutMs)
+    }
+  })
+}
 
 export async function createSupabaseServerClient() {
   const { url, key } = assertSupabasePublicConfig()
