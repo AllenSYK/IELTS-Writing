@@ -1,6 +1,6 @@
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
-import { loadWritingRecordsFromServer } from '@/lib/writing-records'
+import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import type { WritingRecord } from '@/lib/writing-record-types'
 
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'timed_out'
@@ -69,7 +69,7 @@ export async function processAnalysisRefreshJob(jobId: string, userId: string) {
   try {
     // Step 1: Load records
     await setStage(service, jobId, 'loading_records')
-    const records = await loadWritingRecordsFromServer(userId).catch(() => [])
+    const records = await loadFullWritingRecordsForUser(service, userId).catch(() => [])
     await heartbeat(service, jobId)
 
     // Step 2: Calculate counts

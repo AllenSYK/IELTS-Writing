@@ -1,4 +1,4 @@
-import { json } from '@/lib/http'
+import { createApiObservation } from '@/lib/api-observability'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import { parseBand } from '@/lib/ielts-scoring'
@@ -85,32 +85,33 @@ function extractSummary(evaluation: Record<string, unknown> | null | undefined):
   return null
 }
 
-export async function GET() {
-  const user = await getCurrentSupabaseUser()
+export async function GET(request: Request) {
+  const observation = createApiObservation('/api/user/writing-records/list', request)
+  const user = await observation.time('auth', () => getCurrentSupabaseUser())
   if (!user) {
-    return json({ success: false, message: '请先登录' }, { status: 401 })
+    return observation.respond({ success: false, message: '请先登录' }, { status: 401 })
   }
 
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase
-    .from('writing_records')
-    .select([
-      'id',
-      'task_type',
-      'title',
-      'submitted_at',
-      'processing_status',
-      'request_id',
-      'evaluation',
-      'evaluation->>summary',
-      "record_data->>'studyPlanTaskId'"
-    ].join(', '))
-    .eq('user_id', user.id)
-    .order('submitted_at', { ascending: false })
-    .limit(50)
+  const { data, error } = await observation.time('database', () => supabase
+      .from('writing_records')
+      .select([
+        'id',
+        'task_type',
+        'title',
+        'submitted_at',
+        'processing_status',
+        'request_id',
+        'evaluation',
+        'evaluation->>summary',
+        "record_data->>'studyPlanTaskId'"
+      ].join(', '))
+      .eq('user_id', user.id)
+      .order('submitted_at', { ascending: false })
+      .limit(50))
 
   if (error) {
-    return json({ success: false, message: '历史记录读取失败' }, { status: 500 })
+    return observation.respond({ success: false, message: '历史记录读取失败' }, { status: 500 })
   }
 
   const records: WritingRecordListItem[] = (data ?? []).map((row) => {
@@ -135,5 +136,5 @@ export async function GET() {
     }
   })
 
-  return json({ success: true, records })
+  return observation.respond({ success: true, records })
 }

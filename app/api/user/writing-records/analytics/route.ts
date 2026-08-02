@@ -1,4 +1,4 @@
-import { json } from '@/lib/http'
+import { createApiObservation } from '@/lib/api-observability'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import { parseBand } from '@/lib/ielts-scoring'
@@ -164,28 +164,29 @@ function buildAnalyticsRecord(row: Record<string, unknown>): AnalyticsRecord | n
   return result
 }
 
-export async function GET() {
-  const user = await getCurrentSupabaseUser()
+export async function GET(request: Request) {
+  const observation = createApiObservation('/api/user/writing-records/analytics', request)
+  const user = await observation.time('auth', () => getCurrentSupabaseUser())
   if (!user) {
-    return json({ success: false, message: '请先登录' }, { status: 401 })
+    return observation.respond({ success: false, message: '请先登录' }, { status: 401 })
   }
 
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase
-    .from('writing_records')
-    .select('id, task_type, submitted_at, processing_status, evaluation, annotations')
-    .eq('user_id', user.id)
-    .in('processing_status', ['complete', 'completed', 'partial'])
-    .order('submitted_at', { ascending: false })
-    .limit(50)
+  const { data, error } = await observation.time('database', () => supabase
+      .from('writing_records')
+      .select('id, task_type, submitted_at, processing_status, evaluation, annotations')
+      .eq('user_id', user.id)
+      .in('processing_status', ['complete', 'completed', 'partial'])
+      .order('submitted_at', { ascending: false })
+      .limit(50))
 
   if (error) {
-    return json({ success: false, message: '学习分析数据读取失败' }, { status: 500 })
+    return observation.respond({ success: false, message: '学习分析数据读取失败' }, { status: 500 })
   }
 
   const records = (data ?? [])
     .map((row) => buildAnalyticsRecord(row as Record<string, unknown>))
     .filter((r): r is AnalyticsRecord => r !== null)
 
-  return json({ success: true, records })
+  return observation.respond({ success: true, records })
 }

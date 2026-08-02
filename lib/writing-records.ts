@@ -592,36 +592,33 @@ export async function loadWritingRecordsLightweight(): Promise<WritingRecordList
   }
 }
 
-export async function loadWritingRecordsFromServer(userId: string) {
+export const LegacyWritingRecordsMigrationKey = 'ielts-writing-writing-records-migrated-v1'
+
+export async function migrateLegacyWritingRecordsToServer(userId: string) {
   const localRecords = loadWritingRecords(userId)
-  if (!canUseAccountApi()) return localRecords
+  if (!canUseAccountApi()) return { migratedCount: 0, skipped: true }
 
-  let data: { records?: WritingRecord[] }
-  try {
-    data = await requestAccountApi<{ records?: WritingRecord[] }>('/api/user/writing-records')
-  } catch {
-    return localRecords
+  const markerKey = userScopedStorageKey(LegacyWritingRecordsMigrationKey, userId)
+  if (window.localStorage.getItem(markerKey) === 'complete') {
+    return { migratedCount: 0, skipped: true }
   }
-  const serverRecords = (data.records ?? [])
-    .map(parseStoredWritingRecord)
-    .filter((record): record is WritingRecord => Boolean(record))
-    .filter((record) => record.ownerUserId === userId)
-
-  if (serverRecords.length === 0 && localRecords.length > 0) {
-    const migrated = await Promise.allSettled(
-      localRecords.map((record) => saveWritingRecordToServer(userId, record))
-    )
-    const uploaded = migrated
-      .filter((result): result is PromiseFulfilledResult<WritingRecord> => result.status === 'fulfilled')
-      .map((result) => result.value)
-    if (uploaded.length > 0) {
-      replaceWritingRecords(userId, uploaded)
-      return dedupeWritingRecords(uploaded)
-    }
+  if (localRecords.length === 0) {
+    window.localStorage.setItem(markerKey, 'complete')
+    return { migratedCount: 0, skipped: false }
   }
 
-  replaceWritingRecords(userId, serverRecords)
-  return dedupeWritingRecords(serverRecords)
+  const migrated = await Promise.allSettled(
+    localRecords.map((record) => saveWritingRecordToServer(userId, record))
+  )
+  const failed = migrated.filter((result) => result.status === 'rejected')
+  if (failed.length > 0) throw new Error(`仍有 ${failed.length} 条旧记录未迁移，请重试`)
+
+  const uploaded = migrated
+    .filter((result): result is PromiseFulfilledResult<WritingRecord> => result.status === 'fulfilled')
+    .map((result) => result.value)
+  replaceWritingRecords(userId, uploaded)
+  window.localStorage.setItem(markerKey, 'complete')
+  return { migratedCount: uploaded.length, skipped: false }
 }
 
 async function saveWritingRecordToServer(userId: string, record: WritingRecord) {

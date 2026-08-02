@@ -52,7 +52,8 @@ type OccurrencesData = {
   total: number
 }
 
-const fetcher = async (url: string) => {
+const fetcher = async (key: string | readonly [string, string]) => {
+  const url = typeof key === 'string' ? key : key[0]
   const r = await fetch(url)
   if (!r.ok) throw new Error(`请求失败 (${r.status})`)
   return r.json()
@@ -78,13 +79,13 @@ export default function ErrorNotebookPage() {
   params.set('limit', '20')
 
   const { data, error, isLoading, mutate } = useSWR<ErrorsData>(
-    userId ? `/api/study-plan/errors?${params.toString()}` : null,
+    userId ? [`/api/study-plan/errors?${params.toString()}`, userId] as const : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 10000 }
   )
 
   const { data: backfillStatus, mutate: mutateBackfill } = useSWR<BackfillStatus>(
-    userId ? '/api/study-plan/errors/backfill/status' : null,
+    userId ? ['/api/study-plan/errors/backfill/status', userId] as const : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 5000 }
   )
@@ -260,6 +261,7 @@ export default function ErrorNotebookPage() {
         {selectedPattern && (
           <ErrorDetailDialog
             pattern={selectedPattern}
+            userId={userId}
             onClose={() => setSelectedPattern(null)}
             onReview={() => {
               setSelectedPattern(null)
@@ -482,13 +484,14 @@ function ErrorPatternCard({ pattern, onView, onReview }: {
   )
 }
 
-function ErrorDetailDialog({ pattern, onClose, onReview }: {
+function ErrorDetailDialog({ pattern, userId, onClose, onReview }: {
   pattern: ErrorPattern
+  userId: string
   onClose: () => void
   onReview: () => void
 }) {
   const { data } = useSWR<OccurrencesData>(
-    `/api/study-plan/errors/${pattern.id}/occurrences?limit=5`,
+    [`/api/study-plan/errors/${pattern.id}/occurrences?limit=5`, userId] as const,
     fetcher,
     { revalidateOnFocus: false }
   )

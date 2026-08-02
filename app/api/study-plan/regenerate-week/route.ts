@@ -3,7 +3,7 @@ import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { getEffectiveAiConfig, AiProviderError } from '@/lib/ai-provider'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
-import { loadWritingRecordsFromServer } from '@/lib/writing-records'
+import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
 
@@ -39,7 +39,7 @@ export async function POST() {
     return json({ success: false, message: 'Next week tasks already exist' }, { status: 409 })
   }
 
-  const records = await loadWritingRecordsFromServer(userId).catch(() => [])
+  const records = await loadFullWritingRecordsForUser(service, userId).catch(() => [])
   const diagnosis = buildStudyPlanDiagnosis(records)
 
   const preferences = (activePlan.preferences_snapshot ?? {}) as Record<string, unknown>

@@ -347,7 +347,7 @@ test('agreement controls use one centered dialog and shared legal content withou
   assert.match(css, /\.agreement-copy button\s*\{[\s\S]*?padding:\s*0;[\s\S]*?line-height:\s*inherit;[\s\S]*?vertical-align:\s*baseline;/)
 })
 
-test('public authentication pages stay outside the signed-in data runtime and remain scrollable', async () => {
+test('runtime providers stay mounted across routes while public auth pages remain scrollable', async () => {
   const [runtime, shell, forgotPage, globalCss] = await Promise.all([
     readFile(new URL('../components/layout/AppRuntime.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8'),
@@ -355,11 +355,10 @@ test('public authentication pages stay outside the signed-in data runtime and re
     readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
   ])
 
-  assert.match(runtime, /'\/forgot-password'/)
-  assert.match(runtime, /'\/reset-password'/)
-  assert.match(runtime, /if \(isPublicAuthRoute\(pathname\)\)[\s\S]*?return <AppShell>\{children\}<\/AppShell>/)
   assert.match(runtime, /UserProfileProvider/)
   assert.match(runtime, /UserPerformanceProvider/)
+  assert.doesNotMatch(runtime, /usePathname|isPublicAuthRoute/)
+  assert.equal((runtime.match(/<AppShell>/g) ?? []).length, 1)
   assert.match(shell, /pathname\.startsWith\('\/forgot-password'\)/)
   assert.match(shell, /pathname\.startsWith\('\/reset-password'\)/)
   assert.doesNotMatch(forgotPage, /UserPerformanceProvider|UserProfileProvider|WritingActivity|license\/status|api\/user/)

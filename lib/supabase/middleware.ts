@@ -1,19 +1,14 @@
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { createApiObservation, type ApiObservation } from '@/lib/api-observability'
 import { resolveAuthRedirect } from '@/lib/auth/route-access'
+import {
+  isActiveWebLicenseSnapshot,
+  loadWebLicenseAccessSnapshot,
+  type WebLicenseAccessSnapshot
+} from '@/lib/web-license/access'
 import { getSupabaseAnonKey, getSupabaseServiceRoleKey, getSupabaseUrl } from './env'
-
-type LicenseGate = {
-  active: boolean
-  expiresAt?: number
-}
-
-type MiddlewareProfile = {
-  role?: string | null
-  license_status?: string | null
-  license_expires_at?: string | null
-}
 
 type AccessSnapshot = {
   role?: string | null
@@ -137,91 +132,63 @@ function createMiddlewareServiceClient(url: string, serviceRoleKey: string) {
   })
 }
 
-function hasActiveLicense(profile: MiddlewareProfile | null): LicenseGate {
-  if (!profile || profile.license_status !== 'active' || !profile.license_expires_at) {
-    return { active: false }
-  }
-  const expiresAt = new Date(profile.license_expires_at).getTime()
+function accessStateFromSnapshot(snapshot: WebLicenseAccessSnapshot): AccessState {
+  const role = snapshot.profile?.role
+  if (role === 'admin') return { role, licenseActive: false }
+  if (!isActiveWebLicenseSnapshot(snapshot)) return { role, licenseActive: false }
+
+  const expirationValues = [
+    snapshot.profile?.license_expires_at,
+    snapshot.activation?.expires_at,
+    snapshot.license?.expires_at
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite)
+
   return {
-    active: expiresAt > Date.now(),
-    expiresAt
+    role,
+    licenseActive: true,
+    licenseExpiresAt: expirationValues.length > 0 ? Math.min(...expirationValues) : undefined
   }
 }
 
 async function loadAccessState(
   url: string,
   serviceRoleKey: string,
-  userId: string
+  userId: string,
+  observation?: ApiObservation
 ): Promise<AccessState> {
   const service = createMiddlewareServiceClient(url, serviceRoleKey)
-  const nowIso = new Date().toISOString()
-
-  const [profileResult, activationResult] = await Promise.all([
-    service
-      .from('profiles')
-      .select('role, license_status, license_expires_at')
-      .eq('id', userId)
-      .maybeSingle(),
-    service
-      .from('license_activations')
-      .select('id, expires_at, status, license_codes(status)')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .gt('expires_at', nowIso)
-      .order('expires_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-  ])
-
-  const profile = profileResult.data as MiddlewareProfile | null
-  const activation = activationResult.data
-  const license = Array.isArray(activation?.license_codes)
-    ? activation?.license_codes[0]
-    : activation?.license_codes
-  const profileGate = hasActiveLicense(profile)
-  const activationExpiresAt = activation?.expires_at
-    ? new Date(activation.expires_at).getTime()
-    : undefined
-  const activationActive =
-    activation?.status === 'active' &&
-    activationExpiresAt !== undefined &&
-    activationExpiresAt > Date.now() &&
-    license?.status !== 'disabled' &&
-    license?.status !== 'expired'
-
-  if (profile?.role === 'admin') {
-    return {
-      role: profile.role,
-      licenseActive: false
-    }
-  }
-
-  if (!profileGate.active || !activationActive) {
-    // 鉴权路径不更新 profiles，只返回状态
-    // profiles.license_status 应由激活、撤销、延期等明确操作更新
-    return {
-      role: profile?.role,
-      licenseActive: false
-    }
-  }
-
-  return {
-    role: profile?.role,
-    licenseActive: true,
-    licenseExpiresAt: Math.min(profileGate.expiresAt ?? Number.POSITIVE_INFINITY, activationExpiresAt)
-  }
+  return accessStateFromSnapshot(await loadWebLicenseAccessSnapshot(service, userId, observation))
 }
 
-async function getAccessState(key: string | null, url: string, serviceRoleKey: string, userId: string) {
+async function getAccessState(
+  key: string | null,
+  url: string,
+  serviceRoleKey: string,
+  userId: string,
+  observation?: ApiObservation
+) {
   const cached = readAccessSnapshot(key)
-  if (cached) return cached
+  if (cached) {
+    observation?.record('database', 0)
+    observation?.record('profile', 0)
+    observation?.record('activation', 0)
+    return cached
+  }
 
-  if (!key) return loadAccessState(url, serviceRoleKey, userId)
+  if (!key) return loadAccessState(url, serviceRoleKey, userId, observation)
 
   const pending = pendingAccessChecks.get(key)
-  if (pending) return pending
+  if (pending) {
+    observation?.record('database', 0)
+    observation?.record('profile', 0)
+    observation?.record('activation', 0)
+    return pending
+  }
 
-  const request = loadAccessState(url, serviceRoleKey, userId)
+  const request = loadAccessState(url, serviceRoleKey, userId, observation)
     .then((snapshot) => {
       writeAccessSnapshot(key, snapshot)
       return snapshot
@@ -234,10 +201,11 @@ async function getAccessState(key: string | null, url: string, serviceRoleKey: s
 }
 
 export async function updateSupabaseSession(request: NextRequest) {
+  const observation = createApiObservation('proxy', request)
   const url = getSupabaseUrl()
   const key = getSupabaseAnonKey()
   if (!url || !key) {
-    return NextResponse.next({ request })
+    return observation.finish(NextResponse.next({ request }))
   }
 
   let response = NextResponse.next({ request })
@@ -263,25 +231,25 @@ export async function updateSupabaseSession(request: NextRequest) {
   let claimsData
   let claimsError
   try {
-    const claimsResult = await supabase.auth.getClaims()
+    const claimsResult = await observation.time('auth', () => supabase.auth.getClaims())
     claimsData = claimsResult.data
     claimsError = claimsResult.error
   } catch (error) {
     if (isInvalidRefreshToken(error)) {
       console.warn('[auth:proxy] cleared stale refresh token', { pathname })
-      return unauthenticatedResponse(request, pathname, response, true)
+      return observation.finish(unauthenticatedResponse(request, pathname, response, true))
     }
     throw error
   }
   const claims = claimsData?.claims
 
   if (claimsError || !claims?.sub) {
-    return unauthenticatedResponse(
+    return observation.finish(unauthenticatedResponse(
       request,
       pathname,
       response,
       isInvalidRefreshToken(claimsError)
-    )
+    ))
   }
 
   const serviceRoleKey = getSupabaseServiceRoleKey()
@@ -289,20 +257,15 @@ export async function updateSupabaseSession(request: NextRequest) {
   if (serviceRoleKey) {
     const cookieKey = sessionCacheKey(request)
     const cacheKey = `${claims.sub}:${claims.session_id || cookieKey || 'session'}`
-    access = await getAccessState(cacheKey, url, serviceRoleKey, claims.sub)
+    access = await getAccessState(cacheKey, url, serviceRoleKey, claims.sub, observation)
   } else {
-    const { data } = await supabase
-      .from('profiles')
-      .select('role, license_status, license_expires_at')
-      .eq('id', claims.sub)
-      .maybeSingle()
-    const profile = data as MiddlewareProfile | null
-    const licenseGate = hasActiveLicense(profile)
-    access = {
-      role: profile?.role,
-      licenseActive: licenseGate.active,
-      licenseExpiresAt: licenseGate.expiresAt
-    }
+    const snapshot = await loadWebLicenseAccessSnapshot(
+      supabase,
+      claims.sub,
+      observation,
+      { tryRpc: false }
+    )
+    access = accessStateFromSnapshot(snapshot)
   }
 
   const target = resolveAuthRedirect({
@@ -311,5 +274,5 @@ export async function updateSupabaseSession(request: NextRequest) {
     role: access.role,
     licenseActive: access.licenseActive
   })
-  return target ? redirectTo(request, target, response) : response
+  return observation.finish(target ? redirectTo(request, target, response) : response)
 }

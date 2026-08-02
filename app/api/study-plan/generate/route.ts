@@ -3,7 +3,7 @@ import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { getEffectiveAiConfig, AiProviderError } from '@/lib/ai-provider'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
-import { loadWritingRecordsFromServer } from '@/lib/writing-records'
+import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
 
 export async function POST(request: Request) {
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
   const [profileResult, records] = await Promise.all([
     service.from('study_plan_profiles').select('*').eq('user_id', userId).maybeSingle(),
-    loadWritingRecordsFromServer(userId).catch(() => [])
+    loadFullWritingRecordsForUser(service, userId).catch(() => [])
   ])
 
   const profile = profileResult.data

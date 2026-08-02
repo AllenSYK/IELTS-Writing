@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
-import { loadWritingRecordsFromServer } from '@/lib/writing-records'
+import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 
 const PatchSchema = z.object({
@@ -106,7 +106,7 @@ export async function PATCH(
 
 async function updateAbilityProfile(service: ReturnType<typeof createSupabaseServiceRoleClient>, userId: string) {
   try {
-    const records = await loadWritingRecordsFromServer(userId).catch(() => [])
+    const records = await loadFullWritingRecordsForUser(service, userId).catch(() => [])
     if (records.length === 0) return
 
     const diagnosis = buildStudyPlanDiagnosis(records)

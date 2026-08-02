@@ -1,6 +1,6 @@
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
-import { loadWritingRecordsFromServer } from '@/lib/writing-records'
+import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import { selectQuestionsForPlan, buildQuestionSnapshot } from '@/lib/question-selection'
 import type { TaskQuestionResult } from '@/lib/question-selection'
@@ -123,7 +123,7 @@ export async function processGenerationJob(jobId: string, userId: string) {
 
     // Load history
     await updateStage(service, jobId, 'loading_history')
-    const records = await loadWritingRecordsFromServer(userId).catch(() => [])
+    const records = await loadFullWritingRecordsForUser(service, userId).catch(() => [])
 
     // Analyze weaknesses
     await updateStage(service, jobId, 'analyzing_weaknesses')

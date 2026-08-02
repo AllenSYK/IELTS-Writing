@@ -4,9 +4,7 @@ import { useCallback } from 'react'
 import useSWR from 'swr'
 import {
   WritingRecordsUpdatedEvent,
-  loadWritingRecordsFromServer,
   loadWritingRecordsLightweight,
-  type WritingRecord,
   type WritingRecordListItem
 } from '@/lib/writing-records'
 
@@ -17,19 +15,6 @@ export const UserRouteCacheKeys = {
 
 export type UserRouteCacheKey = (typeof UserRouteCacheKeys)[keyof typeof UserRouteCacheKeys]
 
-type CacheMutator = (
-  key: readonly ['user-writing-records', UserRouteCacheKey, string],
-  data: WritingRecord[],
-  options: { revalidate: false }
-) => Promise<unknown>
-
-const recordCacheKeys = [
-  UserRouteCacheKeys.history,
-  UserRouteCacheKeys.analytics
-] as const
-
-const cachedRecords = new Map<string, WritingRecord[]>()
-const pendingRecords = new Map<string, Promise<WritingRecord[]>>()
 const pendingRecordLists = new Map<string, Promise<WritingRecordListItem[]>>()
 
 export function userWritingRecordsCacheKey(key: UserRouteCacheKey, userId: string) {
@@ -40,73 +25,12 @@ export function userWritingRecordListCacheKey(userId: string) {
   return ['writing-records-lightweight-list', userId] as const
 }
 
-function loadRecordsOnce(userId: string) {
-  const cached = cachedRecords.get(userId)
-  if (cached) return Promise.resolve(cached)
-
-  let pending = pendingRecords.get(userId)
-  if (!pending) {
-    pending = Promise.resolve()
-      .then(() => loadWritingRecordsFromServer(userId))
-      .then((records) => {
-        cachedRecords.set(userId, records)
-        return records
-      })
-      .finally(() => {
-        pendingRecords.delete(userId)
-      })
-    pendingRecords.set(userId, pending)
-  }
-  return pending
-}
-
-export async function warmUserRouteCache(userId: string, key: UserRouteCacheKey, mutate: CacheMutator) {
-  const records = await loadRecordsOnce(userId)
-  await Promise.all(recordCacheKeys.map((cacheKey) => mutate(userWritingRecordsCacheKey(cacheKey, userId), records, { revalidate: false })))
-}
-
-export async function warmAllUserRouteCaches(userId: string, mutate: CacheMutator) {
-  const records = await loadRecordsOnce(userId)
-  await Promise.all(recordCacheKeys.map((cacheKey) => mutate(userWritingRecordsCacheKey(cacheKey, userId), records, { revalidate: false })))
-}
-
-export function replaceCachedUserWritingRecords(userId: string, records: WritingRecord[]) {
-  cachedRecords.set(userId, records)
-}
-
 export function clearUserRouteMemoryCaches(userId?: string) {
   if (userId) {
-    cachedRecords.delete(userId)
-    pendingRecords.delete(userId)
     pendingRecordLists.delete(userId)
     return
   }
-  cachedRecords.clear()
-  pendingRecords.clear()
   pendingRecordLists.clear()
-}
-
-export function useUserWritingRecords(
-  key: typeof UserRouteCacheKeys.history | typeof UserRouteCacheKeys.analytics,
-  userId: string | null
-) {
-  const result = useSWR<WritingRecord[]>(
-    userId ? userWritingRecordsCacheKey(key, userId) : null,
-    () => loadRecordsOnce(userId as string),
-    {
-      keepPreviousData: false,
-      revalidateOnFocus: false,
-      revalidateIfStale: true,
-      dedupingInterval: 30_000
-    }
-  )
-
-  return {
-    records: result.data ?? [],
-    isLoading: !userId || (!result.data && result.isLoading),
-    isValidating: result.isValidating,
-    refresh: result.mutate
-  }
 }
 
 export function subscribeToWritingRecordChanges(listener: (userId: string) => void) {

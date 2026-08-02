@@ -96,9 +96,9 @@ function adaptRecord(r: AnalyticsApiRecord): WritingRecord {
   }
 }
 
-function readCachedRecords(): WritingRecord[] {
+function readCachedRecords(userId: string): WritingRecord[] {
   try {
-    const raw = sessionStorage.getItem(ANALYTICS_CACHE_KEY)
+    const raw = sessionStorage.getItem(userScopedStorageKey(ANALYTICS_CACHE_KEY, userId))
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
     if (!Array.isArray(parsed)) return []
@@ -108,9 +108,9 @@ function readCachedRecords(): WritingRecord[] {
   }
 }
 
-function writeCachedRecords(records: WritingRecord[]) {
+function writeCachedRecords(userId: string, records: WritingRecord[]) {
   try {
-    sessionStorage.setItem(ANALYTICS_CACHE_KEY, JSON.stringify(records))
+    sessionStorage.setItem(userScopedStorageKey(ANALYTICS_CACHE_KEY, userId), JSON.stringify(records))
   } catch {
     // ignore quota errors
   }
@@ -167,24 +167,23 @@ export default function AnalyticsPage() {
 
 function AnalyticsContent() {
   const { userId } = useUserSession()
-  const { profile, manualAverageScore } = useUserProfile()
+  const { profile, manualAverageScore, ensureServerProfile } = useUserProfile()
 
-  const cachedRecords = useMemo(() => readCachedRecords(), [])
-  const [records, setRecords] = useState<WritingRecord[]>(cachedRecords)
-  const [initialLoading, setInitialLoading] = useState(cachedRecords.length === 0)
+  const [records, setRecords] = useState<WritingRecord[]>([])
+  const [initialLoading, setInitialLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [range, setRange] = useState<AnalyticsRange>('30')
   const [now, setNow] = useState(0)
-  const isFetchingRef = useRef(false)
+  const fetchingUserIdRef = useRef<string | null>(null)
+  const activeUserIdRef = useRef(userId)
   const isMountedRef = useRef(true)
-  const hasRequestedRef = useRef(false)
-  const hasDataRef = useRef(cachedRecords.length > 0)
+  const hasDataRef = useRef(false)
 
-  const loadAnalytics = useCallback(async () => {
-    if (isFetchingRef.current) return
-    isFetchingRef.current = true
+  const loadAnalytics = useCallback(async (requestedUserId: string) => {
+    if (fetchingUserIdRef.current === requestedUserId) return
+    fetchingUserIdRef.current = requestedUserId
     if (hasDataRef.current) {
       setRefreshing(true)
     } else {
@@ -192,19 +191,19 @@ function AnalyticsContent() {
     }
     try {
       const result = await fetchAnalyticsRecords()
-      if (isMountedRef.current) {
+      writeCachedRecords(requestedUserId, result)
+      if (isMountedRef.current && activeUserIdRef.current === requestedUserId) {
         setRecords(result)
         setFetchError(null)
-        writeCachedRecords(result)
         hasDataRef.current = result.length > 0
       }
     } catch (err) {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && activeUserIdRef.current === requestedUserId) {
         setFetchError(err instanceof Error ? err.message : '加载失败，请稍后重试。')
       }
     } finally {
-      isFetchingRef.current = false
-      if (isMountedRef.current) {
+      if (fetchingUserIdRef.current === requestedUserId) fetchingUserIdRef.current = null
+      if (isMountedRef.current && activeUserIdRef.current === requestedUserId) {
         setInitialLoading(false)
         setRefreshing(false)
       }
@@ -217,15 +216,26 @@ function AnalyticsContent() {
   }, [])
 
   useEffect(() => {
-    if (!userId) return
-    if (hasRequestedRef.current) return
-    hasRequestedRef.current = true
-    void loadAnalytics()
+    if (userId) void ensureServerProfile()
+  }, [ensureServerProfile, userId])
+
+  useEffect(() => {
+    activeUserIdRef.current = userId
+    const cachedRecords = userId ? readCachedRecords(userId) : []
+    hasDataRef.current = cachedRecords.length > 0
+    window.queueMicrotask(() => {
+      setRecords(cachedRecords)
+      setFetchError(null)
+      setInitialLoading(Boolean(userId) && cachedRecords.length === 0)
+      setRefreshing(false)
+      if (userId && activeUserIdRef.current === userId) void loadAnalytics(userId)
+    })
   }, [userId, loadAnalytics])
 
   useEffect(() => {
     const handleInvalidated = () => {
-      if (isMountedRef.current) void loadAnalytics()
+      const activeUserId = activeUserIdRef.current
+      if (isMountedRef.current && activeUserId) void loadAnalytics(activeUserId)
     }
     window.addEventListener(ANALYTICS_INVALIDATED_EVENT, handleInvalidated)
     return () => window.removeEventListener(ANALYTICS_INVALIDATED_EVENT, handleInvalidated)

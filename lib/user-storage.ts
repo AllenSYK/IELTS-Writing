@@ -52,6 +52,7 @@ const EphemeralLocalPrefixes = [
 
 const EphemeralSessionPrefixes = [
   'ielts-writing-question-cache:',
+  'ielts-writing-analytics-cache',
   'ielts-writing-prompt-selection-v1',
   'ielts-writing-scroll:'
 ]

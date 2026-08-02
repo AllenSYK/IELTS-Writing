@@ -34,6 +34,7 @@ export function SWRProvider({ children }: SWRProviderProps) {
         errorRetryCount: 0,
         dedupingInterval: 5000,
         focusThrottleInterval: 10000,
+        keepPreviousData: true,
         // 使用稳定的内存缓存
         provider: () => cacheRef.current,
       }}

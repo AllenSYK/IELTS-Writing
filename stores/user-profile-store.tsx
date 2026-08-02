@@ -31,6 +31,7 @@ type UserProfileContextValue = {
   email: string | null
   manualAverageScore: number | null
   displayNameLoading: boolean
+  ensureServerProfile: () => Promise<ServerProfile | null>
   saveProfile: (profile: UserProfile) => Promise<UserProfile>
   updateDisplayName: (name: string) => Promise<void>
   updateManualAverageScore: (score: number | null) => Promise<void>
@@ -47,14 +48,20 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
   const [serverDisplayName, setServerDisplayName] = useState<string | null>(null)
   const [serverEmail, setServerEmail] = useState<string | null>(null)
   const [manualAverageScore, setManualAverageScore] = useState<number | null>(null)
-  const [serverFetched, setServerFetched] = useState(false)
-  const fetchedRef = useRef(false)
+  const [serverLoading, setServerLoading] = useState(false)
+  const activeUserIdRef = useRef(userId)
+  const fetchedUserIdRef = useRef<string | null>(null)
+  const serverProfileRef = useRef<ServerProfile | null>(null)
+  const requestRef = useRef<{ userId: string; promise: Promise<ServerProfile | null> } | null>(null)
 
   // Reset fetch state on userId change
   useEffect(() => {
-    fetchedRef.current = false
+    activeUserIdRef.current = userId
+    fetchedUserIdRef.current = null
+    serverProfileRef.current = null
+    requestRef.current = null
     window.queueMicrotask(() => {
-      setServerFetched(false)
+      setServerLoading(false)
       setServerDisplayName(null)
       setServerEmail(null)
       setManualAverageScore(null)
@@ -98,49 +105,51 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     }
   }, [userId])
 
-  // Fetch display_name from server
-  useEffect(() => {
-    if (!userId) return
-    if (fetchedRef.current) return
-    fetchedRef.current = true
+  const ensureServerProfile = useCallback(async (): Promise<ServerProfile | null> => {
+    const requestedUserId = userId
+    if (!requestedUserId) return null
+    if (fetchedUserIdRef.current === requestedUserId) return serverProfileRef.current
+    if (requestRef.current?.userId === requestedUserId) return requestRef.current.promise
 
-    let cancelled = false
-
-    async function fetchDisplayName() {
+    setServerLoading(true)
+    const promise = (async () => {
       try {
         const res = await fetch('/api/profile', { cache: 'no-store' })
-        if (!res.ok) return
+        if (!res.ok) return null
         const data = await res.json() as { success?: boolean; profile?: ServerProfile }
-        if (cancelled) return
+        if (!data.success || !data.profile) return null
 
-        if (data.success && data.profile) {
-          setServerDisplayName(data.profile.displayName)
-          setServerEmail(data.profile.email)
-          setManualAverageScore(data.profile.manualAverageScore)
+        fetchedUserIdRef.current = requestedUserId
+        serverProfileRef.current = data.profile
+        if (activeUserIdRef.current !== requestedUserId) return data.profile
 
-          // Sync server displayName into localStorage cache
-          if (data.profile.displayName !== null) {
-            const cached = loadUserProfile(userId!)
-            if (cached.fullName !== data.profile.displayName) {
-              saveUserProfile(userId!, { ...cached, fullName: data.profile.displayName })
-              setProfile(loadUserProfile(userId!))
-            }
+        setServerDisplayName(data.profile.displayName)
+        setServerEmail(data.profile.email)
+        setManualAverageScore(data.profile.manualAverageScore)
+
+        if (data.profile.displayName !== null) {
+          const cached = loadUserProfile(requestedUserId)
+          if (cached.fullName !== data.profile.displayName) {
+            saveUserProfile(requestedUserId, { ...cached, fullName: data.profile.displayName })
+            setProfile(loadUserProfile(requestedUserId))
           }
         }
+        return data.profile
       } catch {
-        // Silent fail — localStorage cache is already shown
+        return null
       } finally {
-        if (!cancelled) setServerFetched(true)
+        if (activeUserIdRef.current === requestedUserId) setServerLoading(false)
+        if (requestRef.current?.userId === requestedUserId) requestRef.current = null
       }
-    }
+    })()
 
-    fetchDisplayName()
-    return () => { cancelled = true }
+    requestRef.current = { userId: requestedUserId, promise }
+    return promise
   }, [userId])
 
   // The merged displayName: server > localStorage > default
   const displayName = serverDisplayName ?? (profile.fullName?.trim() || DEFAULT_DISPLAY_NAME)
-  const displayNameLoading = !serverFetched && !!userId
+  const displayNameLoading = serverLoading
 
   const saveProfile = useCallback(async (nextProfile: UserProfile) => {
     if (!userId) return DefaultUserProfile
@@ -166,8 +175,15 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     }
 
     // Update server state
-    setServerDisplayName(data.profile?.displayName ?? trimmed)
-    if (data.profile?.email) setServerEmail(data.profile.email)
+    const nextServerProfile: ServerProfile = {
+      displayName: data.profile?.displayName ?? trimmed,
+      email: data.profile?.email ?? serverProfileRef.current?.email ?? null,
+      manualAverageScore: data.profile?.manualAverageScore ?? serverProfileRef.current?.manualAverageScore ?? null
+    }
+    fetchedUserIdRef.current = userId
+    serverProfileRef.current = nextServerProfile
+    setServerDisplayName(nextServerProfile.displayName)
+    if (nextServerProfile.email) setServerEmail(nextServerProfile.email)
 
     // Sync to localStorage cache
     const cached = loadUserProfile(userId)
@@ -195,15 +211,23 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       throw new Error(data.message || '保存失败')
     }
 
-    setManualAverageScore(data.profile?.manualAverageScore ?? score)
+    const nextScore = data.profile?.manualAverageScore ?? score
+    fetchedUserIdRef.current = userId
+    serverProfileRef.current = {
+      displayName: data.profile?.displayName ?? serverProfileRef.current?.displayName ?? null,
+      email: data.profile?.email ?? serverProfileRef.current?.email ?? null,
+      manualAverageScore: nextScore
+    }
+    setManualAverageScore(nextScore)
     window.dispatchEvent(new CustomEvent('ielts-writing:analytics-invalidated'))
   }, [userId])
 
   const reloadProfile = useCallback(() => {
-    fetchedRef.current = false
-    setServerFetched(false)
+    fetchedUserIdRef.current = null
+    serverProfileRef.current = null
     setProfile(userId ? loadUserProfile(userId) : DefaultUserProfile)
-  }, [userId])
+    void ensureServerProfile()
+  }, [ensureServerProfile, userId])
 
   const value = useMemo(
     () => ({
@@ -212,12 +236,13 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       email: serverEmail,
       manualAverageScore,
       displayNameLoading,
+      ensureServerProfile,
       saveProfile,
       updateDisplayName,
       updateManualAverageScore,
       reloadProfile
     }),
-    [profile, displayName, serverEmail, manualAverageScore, displayNameLoading, saveProfile, updateDisplayName, updateManualAverageScore, reloadProfile]
+    [profile, displayName, serverEmail, manualAverageScore, displayNameLoading, ensureServerProfile, saveProfile, updateDisplayName, updateManualAverageScore, reloadProfile]
   )
 
   return <UserProfileContext.Provider value={value}>{children}</UserProfileContext.Provider>

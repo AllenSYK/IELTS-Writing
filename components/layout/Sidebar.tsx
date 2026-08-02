@@ -1,35 +1,35 @@
 'use client'
 
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
 import { BRAND_NAME } from '@/lib/brand'
-import type { UserRouteCacheKey } from '@/lib/user-route-cache'
 
 type SidebarItem = {
   id: string
   href: string
   label: string
   icon: string
-  cacheKey?: UserRouteCacheKey
+  prefetch: boolean
   match: (pathname: string) => boolean
 }
 
 const mainItems: SidebarItem[] = [
-  { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', match: (pathname) => pathname.startsWith('/study-plan') && !pathname.startsWith('/study-plan/errors') },
-  { id: 'ielts', href: '/practice', label: '写作练习', icon: 'edit_note', match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') || pathname.startsWith('/write') },
-  { id: 'error-notebook', href: '/study-plan/errors', label: '错题本', icon: 'bug_report', match: (pathname) => pathname.startsWith('/study-plan/errors') },
-  { id: 'history', href: '/history', label: '历史记录', icon: 'history', match: (pathname) => pathname.startsWith('/history') },
-  { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', match: (pathname) => pathname.startsWith('/analytics') },
-  { id: 'home', href: '/dashboard', label: '账号中心', icon: 'manage_accounts', match: (pathname) => pathname === '/dashboard' || pathname.startsWith('/settings') }
+  { id: 'study-plan', href: '/study-plan', label: '学习规划', icon: 'school', prefetch: true, match: (pathname) => pathname.startsWith('/study-plan') && !pathname.startsWith('/study-plan/errors') },
+  { id: 'ielts', href: '/practice', label: '写作练习', icon: 'edit_note', prefetch: true, match: (pathname) => pathname === '/practice' || pathname.startsWith('/result') || pathname.startsWith('/ielts') || pathname.startsWith('/write') },
+  { id: 'error-notebook', href: '/study-plan/errors', label: '错题本', icon: 'bug_report', prefetch: true, match: (pathname) => pathname.startsWith('/study-plan/errors') },
+  { id: 'history', href: '/history', label: '历史记录', icon: 'history', prefetch: true, match: (pathname) => pathname.startsWith('/history') },
+  { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', prefetch: true, match: (pathname) => pathname.startsWith('/analytics') },
+  { id: 'home', href: '/dashboard', label: '账号中心', icon: 'manage_accounts', prefetch: true, match: (pathname) => pathname === '/dashboard' || pathname.startsWith('/settings') }
 ]
 
 const supportItems: SidebarItem[] = [
-  { id: 'support', href: '/support', label: '帮助与反馈', icon: 'contact_support', match: (pathname) => pathname.startsWith('/support') },
-  { id: 'terms', href: '/terms', label: '服务条款', icon: 'contract', match: (pathname) => pathname.startsWith('/terms') },
-  { id: 'privacy', href: '/privacy', label: '隐私政策', icon: 'privacy_tip', match: (pathname) => pathname.startsWith('/privacy') }
+  { id: 'support', href: '/support', label: '帮助与反馈', icon: 'contact_support', prefetch: false, match: (pathname) => pathname.startsWith('/support') },
+  { id: 'terms', href: '/terms', label: '服务条款', icon: 'contract', prefetch: false, match: (pathname) => pathname.startsWith('/terms') },
+  { id: 'privacy', href: '/privacy', label: '隐私政策', icon: 'privacy_tip', prefetch: false, match: (pathname) => pathname.startsWith('/privacy') }
 ]
 
 function useOnlineLabel() {
@@ -62,6 +62,11 @@ export function Sidebar() {
   }, [pathname])
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => setMobileOpen(false), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [pathname])
+
+  useEffect(() => {
     if (!mobileOpen) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -77,14 +82,15 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar" aria-label="应用导航">
-      <a
+      <Link
         className="sidebar-logo"
         href="/practice"
+        prefetch
         aria-label={`返回 ${BRAND_NAME} 首页`}
         title={BRAND_NAME}
       >
         <BrandLogo size="md" showName />
-      </a>
+      </Link>
 
       <button
         className="sidebar-mobile-menu"
@@ -99,15 +105,16 @@ export function Sidebar() {
 
       <nav className="sidebar-nav" aria-label="主要页面" onKeyDown={handleRovingNavKeyDown}>
         {mainItems.map((item) => (
-          <a
+          <Link
             key={item.id}
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
+            prefetch={item.prefetch}
             aria-current={activeId === item.id ? 'page' : undefined}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
             <span>{item.label}</span>
-          </a>
+          </Link>
         ))}
       </nav>
 
@@ -122,15 +129,16 @@ export function Sidebar() {
 
         <nav className="sidebar-support-nav" aria-label="支持与法律页面" onKeyDown={handleRovingNavKeyDown}>
           {supportItems.map((item) => (
-            <a
+            <Link
               key={item.id}
               className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
               href={item.href}
+              prefetch={item.prefetch}
               aria-current={activeId === item.id ? 'page' : undefined}
             >
               <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
               <span>{item.label}</span>
-            </a>
+            </Link>
           ))}
         </nav>
 
@@ -160,30 +168,32 @@ export function Sidebar() {
             </div>
             <nav aria-label="移动端主要页面">
               {mainItems.map((item) => (
-                <a
+                <Link
                   key={item.id}
                   className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
+                  prefetch={item.prefetch}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>
-                </a>
+                </Link>
               ))}
             </nav>
             <nav className="sidebar-mobile-support" aria-label="移动端支持与法律页面">
               {supportItems.map((item) => (
-                <a
+                <Link
                   key={item.id}
                   className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
                   href={item.href}
+                  prefetch={item.prefetch}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
                   <span>{item.label}</span>
-                </a>
+                </Link>
               ))}
             </nav>
           </div>

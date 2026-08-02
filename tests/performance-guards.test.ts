@@ -26,34 +26,31 @@ test('web fonts use compressed sources without changing the declared families or
   assert.doesNotMatch(css, /url\("\/fonts\/[^"]+\.ttf"\)/)
 })
 
-test('user shell navigation uses native anchors without client-side prefetching', async () => {
+test('user shell navigation uses Next links with intentional prefetching', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
   const header = await readFile(new URL('../components/layout/AppHeader.tsx', import.meta.url), 'utf8')
-  const anchors = [...sidebar.matchAll(/<a\b[\s\S]*?\n\s*>/g)].map((match) => match[0])
 
-  assert.ok(anchors.length >= 5, 'expected all desktop and mobile sidebar anchors')
-  anchors.forEach((anchor) => assert.doesNotMatch(anchor, /onClick|prefetch/))
-  assert.doesNotMatch(sidebar, /import Link from ['"]next\/link['"]/)
-  assert.doesNotMatch(sidebar, /<Link\b/)
-  assert.doesNotMatch(header, /import Link from ['"]next\/link['"]/)
-  assert.doesNotMatch(header, /<Link\b/)
+  assert.match(sidebar, /import Link from ['"]next\/link['"]/)
+  assert.ok((sidebar.match(/<Link\b/g) ?? []).length >= 5, 'expected desktop and mobile sidebar links')
+  assert.match(sidebar, /href:\s*'\/practice',[\s\S]*?prefetch:\s*true/)
+  assert.match(sidebar, /label:\s*'帮助与反馈',[\s\S]*?prefetch:\s*false/)
+  assert.match(sidebar, /prefetch=\{item\.prefetch\}/)
+  assert.match(header, /<a[\s\S]*?href="https:\/\/xhslink\.com\//)
+  assert.match(header, /import Link from ['"]next\/link['"]/)
+  assert.match(header, /<Link[^>]*href="\/dashboard"[^>]*prefetch/)
   assert.doesNotMatch(sidebar, /onMouseEnter/)
   assert.doesNotMatch(sidebar, /router\.prefetch/)
   assert.doesNotMatch(sidebar, /pageDataPrefetchers/)
+  assert.doesNotMatch(sidebar, /preventDefault|stopPropagation|router\.push/)
 })
 
-test('user and admin navigation use one-click browser navigation', async () => {
+test('interactive buttons declare their form behavior explicitly', async () => {
   const sources = [
     ...await readTsxTree('../app/'),
     ...await readTsxTree('../components/')
   ]
 
   for (const { path, source } of sources) {
-    assert.doesNotMatch(source, /from ['"]next\/link['"]/, `${path} must use a native anchor`)
-    assert.doesNotMatch(source, /<Link\b/, `${path} must not intercept anchor clicks`)
-    assert.doesNotMatch(source, /\buseRouter\(/, `${path} must not depend on client-router click handling`)
-    assert.doesNotMatch(source, /\brouter\.(?:push|replace|refresh)\(/, `${path} must use browser navigation`)
-
     const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     const visit = (node: ts.Node) => {
       if (
@@ -110,7 +107,8 @@ test('UserPerformanceProvider does not use React key to force remount', async ()
 
   assert.doesNotMatch(provider, /key=\{userId/)
   assert.doesNotMatch(provider, /key=\{'anonymous/)
-  assert.match(provider, /useRef\(new Map\(\)\)/)
+  assert.match(provider, /useSWRConfig\(\)/)
+  assert.doesNotMatch(provider, /<SWRConfig|provider:\s*\(\)\s*=>/)
 })
 
 test('UserSessionProvider splits auth context from session context', async () => {
@@ -148,8 +146,12 @@ test('UserPerformanceProvider uses lightweight useAuth', async () => {
 
 test('study-plan SWR key includes userId', async () => {
   const page = await readFile(new URL('../app/study-plan/page.tsx', import.meta.url), 'utf8')
+  const errorsPage = await readFile(new URL('../app/study-plan/errors/page.tsx', import.meta.url), 'utf8')
 
   assert.match(page, /\['study-plan',\s*userId\]/)
+  assert.match(errorsPage, /\[`\/api\/study-plan\/errors\?\$\{params\.toString\(\)\}`, userId\]/)
+  assert.match(errorsPage, /\['\/api\/study-plan\/errors\/backfill\/status', userId\]/)
+  assert.match(errorsPage, /occurrences\?limit=5`, userId\]/)
 })
 
 test('study-plan boot resolution does not depend on jobRestored', async () => {
@@ -216,10 +218,45 @@ test('navigation-events module is removed', async () => {
   )
 })
 
-test('Sidebar avoids client-router navigation handlers', async () => {
+test('Sidebar avoids imperative client-router navigation handlers', async () => {
   const sidebar = await readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8')
 
   assert.doesNotMatch(sidebar, /navigationEvents/)
   assert.doesNotMatch(sidebar, /handleNavigationStart/)
-  assert.doesNotMatch(sidebar, /prefetch=/)
+  assert.doesNotMatch(sidebar, /preventDefault|stopPropagation|router\.(?:push|replace)/)
+  assert.match(sidebar, /prefetch=\{item\.prefetch\}/)
+})
+
+test('profile loading is lazy and observed APIs expose safe performance timing', async () => {
+  const [profileStore, settings, analytics, observability, auth] = await Promise.all([
+    readFile(new URL('../stores/user-profile-store.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/dashboard/AccountSettings.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/analytics/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/api-observability.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/web-license/auth.ts', import.meta.url), 'utf8')
+  ])
+
+  assert.match(profileStore, /ensureServerProfile/)
+  assert.match(settings, /ensureServerProfile\(\)/)
+  assert.match(analytics, /ensureServerProfile\(\)/)
+  assert.doesNotMatch(profileStore, /useEffect\([\s\S]{0,600}?fetch\('\/api\/profile'/)
+  assert.match(observability, /Server-Timing/)
+  assert.match(observability, /X-Request-Id/)
+  assert.match(observability, /VERCEL_REGION/)
+  assert.doesNotMatch(auth, /\.update\(\{\s*status:\s*'expired'/)
+})
+
+test('Supabase performance migration keeps access service-only and RLS user-scoped', async () => {
+  const migration = await readFile(
+    new URL('../supabase/migrations/20260802095744_navigation_auth_performance.sql', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(migration, /drop policy if exists "allow admin read activations"/)
+  assert.match(migration, /using \(\(select auth\.uid\(\)\) = user_id\)/)
+  assert.match(migration, /get_web_license_access_state\(p_user_id uuid\)/)
+  assert.match(migration, /security invoker/)
+  assert.match(migration, /revoke all on function[\s\S]*from public, anon, authenticated/)
+  assert.match(migration, /grant execute on function[\s\S]*to service_role/)
+  assert.doesNotMatch(migration, /create index/i)
 })

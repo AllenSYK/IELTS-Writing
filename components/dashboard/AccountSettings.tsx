@@ -6,6 +6,7 @@ import { getAvatarInitial } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { LogoutButton } from '@/app/dashboard/LogoutButton'
+import { migrateLegacyWritingRecordsToServer } from '@/lib/writing-records'
 
 const NICKNAME_MAX = 20
 const DEFAULT_NICKNAME = '雅思追梦人'
@@ -27,6 +28,7 @@ export function AccountSettings() {
     email,
     manualAverageScore,
     displayNameLoading,
+    ensureServerProfile,
     updateDisplayName,
     updateManualAverageScore
   } = useUserProfile()
@@ -38,11 +40,17 @@ export function AccountSettings() {
   const [averageInput, setAverageInput] = useState('auto')
   const [averageSaving, setAverageSaving] = useState(false)
   const [averageError, setAverageError] = useState<string | null>(null)
+  const [migrationMessage, setMigrationMessage] = useState<string | null>(null)
+  const [migrationRunning, setMigrationRunning] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const display = displayName || DEFAULT_NICKNAME
   const avatarInitial = getAvatarInitial(display)
   const emailDisplay = email || accountLabel || '—'
+
+  useEffect(() => {
+    if (userId) void ensureServerProfile()
+  }, [ensureServerProfile, userId])
 
   const startEditing = useCallback(() => {
     setNicknameInput(display)
@@ -116,6 +124,24 @@ export function AccountSettings() {
       setAverageSaving(false)
     }
   }, [averageInput, averageSaving, updateManualAverageScore])
+
+  const migrateLegacyRecords = useCallback(async () => {
+    if (!userId || migrationRunning) return
+    setMigrationRunning(true)
+    setMigrationMessage(null)
+    try {
+      const result = await migrateLegacyWritingRecordsToServer(userId)
+      setMigrationMessage(
+        result.skipped
+          ? '旧版记录已迁移，无需重复执行。'
+          : `已同步 ${result.migratedCount} 条旧版记录。`
+      )
+    } catch (migrationError) {
+      setMigrationMessage(migrationError instanceof Error ? migrationError.message : '旧版记录迁移失败，请重试。')
+    } finally {
+      setMigrationRunning(false)
+    }
+  }, [migrationRunning, userId])
 
   if (!userId) return null
 
@@ -235,6 +261,19 @@ export function AccountSettings() {
       <p className="account-average-note">
         手动分数会同步到当前账号的学习分析；恢复“自动”后，将重新使用批改记录计算。
       </p>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button
+          className="ui-secondary-button"
+          type="button"
+          disabled={migrationRunning}
+          onClick={() => void migrateLegacyRecords()}
+        >
+          <MaterialIcon name="cloud_upload" size={16} />
+          {migrationRunning ? '同步中…' : '同步本机旧记录'}
+        </button>
+        {migrationMessage ? <span className="ui-label" role="status">{migrationMessage}</span> : null}
+      </div>
 
       <div style={{ borderTop: '1px solid var(--glass-border-1)', margin: '16px 0' }} />
 
