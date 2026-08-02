@@ -12,10 +12,11 @@ import {
   isValidEmail,
   normalizeEmail
 } from '@/lib/auth/email-verification'
+import { EMAIL_OTP_LENGTH } from '@/lib/auth/otp-constants'
 
 const VerifyRegisterCodeSchema = z.object({
   email: z.string().min(3).max(254),
-  code: z.string().regex(/^\d{6}$/)
+  code: z.string().regex(new RegExp(`^\\d{${EMAIL_OTP_LENGTH}}$`))
 })
 
 export async function POST(request: Request) {

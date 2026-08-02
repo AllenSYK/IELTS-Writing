@@ -2,13 +2,20 @@ import assert from 'node:assert/strict'
 import { access, readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { maskEmail, normalizeEmail } from '../lib/auth/email-utils'
+import { isEmailOtpCode, sanitizeEmailOtpCode } from '../lib/auth/email-otp'
 import { toPasswordRecoveryError } from '../lib/auth/error-messages'
+import { EMAIL_OTP_LENGTH } from '../lib/auth/otp-constants'
+import {
+  applyOtpBackspace,
+  applyOtpInput,
+  applyOtpPaste,
+  createOtpCells,
+  getOtpNavigationIndex
+} from '../lib/auth/otp-input-model'
 import { createForgotPasswordPost } from '../lib/auth/password-recovery-handler'
 import {
-  PASSWORD_RECOVERY_CODE_LENGTH,
   PASSWORD_RECOVERY_MAX_PASSWORD_LENGTH,
   PASSWORD_RECOVERY_RESEND_SECONDS,
-  sanitizePasswordRecoveryCode,
   validateRecoveryPassword
 } from '../lib/auth/password-recovery'
 
@@ -70,10 +77,35 @@ function createMockDependencies(options: {
 test('email and OTP helpers normalize, mask, sanitize, and enforce exact bounds', () => {
   assert.equal(normalizeEmail('  User.Name@Example.COM  '), 'user.name@example.com')
   assert.equal(maskEmail('User.Name@Example.COM'), 'u******@example.com')
-  assert.equal(sanitizePasswordRecoveryCode(' 1a2-3 4中56 78'), '123456')
-  assert.equal(PASSWORD_RECOVERY_CODE_LENGTH, 6)
+  assert.equal(sanitizeEmailOtpCode(' 1a2-3 4中56 78'), '123456')
+  assert.equal(sanitizeEmailOtpCode('abc中文!@#'), '')
+  assert.equal(EMAIL_OTP_LENGTH, 6)
+  assert.equal(isEmailOtpCode('12345'), false)
+  assert.equal(isEmailOtpCode('123456'), true)
+  assert.equal(isEmailOtpCode('12345678'), false)
   assert.equal(PASSWORD_RECOVERY_RESEND_SECONDS, 60)
   assert.equal(PASSWORD_RECOVERY_MAX_PASSWORD_LENGTH, 128)
+})
+
+test('the shared OTP model handles input, filtering, paste, backspace, and navigation', () => {
+  const empty = createOtpCells('', EMAIL_OTP_LENGTH)
+  const first = applyOtpInput(empty, 0, '1')
+  assert.deepEqual(first, { cells: ['1', '', '', '', '', ''], focusIndex: 1 })
+
+  const filtered = applyOtpInput(first.cells, 1, 'a中-2')
+  assert.deepEqual(filtered, { cells: ['1', '2', '', '', '', ''], focusIndex: 2 })
+
+  const pasted = applyOtpPaste(empty, 0, '12 34-56')
+  assert.deepEqual(pasted, { cells: ['1', '2', '3', '4', '5', '6'], focusIndex: 5 })
+  assert.deepEqual(applyOtpPaste(empty, 0, '12345678').cells, ['1', '2', '3', '4', '5', '6'])
+
+  const cleared = applyOtpBackspace(pasted.cells, 5)
+  assert.deepEqual(cleared, { cells: ['1', '2', '3', '4', '5', ''], focusIndex: 5 })
+  assert.equal(applyOtpBackspace(cleared.cells, 5).focusIndex, 4)
+  assert.equal(getOtpNavigationIndex('ArrowLeft', 3), 2)
+  assert.equal(getOtpNavigationIndex('ArrowRight', 3), 4)
+  assert.equal(getOtpNavigationIndex('Home', 3), 0)
+  assert.equal(getOtpNavigationIndex('End', 1), 5)
 })
 
 test('password validation preserves input and enforces length and confirmation', () => {
@@ -204,13 +236,27 @@ test('Supabase Auth or SMTP failures return a generic message and safe logs', as
 })
 
 test('the recovery page implements accessible email, OTP, password, resend, focus, and success steps', async () => {
-  const page = await readFile(new URL('../app/forgot-password/page.tsx', import.meta.url), 'utf8')
+  const [page, registerPage, otpInput] = await Promise.all([
+    readFile(new URL('../app/forgot-password/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/auth/OtpCodeInput.tsx', import.meta.url), 'utf8')
+  ])
 
   assert.match(page, /type RecoveryStep = 'email' \| 'code' \| 'password' \| 'success'/)
   assert.match(page, /aria-current=\{stepNumber === activeStep \? 'step'/)
   assert.match(page, /type="email"[\s\S]*?autoComplete="email"[\s\S]*?maxLength=\{320\}/)
-  assert.match(page, /inputMode="numeric"[\s\S]*?autoComplete="one-time-code"[\s\S]*?pattern="\[0-9\]\*"[\s\S]*?maxLength=\{PASSWORD_RECOVERY_CODE_LENGTH\}/)
-  assert.match(page, /code\.length !== PASSWORD_RECOVERY_CODE_LENGTH/)
+  assert.match(page, /<OtpCodeInput[\s\S]*?id="recovery-code"[\s\S]*?ariaLabel="六位验证码"/)
+  assert.match(registerPage, /<OtpCodeInput/)
+  assert.match(otpInput, /length = EMAIL_OTP_LENGTH/)
+  assert.match(otpInput, /inputMode="numeric"/)
+  assert.match(otpInput, /autoComplete=\{index === 0 \? 'one-time-code' : 'off'\}/)
+  assert.match(otpInput, /pattern="\[0-9\]\*"/)
+  assert.match(otpInput, /aria-label=\{`\$\{ariaLabel\}，第 \$\{index \+ 1\} 位，共 \$\{safeLength\} 位`\}/)
+  assert.match(otpInput, /event\.key === 'Backspace'/)
+  assert.match(otpInput, /getOtpNavigationIndex/)
+  assert.doesNotMatch(page, /className="auth-otp-input"/)
+  assert.match(page, /请输入邮件中的 6 位数字验证码。/)
+  assert.match(page, /isEmailOtpCode\(code\)/)
   assert.match(page, /重新发送（\$\{cooldownLeft\}s）/)
   assert.match(page, /window\.clearInterval\(timer\)/)
   assert.match(page, /emailInputRef\.current\?\.focus\(\)/)
@@ -274,9 +320,13 @@ test('the rolling database limiter stores hashes only and enforces all required 
 })
 
 test('legacy reset links redirect to the single OTP flow and the Dashboard template uses Token only', async () => {
-  const [resetPage, templateDoc] = await Promise.all([
+  const [resetPage, templateDoc, layout, registerEmail, recoveryEmail, previewPage] = await Promise.all([
     readFile(new URL('../app/reset-password/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../docs/supabase-password-recovery-otp-template.md', import.meta.url), 'utf8')
+    readFile(new URL('../docs/supabase-password-recovery-otp-template.md', import.meta.url), 'utf8'),
+    readFile(new URL('../emails/AuthCodeEmailLayout.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../emails/RegisterVerificationEmail.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../emails/PasswordRecoveryCodeEmail.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/dev/email-preview/page.tsx', import.meta.url), 'utf8')
   ])
 
   assert.match(resetPage, /redirect\('\/forgot-password'\)/)
@@ -286,20 +336,34 @@ test('legacy reset links redirect to the single OTP flow and the Dashboard templ
   const htmlBlock = templateDoc.match(/```html([\s\S]*?)```/)?.[1] || ''
   assert.match(htmlBlock, /\{\{ \.Token \}\}/)
   assert.doesNotMatch(htmlBlock, /ConfirmationURL|href=|重置链接/)
+  assert.match(templateDoc, /Email OTP Length[\s\S]*?设置为 `6`/)
   assert.match(templateDoc, /SMTP host/)
   assert.match(templateDoc, /SPF、DKIM 和 DMARC/)
+  assert.match(registerEmail, /AuthCodeEmailLayout/)
+  assert.match(recoveryEmail, /AuthCodeEmailLayout/)
+  assert.match(recoveryEmail, /重置登录密码/)
+  assert.match(layout, /maxWidth: '560px'/)
+  assert.match(layout, /borderRadius: '24px'/)
+  assert.match(layout, /fontSize: '38px'/)
+  assert.match(previewPage, /RegisterVerificationEmail code="123456"/)
+  assert.match(previewPage, /PasswordRecoveryCodeEmail code="123456"/)
 })
 
 test('registration OTP remains separate and tracked production secrets are removed', async () => {
-  const [registerRoute, registerPage, gitignore] = await Promise.all([
+  const [registerRoute, verifyRoute, registerPage, verificationHelpers, gitignore] = await Promise.all([
     readFile(new URL('../app/api/auth/send-register-code/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/auth/verify-register-code/route.ts', import.meta.url), 'utf8'),
     readFile(new URL('../app/register/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/auth/email-verification.ts', import.meta.url), 'utf8'),
     readFile(new URL('../.gitignore', import.meta.url), 'utf8')
   ])
 
   assert.match(registerRoute, /generateRegisterCode\(\)/)
   assert.match(registerRoute, /hashRegisterCode\(email, code\)/)
   assert.match(registerPage, /\/api\/auth\/verify-register-code/)
+  assert.match(registerPage, /OtpCodeInput/)
+  assert.match(verifyRoute, /EMAIL_OTP_LENGTH/)
+  assert.match(verificationHelpers, /10 \*\* \(EMAIL_OTP_LENGTH - 1\)/)
   assert.doesNotMatch(registerRoute, /type:\s*'recovery'/)
   assert.match(gitignore, /\.env\.\*/)
   await assert.rejects(access(new URL('../.env.production', import.meta.url)))

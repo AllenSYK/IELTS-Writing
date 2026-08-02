@@ -4,14 +4,14 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, LockKeyhole, Mail, PencilLine, RotateCcw, Send, ShieldCheck } from 'lucide-react'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSpinner, AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
+import { OtpCodeInput, type OtpCodeInputHandle } from '@/components/auth/OtpCodeInput'
 import { isValidEmail, maskEmail, normalizeEmail } from '@/lib/auth/email-utils'
+import { isEmailOtpCode } from '@/lib/auth/email-otp'
 import { toPasswordRecoveryError } from '@/lib/auth/error-messages'
 import {
-  PASSWORD_RECOVERY_CODE_LENGTH,
   PASSWORD_RECOVERY_MAX_PASSWORD_LENGTH,
   PASSWORD_RECOVERY_MIN_PASSWORD_LENGTH,
   PASSWORD_RECOVERY_RESEND_SECONDS,
-  sanitizePasswordRecoveryCode,
   validateRecoveryPassword
 } from '@/lib/auth/password-recovery'
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser'
@@ -70,7 +70,7 @@ export default function ForgotPasswordPage() {
     requestTimeoutMs: 15000
   }))
   const emailInputRef = useRef<HTMLInputElement>(null)
-  const codeInputRef = useRef<HTMLInputElement>(null)
+  const codeInputRef = useRef<OtpCodeInputHandle>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
   const successRef = useRef<HTMLDivElement>(null)
   const recoverySessionRef = useRef<RecoverySessionIdentity | null>(null)
@@ -184,7 +184,8 @@ export default function ForgotPasswordPage() {
 
   async function handleResend() {
     if (loading || cooldownLeft > 0 || !recoveryEmail) return
-    await sendRecoveryCode(recoveryEmail, 'resend')
+    const sent = await sendRecoveryCode(recoveryEmail, 'resend')
+    if (sent) window.setTimeout(() => codeInputRef.current?.focus(), 0)
   }
 
   function handleModifyEmail() {
@@ -204,7 +205,11 @@ export default function ForgotPasswordPage() {
 
   async function handleCodeSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (loading || code.length !== PASSWORD_RECOVERY_CODE_LENGTH || !recoveryEmail) return
+    if (loading || !recoveryEmail) return
+    if (!isEmailOtpCode(code)) {
+      setError('请输入完整的六位验证码')
+      return
+    }
 
     setLoading('verify')
     setError('')
@@ -428,26 +433,19 @@ export default function ForgotPasswordPage() {
             <form className="auth-form auth-form-modern" onSubmit={handleCodeSubmit}>
               <label htmlFor="recovery-code">
                 <span>六位验证码</span>
-                <div className="auth-input-shell">
-                  <ShieldCheck size={18} aria-hidden="true" />
-                  <input
-                    ref={codeInputRef}
-                    id="recovery-code"
-                    className="auth-otp-input"
-                    type="text"
-                    value={code}
-                    onChange={(event) => { setCode(sanitizePasswordRecoveryCode(event.target.value)); clearFeedback() }}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    pattern="[0-9]*"
-                    maxLength={PASSWORD_RECOVERY_CODE_LENGTH}
-                    aria-describedby="recovery-code-hint"
-                    disabled={Boolean(loading)}
-                    required
-                  />
-                </div>
+                <OtpCodeInput
+                  ref={codeInputRef}
+                  id="recovery-code"
+                  name="recovery-code"
+                  value={code}
+                  onChange={(value) => { setCode(value); clearFeedback() }}
+                  disabled={Boolean(loading)}
+                  invalid={Boolean(error)}
+                  ariaLabel="六位验证码"
+                  ariaDescribedBy="recovery-code-hint recovery-code-feedback"
+                />
               </label>
-              <p id="recovery-code-hint" className="auth-field-hint">只输入邮件中的 6 位数字验证码。</p>
+              <p id="recovery-code-hint" className="auth-field-hint">请输入邮件中的 6 位数字验证码。</p>
 
               <div className="code-meta">
                 <span><Mail size={15} aria-hidden="true" />{maskedEmail}</span>
@@ -466,14 +464,14 @@ export default function ForgotPasswordPage() {
                 </button>
               </div>
 
-              {message ? <p className="auth-success" role="status">{message}</p> : null}
-              {error ? <p className="auth-error" role="alert">{error}</p> : null}
+              {message ? <p id="recovery-code-feedback" className="auth-success" role="status">{message}</p> : null}
+              {error ? <p id="recovery-code-feedback" className="auth-error" role="alert">{error}</p> : null}
 
               <AuthSubmitButton
                 type="submit"
                 loading={loading === 'verify'}
                 loadingLabel="正在验证"
-                disabled={Boolean(loading) || code.length !== PASSWORD_RECOVERY_CODE_LENGTH}
+                disabled={Boolean(loading) || !isEmailOtpCode(code)}
                 icon={<ShieldCheck size={18} aria-hidden="true" />}
               >
                 验证验证码

@@ -1,11 +1,13 @@
 'use client'
 
-import { FormEvent, KeyboardEvent, ClipboardEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Mail, PencilLine, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { CrossBorderConsentCheckbox } from '@/components/auth/CrossBorderConsent'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSpinner, AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
+import { OtpCodeInput, type OtpCodeInputHandle } from '@/components/auth/OtpCodeInput'
+import { isEmailOtpCode } from '@/lib/auth/email-otp'
 import { CurrentAgreementVersions } from '@/lib/legal-agreements'
 
 type SendCodeResponse = {
@@ -64,14 +66,14 @@ function formatSeconds(seconds: number) {
 }
 
 export default function RegisterPage() {
-  const codeRefs = useRef<Array<HTMLInputElement | null>>([])
+  const codeInputRef = useRef<OtpCodeInputHandle>(null)
   const [step, setStep] = useState<RegisterStep>('account')
   const [email, setEmail] = useState('')
   const [codeEmail, setCodeEmail] = useState('')
   const [maskedEmail, setMaskedEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [digits, setDigits] = useState(['', '', '', '', '', ''])
+  const [code, setCode] = useState('')
   const [expiresAt, setExpiresAt] = useState<number | null>(null)
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -88,7 +90,6 @@ export default function RegisterPage() {
   ], [password])
 
   const passwordScore = passwordChecks.filter((item) => item.ok).length
-  const codeValue = digits.join('')
   const cooldownLeft = cooldownUntil ? Math.max(0, Math.ceil((cooldownUntil - now) / 1000)) : 0
   const validLeft = expiresAt ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : 0
 
@@ -143,12 +144,12 @@ export default function RegisterPage() {
       const expiresAt = data.expiresAt ? new Date(data.expiresAt).getTime() : Number.NaN
       setCodeEmail(normalized)
       setMaskedEmail(data.maskedEmail || normalized)
-      setDigits(['', '', '', '', '', ''])
+      setCode('')
       setExpiresAt(Number.isFinite(expiresAt) ? expiresAt : null)
       setCooldownUntil(Number.isFinite(requestedAt) ? requestedAt + (data.cooldownSeconds || 60) * 1000 : null)
       setStep('code')
       setMessage('邮箱验证码已发送')
-      window.setTimeout(() => codeRefs.current[0]?.focus(), 80)
+      window.setTimeout(() => codeInputRef.current?.focus(), 80)
     } catch (caught) {
       setError(caught instanceof DOMException && caught.name === 'AbortError' ? '请求超时，请检查网络后重试。' : '验证码发送失败，请稍后重试')
     } finally {
@@ -177,7 +178,7 @@ export default function RegisterPage() {
         return
       }
 
-      setDigits(['', '', '', '', '', ''])
+      setCode('')
       setExpiresAt(null)
       setCooldownUntil(null)
       setCodeEmail('')
@@ -198,7 +199,7 @@ export default function RegisterPage() {
   async function handleVerifySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (loading) return
-    if (codeValue.length !== 6) {
+    if (!isEmailOtpCode(code)) {
       setError('请输入 6 位邮箱验证码')
       return
     }
@@ -210,7 +211,7 @@ export default function RegisterPage() {
     try {
       const { response: verifyResponse, data: verifyData } = await postWithTimeout<VerifyCodeResponse>('/api/auth/verify-register-code', {
         email: codeEmail,
-        code: codeValue
+        code
       })
 
       if (!verifyResponse.ok || !verifyData.success || !verifyData.registrationToken) {
@@ -238,28 +239,6 @@ export default function RegisterPage() {
       setError(caught instanceof DOMException && caught.name === 'AbortError' ? '请求超时，请检查网络后重试。' : '注册失败，请稍后重试')
     } finally {
       setLoading(null)
-    }
-  }
-
-  function updateDigit(index: number, value: string) {
-    const digit = value.replace(/\D/g, '').slice(-1)
-    setDigits((current) => current.map((item, itemIndex) => (itemIndex === index ? digit : item)))
-    if (digit && index < 5) {
-      window.setTimeout(() => codeRefs.current[index + 1]?.focus(), 0)
-    }
-  }
-
-  function handleCodePaste(event: ClipboardEvent<HTMLInputElement>) {
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
-    if (pasted.length < 2) return
-    event.preventDefault()
-    setDigits(Array.from({ length: 6 }, (_, index) => pasted[index] || ''))
-    window.setTimeout(() => codeRefs.current[Math.min(5, pasted.length - 1)]?.focus(), 0)
-  }
-
-  function handleCodeKeyDown(index: number, event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Backspace' && !digits[index] && index > 0) {
-      codeRefs.current[index - 1]?.focus()
     }
   }
 
@@ -381,24 +360,14 @@ export default function RegisterPage() {
             </header>
 
             <form className="auth-form auth-form-modern" onSubmit={handleVerifySubmit}>
-              <div className="code-input-grid" role="group" aria-label="6 位邮箱验证码">
-                {digits.map((digit, index) => (
-                  <input
-                    key={String(index)}
-                    ref={(node) => {
-                      codeRefs.current[index] = node
-                    }}
-                    value={digit}
-                    onChange={(event) => updateDigit(index, event.target.value)}
-                    onPaste={handleCodePaste}
-                    onKeyDown={(event) => handleCodeKeyDown(index, event)}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={1}
-                    aria-label={`第 ${index + 1} 位验证码`}
-                  />
-                ))}
-              </div>
+              <OtpCodeInput
+                ref={codeInputRef}
+                value={code}
+                onChange={(value) => { setCode(value); if (error) setError('') }}
+                disabled={Boolean(loading)}
+                invalid={Boolean(error)}
+                ariaLabel="6 位邮箱验证码"
+              />
 
               <div className="code-meta">
                 <span><ShieldCheck size={15} />剩余有效时间 {formatSeconds(validLeft)}</span>
@@ -415,7 +384,7 @@ export default function RegisterPage() {
                 type="submit"
                 loading={loading === 'verify'}
                 loadingLabel="正在创建账号"
-                disabled={Boolean(loading) || codeValue.length !== 6 || validLeft <= 0 || !agreementsAccepted}
+                disabled={Boolean(loading) || !isEmailOtpCode(code) || validLeft <= 0 || !agreementsAccepted}
                 icon={<ShieldCheck size={18} aria-hidden="true" />}
               >
                 验证并创建账号

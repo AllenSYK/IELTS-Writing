@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto'
 import { normalizeEmail } from './email-utils'
+import { EMAIL_OTP_LENGTH } from './otp-constants'
 
 export { isValidEmail, maskEmail, normalizeEmail } from './email-utils'
 
@@ -22,7 +23,8 @@ function getHashSecret() {
 }
 
 export function generateRegisterCode() {
-  return randomInt(100000, 1000000).toString()
+  const lowerBound = 10 ** (EMAIL_OTP_LENGTH - 1)
+  return randomInt(lowerBound, lowerBound * 10).toString()
 }
 
 export function generateRegistrationToken() {

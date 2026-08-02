@@ -1,5 +1,6 @@
 import { render } from '@react-email/render'
 import { notFound } from 'next/navigation'
+import { PasswordRecoveryCodeEmail } from '@/emails/PasswordRecoveryCodeEmail'
 import { RegisterVerificationEmail } from '@/emails/RegisterVerificationEmail'
 import { WelcomeEmail } from '@/emails/WelcomeEmail'
 import { getSiteUrl } from '@/lib/email/brand'
@@ -9,7 +10,8 @@ export default async function EmailPreviewPage() {
     notFound()
   }
 
-  const registerHtml = await render(<RegisterVerificationEmail code="438291" email="a***@163.com" />)
+  const registerHtml = await render(<RegisterVerificationEmail code="123456" email="a***@163.com" />)
+  const recoveryHtml = await render(<PasswordRecoveryCodeEmail code="123456" />)
   const welcomeHtml = await render(<WelcomeEmail loginUrl={`${getSiteUrl()}/login`} />)
 
   return (
@@ -20,13 +22,17 @@ export default async function EmailPreviewPage() {
             <p className="ui-label">Email Preview</p>
             <h1>邮件模板预览</h1>
           </div>
-          <span>模拟验证码 438291</span>
+          <span>模拟验证码 123456</span>
         </header>
 
         <div className="email-preview-grid">
           <article>
             <h2>注册验证码邮件</h2>
             <iframe title="注册验证码邮件预览" srcDoc={registerHtml} />
+          </article>
+          <article>
+            <h2>密码重置验证码邮件</h2>
+            <iframe title="密码重置验证码邮件预览" srcDoc={recoveryHtml} />
           </article>
           <article>
             <h2>欢迎邮件</h2>

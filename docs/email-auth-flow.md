@@ -14,7 +14,7 @@ npm run email:dev
 http://127.0.0.1:3000/dev/email-preview
 ```
 
-预览页只在开发环境开放，不会发送真实邮件，默认使用模拟验证码 `438291`。
+预览页只在开发环境开放，不会发送真实邮件，注册和密码恢复预览都使用模拟验证码 `123456`。
 
 ## 环境变量
 
@@ -40,9 +40,11 @@ NEXT_PUBLIC_SITE_URL=https://www.ieltswriting.online
 ## 模板位置
 
 - `emails/RegisterVerificationEmail.tsx`
+- `emails/PasswordRecoveryCodeEmail.tsx`
+- `emails/AuthCodeEmailLayout.tsx`
 - `emails/WelcomeEmail.tsx`
 - `lib/email/brand.ts`
 
 品牌名、Logo、站点 URL、支持邮箱、主色、版权信息集中在 `emailBrand` 中。
 
-密码恢复邮件模板不在 React Email 预览页维护。请按 [`docs/supabase-password-recovery-otp-template.md`](./supabase-password-recovery-otp-template.md) 配置 Supabase Dashboard 中的 Recovery 模板。
+注册和密码恢复验证码邮件共用 `AuthCodeEmailLayout`。React Email 的密码恢复组件用于开发预览和视觉回归；Production 正文仍由 Supabase Auth 模板渲染。请按 [`docs/supabase-password-recovery-otp-template.md`](./supabase-password-recovery-otp-template.md) 将等价的静态 HTML 配置到 Dashboard。

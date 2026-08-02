@@ -5631,8 +5631,10 @@ img {
 
 .code-input-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--otp-length, 6), minmax(0, 1fr));
   gap: 9px;
+  width: 100%;
+  min-width: 0;
 }
 
 .code-input-grid input {
@@ -5643,6 +5645,21 @@ img {
   font-size: 26px;
   font-weight: 800;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.code-input-grid.is-invalid input {
+  border-color: rgba(220, 38, 38, 0.72);
+  background: rgba(254, 242, 242, 0.86);
+}
+
+.code-input-grid.is-invalid input:focus {
+  border-color: #dc2626;
+  outline-color: rgba(220, 38, 38, 0.16);
+}
+
+.code-input-grid.is-disabled input {
+  color: #64748b;
+  background: rgba(241, 245, 249, 0.8);
 }
 
 .code-meta {
