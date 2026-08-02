@@ -4,8 +4,9 @@ import {
   AiResponseError,
   createAiRequestId,
   fetchAiCompletion,
-  getEffectiveAiConfig,
+  getEffectivePromptAiConfig,
   parseAiJsonObject,
+  type AiConfig,
   type AiMessage
 } from '@/lib/ai-provider'
 import type { WritingQuestion } from '@/lib/ielts-questions'
@@ -705,8 +706,11 @@ function task1FallbackQuestion(input: PromptGenerationInput, requestId: string):
   }
 }
 
-export async function generateWritingPromptWithAi(input: PromptGenerationInput): Promise<WritingQuestion> {
-  const config = await getEffectiveAiConfig({ slot: 'promptModel' })
+export async function generateWritingPromptWithAi(
+  input: PromptGenerationInput,
+  options: { config?: AiConfig } = {}
+): Promise<WritingQuestion> {
+  const config = options.config ?? await getEffectivePromptAiConfig()
   const requestId = createAiRequestId('gen')
   const messages: AiMessage[] = [
     {

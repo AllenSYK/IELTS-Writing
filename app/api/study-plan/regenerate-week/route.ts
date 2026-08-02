@@ -1,7 +1,8 @@
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
-import { getEffectiveAiConfig, AiProviderError } from '@/lib/ai-provider'
+import { getEffectiveStudyPlanAiConfig, AiProviderError } from '@/lib/ai-provider'
+import { recordAiUsage } from '@/lib/ai-usage'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
@@ -46,13 +47,13 @@ export async function POST() {
   const goals = (activePlan.goals_snapshot ?? {}) as Record<string, unknown>
 
   let tasks: Array<Record<string, unknown>> = []
+  let studyPlanModel: string | null = null
+  let studyPlanError: unknown
+  let usedAi = false
 
   try {
-    const aiConfig = await getEffectiveAiConfig({
-      slot: 'studyPlanModel',
-      modelEnv: 'QWEN_STUDY_PLAN_MODEL',
-      defaultModel: 'qwen3.5-plus'
-    })
+    const aiConfig = await getEffectiveStudyPlanAiConfig()
+    studyPlanModel = aiConfig.model
     const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -84,9 +85,20 @@ export async function POST() {
     const parsed = JSON.parse(content)
     const taskArray = Array.isArray(parsed) ? parsed : parsed.tasks ?? []
     tasks = Array.isArray(taskArray) ? taskArray.slice(0, 14) : []
-  } catch {
+    usedAi = true
+  } catch (error) {
+    studyPlanError = error
     tasks = buildFallbackNextWeekTasks(nextWeekStart, preferences, diagnosis)
   }
+
+  await recordAiUsage({
+    check,
+    action: 'generate_study_plan',
+    inputCharacters: JSON.stringify({ diagnosis, preferences, goals }).length,
+    result: usedAi ? tasks : null,
+    error: studyPlanError,
+    model: studyPlanModel
+  })
 
   for (const task of tasks) {
     await service.from('study_plan_tasks').insert({

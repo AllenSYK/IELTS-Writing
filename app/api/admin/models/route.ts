@@ -9,9 +9,23 @@ import {
 } from '@/lib/ai-model-settings'
 import { getAiModelEnvironmentDefaults } from '@/lib/ai-provider'
 
+const ParseableTimestampSchema = z
+  .string()
+  .trim()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: '更新时间格式无效'
+  })
+
 const UpdateAiModelSettingsSchema = AiModelSettingsSchema.extend({
-  expectedUpdatedAt: z.string().datetime().optional()
+  expectedUpdatedAt: ParseableTimestampSchema.optional()
 })
+
+function toIsoTimestamp(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return null
+  return new Date(timestamp).toISOString()
+}
 
 type StoredModelSettings = {
   setting_value: Record<string, unknown>
@@ -36,7 +50,7 @@ export async function GET(request: Request) {
     return json({
       success: true,
       settings: stored.success ? stored.data : environmentDefaults,
-      updatedAt: data?.updated_at || null,
+      updatedAt: toIsoTimestamp(data?.updated_at),
       source: stored.success ? 'admin' : 'environment',
       apiKeyConfigured: Boolean(process.env.AI_API_KEY?.trim()),
       requestId
@@ -54,9 +68,12 @@ export async function PATCH(request: Request) {
     const { user, service } = await requireAdminService(request)
     const body = UpdateAiModelSettingsSchema.parse(await request.json())
     const { expectedUpdatedAt, ...settings } = body
+    const normalizedExpectedUpdatedAt = expectedUpdatedAt
+      ? new Date(expectedUpdatedAt).toISOString()
+      : undefined
     let data: StoredModelSettings | null = null
 
-    if (expectedUpdatedAt) {
+    if (normalizedExpectedUpdatedAt) {
       const result = await service
         .from('admin_settings')
         .update({
@@ -64,7 +81,7 @@ export async function PATCH(request: Request) {
           updated_at: new Date().toISOString()
         })
         .eq('id', AI_MODEL_SETTINGS_ID)
-        .eq('updated_at', expectedUpdatedAt)
+        .eq('updated_at', normalizedExpectedUpdatedAt)
         .select('setting_value, updated_at')
         .maybeSingle()
 
@@ -80,10 +97,10 @@ export async function PATCH(request: Request) {
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'id',
-          ignoreDuplicates: true
+          ignoreDuplicates: false
         })
         .select('setting_value, updated_at')
-        .maybeSingle()
+        .single()
 
       if (result.error) throw result.error
       data = result.data
@@ -117,7 +134,7 @@ export async function PATCH(request: Request) {
     return json({
       success: true,
       settings: data.setting_value as AiModelSettings,
-      updatedAt: data.updated_at,
+      updatedAt: toIsoTimestamp(data.updated_at),
       source: 'admin',
       apiKeyConfigured: Boolean(process.env.AI_API_KEY?.trim()),
       requestId

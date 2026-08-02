@@ -1081,9 +1081,9 @@ export function parseAiEvaluationText(
 
 export async function evaluateEssayWithAi(
   input: EssayEvaluationInput,
-  options: { requestId?: string; cacheScope?: string } = {}
+  options: { requestId?: string; cacheScope?: string; config?: AiConfig } = {}
 ): Promise<EssayEvaluation> {
-  const config = await getEffectiveGradingAiConfig()
+  const config = options.config ?? await getEffectiveGradingAiConfig()
   const phase = input.phase || 'full'
   const requestId = options.requestId || createAiRequestId('eval')
   const cacheKey = getEvaluationCacheKey({

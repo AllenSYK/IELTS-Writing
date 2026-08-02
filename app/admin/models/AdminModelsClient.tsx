@@ -39,6 +39,30 @@ type ModelsResponse = {
   apiKeyConfigured: boolean
 }
 
+type ModelTestResponse = {
+  success: true
+  latencyMs: number
+  model: string
+  slot: AiModelSlot
+}
+
+const MODEL_ERROR_MESSAGES: Record<string, string> = {
+  AI_KEY_MISSING: '服务端尚未配置 AI_API_KEY，请在 Vercel 环境变量中配置。',
+  ai_api_key_invalid: '服务端 API Key 无效，请检查 Vercel 环境变量 AI_API_KEY。',
+  ai_model_or_endpoint_invalid: '模型名称或 API Base URL 不正确。',
+  ai_quota_exhausted: '模型服务额度已耗尽，请充值或更换有额度的 API Key。',
+  ai_rate_limited: '请求过于频繁，请稍后重试。',
+  ai_request_timeout: '模型响应超时，请稍后重试或更换模型。',
+  ai_network_error: '无法连接模型服务，请检查 API Base URL。',
+  CONFLICT: '配置已被其他管理员修改，请刷新后重试。'
+}
+
+function modelErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof AdminApiError)) return fallback
+  if (error.code === 'INVALID_INPUT') return error.message
+  return (error.code && MODEL_ERROR_MESSAGES[error.code]) || error.message || fallback
+}
+
 const modelFields: Array<{
   key: AiModelSlot
   title: string
@@ -61,7 +85,8 @@ export function AdminModelsClient() {
   const [source, setSource] = useState<'admin' | 'environment'>('environment')
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
-  const [testResult, setTestResult] = useState<{ latencyMs: number; model: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ latencyMs: number; model: string; slot: AiModelSlot } | null>(null)
+  const [testingSlot, setTestingSlot] = useState<AiModelSlot | null>(null)
 
   const { error, isLoading, mutate } = useSWR<ModelsResponse>(
     ADMIN_CACHE_KEYS.MODELS,
@@ -113,14 +138,14 @@ export function AdminModelsClient() {
         setSource('admin')
         setApiKeyConfigured(data.apiKeyConfigured)
         mutate(data, { revalidate: false })
-        pushToast({ kind: 'success', title: '模型配置已保存并生效' })
+        pushToast({ kind: 'success', title: '模型配置已保存，新的 AI 请求将立即使用当前配置' })
       },
       onError(error) {
         if (error instanceof Error && error.message === 'VALIDATION_FAILED') return
         pushToast({
           kind: 'error',
           title: '模型配置保存失败',
-          message: error instanceof AdminApiError ? error.message : '请稍后重试。'
+          message: modelErrorMessage(error, '请稍后重试。')
         })
       },
       revalidate: false
@@ -129,30 +154,36 @@ export function AdminModelsClient() {
 
   const { trigger: testConnection, isMutating: testing } = useSWRMutation(
     '/api/admin/models/test',
-    async () => {
+    async (_key, { arg: slot }: { arg: AiModelSlot }) => {
       if (!validate()) throw new Error('VALIDATION_FAILED')
-      return adminApiRequest<{ success: true; latencyMs: number; model: string }>(
+      setTestingSlot(slot)
+      return adminApiRequest<ModelTestResponse>(
         '/api/admin/models/test',
         'POST',
-        settings
+        { settings, slot }
       )
     },
     {
       onSuccess(data) {
-        setTestResult({ latencyMs: data.latencyMs, model: data.model })
+        setTestingSlot(null)
+        setTestResult({ latencyMs: data.latencyMs, model: data.model, slot: data.slot })
+        const visionOnlyNote = data.slot === 'visionModel' || data.slot === 'visionFallbackModel'
+          ? '仅测试接口与模型可访问性，未验证图片输入能力。'
+          : undefined
         pushToast({
           kind: 'success',
-          title: '模型连接正常',
-          message: `${data.model} · ${data.latencyMs}ms`
+          title: `模型连接正常：${data.model} · ${data.latencyMs}ms`,
+          message: visionOnlyNote
         })
       },
       onError(error) {
+        setTestingSlot(null)
         if (error instanceof Error && error.message === 'VALIDATION_FAILED') return
         setTestResult(null)
         pushToast({
           kind: 'error',
           title: '连接测试失败',
-          message: error instanceof AdminApiError ? error.message : '请检查接口地址、模型名称和服务端密钥。'
+          message: modelErrorMessage(error, '请检查接口地址、模型名称和服务端密钥。')
         })
       }
     }
@@ -192,10 +223,10 @@ export function AdminModelsClient() {
             className="admin-secondary-button"
             type="button"
             disabled={testing || isLoading || !apiKeyConfigured}
-            onClick={() => void testConnection()}
+            onClick={() => void testConnection('gradingModel')}
           >
             {testing ? <Loader2 className="admin-spin" size={16} /> : <Activity size={16} />}
-            {testing ? '正在测试' : '测试连接'}
+            {testing ? '正在测试' : '测试批改模型'}
           </button>
         )}
       />
@@ -220,7 +251,7 @@ export function AdminModelsClient() {
             </article>
             <article className="admin-model-status-card">
               <span className={testResult ? 'is-good' : 'is-muted'}><BadgeCheck size={20} /></span>
-              <div><small>连接状态</small><strong>{testResult ? `${testResult.latencyMs}ms · 正常` : '等待测试'}</strong></div>
+              <div><small>连接状态</small><strong>{testResult ? `${testResult.model} · ${testResult.latencyMs}ms` : '等待测试'}</strong></div>
             </article>
           </section>
 
@@ -289,12 +320,22 @@ export function AdminModelsClient() {
               {modelFields.map((field) => {
                 const Icon = field.icon
                 return (
-                  <label className={`admin-model-card tone-${field.tone}`} key={field.key}>
+                  <article className={`admin-model-card tone-${field.tone}`} key={field.key}>
                     <span className="admin-model-card-icon"><Icon size={19} /></span>
                     <span className="admin-model-card-copy">
                       <strong>{field.title}</strong>
                       <small>{field.description}</small>
                     </span>
+                    <button
+                      className="admin-model-test-button"
+                      type="button"
+                      disabled={testing || !apiKeyConfigured}
+                      onClick={() => void testConnection(field.key)}
+                      aria-label={`测试${field.title}模型`}
+                    >
+                      {testingSlot === field.key ? <Loader2 className="admin-spin" size={14} /> : <Activity size={14} />}
+                      {testingSlot === field.key ? '测试中' : '测试'}
+                    </button>
                     <input
                       value={settings[field.key]}
                       list="ai-model-options"
@@ -303,7 +344,7 @@ export function AdminModelsClient() {
                       aria-invalid={Boolean(validationErrors[field.key])}
                     />
                     {validationErrors[field.key] ? <small className="admin-field-error">{validationErrors[field.key]}</small> : null}
-                  </label>
+                  </article>
                 )
               })}
               <datalist id="ai-model-options">

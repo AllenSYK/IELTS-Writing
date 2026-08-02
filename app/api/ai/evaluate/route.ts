@@ -1,7 +1,8 @@
 import {
   AiConfigurationError,
   AiProviderError,
-  apiStatusForAiError
+  apiStatusForAiError,
+  getEffectiveGradingAiConfig
 } from '@/lib/ai-provider'
 import { evaluateEssayWithAi } from '@/lib/ielts-evaluation'
 import { recordAiUsage } from '@/lib/ai-usage'
@@ -35,10 +36,14 @@ export async function POST(request: Request) {
     return apiError(error, 'AI evaluation failed.')
   }
 
+  let gradingModel: string | null = null
   try {
+    const config = await getEffectiveGradingAiConfig()
+    gradingModel = config.model
     const evaluation = await evaluateEssayWithAi(body, {
       requestId,
-      cacheScope: check.user.id
+      cacheScope: check.user.id,
+      config
     })
     await measureGradingStage({
       requestId,
@@ -48,7 +53,8 @@ export async function POST(request: Request) {
         check,
         action: 'evaluate',
         inputCharacters: `${body.prompt || ''}\n${body.essay}`.length,
-        result: evaluation
+        result: evaluation,
+        model: evaluation.model
       })
     })
     logGradingStage({
@@ -66,28 +72,33 @@ export async function POST(request: Request) {
   } catch (error) {
     await measureGradingStage({
       requestId,
-      model: 'unknown',
+      model: gradingModel || 'unknown',
       stage: 'usage-record-storage',
       run: () => recordAiUsage({
         check,
         action: 'evaluate',
         inputCharacters: `${body.prompt || ''}\n${body.essay}`.length,
         result: null,
-        error
+        error,
+        model: gradingModel
       })
     })
     logGradingStage({
       requestId,
-      model: 'unknown',
+      model: gradingModel || 'unknown',
       stage: 'request-total',
       durationMs: Math.round(performance.now() - routeStartedAt),
       attempt: 1,
       success: false
     })
     if (error instanceof AiConfigurationError) {
+      const apiKeyMissing = error.missing.includes('AI_API_KEY')
       return json(
         {
-          error: 'ai_not_configured',
+          error: apiKeyMissing ? 'AI_KEY_MISSING' : 'ai_model_or_endpoint_invalid',
+          message: apiKeyMissing
+            ? '服务端尚未配置 AI_API_KEY，请在 Vercel 环境变量中配置。'
+            : '模型名称或 API Base URL 不正确。',
           missing: error.missing
         },
         { status: 503 }

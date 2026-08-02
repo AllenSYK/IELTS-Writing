@@ -1867,7 +1867,7 @@
 .admin-model-card {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 4px 12px;
   align-items: center;
   border: 1px solid rgba(193, 198, 215, 0.28);
@@ -1936,6 +1936,27 @@
 .admin-model-card input:focus {
   border-color: rgba(0, 88, 188, 0.28);
   box-shadow: var(--focus-ring);
+}
+
+.admin-model-test-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: color-mix(in srgb, currentColor 8%, white 90%);
+  color: currentColor;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.admin-model-test-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .admin-model-card > .admin-field-error {

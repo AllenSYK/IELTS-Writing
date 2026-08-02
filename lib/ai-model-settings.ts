@@ -4,6 +4,20 @@ export const AI_MODEL_SETTINGS_ID = 'ai_models'
 
 const ModelNameSchema = z.string().trim().min(1, '模型名称不能为空').max(160)
 
+export const ParseableTimestampSchema = z
+  .string()
+  .trim()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: '更新时间格式无效'
+  })
+
+export function normalizeAiModelSettingsTimestamp(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) return null
+  return new Date(timestamp).toISOString()
+}
+
 export const AiModelSettingsSchema = z.object({
   enabled: z.boolean(),
   provider: z.string().trim().min(1, '服务商不能为空').max(80),
@@ -20,12 +34,15 @@ export const AiModelSettingsSchema = z.object({
 
 export type AiModelSettings = z.infer<typeof AiModelSettingsSchema>
 
-export type AiModelSlot =
-  | 'promptModel'
-  | 'gradingModel'
-  | 'studyPlanModel'
-  | 'visionModel'
-  | 'visionFallbackModel'
+export const AiModelSlotSchema = z.enum([
+  'promptModel',
+  'gradingModel',
+  'studyPlanModel',
+  'visionModel',
+  'visionFallbackModel'
+])
+
+export type AiModelSlot = z.infer<typeof AiModelSlotSchema>
 
 export const DEFAULT_QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 

@@ -1,7 +1,8 @@
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
-import { getEffectiveAiConfig, AiProviderError } from '@/lib/ai-provider'
+import { getEffectiveStudyPlanAiConfig, AiProviderError } from '@/lib/ai-provider'
+import { recordAiUsage } from '@/lib/ai-usage'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { normalizeStudyPlanTaskType } from '@/lib/study-plan-types'
@@ -77,18 +78,29 @@ export async function POST(request: Request) {
   }
 
   let tasks: Array<Record<string, unknown>> = []
+  let studyPlanModel: string | null = null
+  let studyPlanError: unknown
+  let usedAi = false
 
   try {
-    const aiConfig = await getEffectiveAiConfig({
-      slot: 'studyPlanModel',
-      modelEnv: 'QWEN_STUDY_PLAN_MODEL',
-      defaultModel: 'qwen3.5-plus'
-    })
+    const aiConfig = await getEffectiveStudyPlanAiConfig()
+    studyPlanModel = aiConfig.model
     const aiTasks = await generatePlanWithAI(aiConfig, { diagnosis, preferences, goals, records: records.slice(0, 20) })
     tasks = aiTasks
-  } catch {
+    usedAi = true
+  } catch (error) {
+    studyPlanError = error
     tasks = buildFallbackTasks(preferences, goals, diagnosis) as unknown as Array<Record<string, unknown>>
   }
+
+  await recordAiUsage({
+    check,
+    action: 'generate_study_plan',
+    inputCharacters: JSON.stringify({ diagnosis, preferences, goals }).length,
+    result: usedAi ? tasks : null,
+    error: studyPlanError,
+    model: studyPlanModel
+  })
 
   for (const task of tasks) {
     task.taskType = normalizeStudyPlanTaskType(task.taskType)
@@ -104,7 +116,7 @@ export async function POST(request: Request) {
       p_diagnosis: diagnosis,
       p_preferences: preferences,
       p_goals: goals,
-      p_ai_model: 'fallback',
+      p_ai_model: usedAi && studyPlanModel ? studyPlanModel : 'fallback',
       p_tasks: tasks
     })
     .single()

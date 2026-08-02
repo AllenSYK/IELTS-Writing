@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireWebAdmin } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { getEffectiveAiConfig, AiProviderError, fetchAiNonStreamingCompletion, parseAiJsonObject, type AiConfig } from '@/lib/ai-provider'
+import { getEffectiveStudyPlanAiConfig, fetchAiNonStreamingCompletion, parseAiJsonObject, type AiConfig } from '@/lib/ai-provider'
 import { checkRateLimit, getClientIp, rateLimitResponse, AI_CLASSIFY_RATE_LIMIT } from '@/lib/rate-limit'
 
 const ClassifySchema = z.object({
@@ -105,11 +105,7 @@ export async function POST(request: Request) {
 
   let config
   try {
-    config = await getEffectiveAiConfig({
-      slot: 'studyPlanModel',
-      modelEnv: 'QWEN_STUDY_PLAN_MODEL',
-      defaultModel: 'qwen3.5-plus'
-    })
+    config = await getEffectiveStudyPlanAiConfig()
   } catch {
     return json({ success: false, message: 'AI not configured' }, { status: 503 })
   }

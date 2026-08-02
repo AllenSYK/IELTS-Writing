@@ -25,6 +25,10 @@ export type EvaluationErrorKind =
   | 'network'
   | 'authentication'
   | 'license'
+  | 'configuration'
+  | 'api-key'
+  | 'model'
+  | 'quota'
   | 'rate-limit'
   | 'service'
   | 'invalid-response'
@@ -46,9 +50,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function providerErrorKind(status: number, code: string | undefined): EvaluationErrorKind {
   if (status === 401) return 'authentication'
+  if (code === 'AI_KEY_MISSING') return 'configuration'
+  if (code === 'ai_api_key_invalid') return 'api-key'
+  if (code === 'ai_model_or_endpoint_invalid') return 'model'
+  if (code === 'ai_quota_exhausted') return 'quota'
   if (status === 403) return 'license'
   if (status === 429 || code === 'ai_rate_limited') return 'rate-limit'
   if (status === 504 || code === 'ai_request_timeout') return 'timeout'
+  if (code === 'ai_network_error') return 'network'
   if (
     code === 'ai_json_parse_error' ||
     code === 'ai_scoring_schema_error' ||
@@ -71,6 +80,10 @@ export function evaluationErrorMessage(error: unknown) {
     network: { title: '网络错误', message: '网络连接失败，作文已保存在本地，请检查网络后重试。' },
     authentication: { title: '请先登录', message: '请先登录后再使用批改功能。' },
     license: { title: '需要激活', message: '请先激活账号后再使用批改功能。' },
+    configuration: { title: '服务未配置', message: '服务端尚未配置 AI_API_KEY，请在 Vercel 环境变量中配置。' },
+    'api-key': { title: '密钥无效', message: '服务端 API Key 无效，请检查 Vercel 环境变量 AI_API_KEY。' },
+    model: { title: '模型配置错误', message: '模型名称或 API Base URL 不正确。' },
+    quota: { title: '模型额度已耗尽', message: '模型服务额度已耗尽，请充值或更换有额度的 API Key。' },
     'rate-limit': { title: '请求限制', message: '请求过于频繁，请等待一分钟后重试。' },
     service: { title: '服务繁忙', message: '批改服务繁忙，请稍后重试。' },
     'invalid-response': { title: '格式异常', message: '批改结果解析失败，请重新提交。' },

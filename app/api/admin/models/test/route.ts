@@ -1,43 +1,51 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { requireAdminService, adminApiError } from '@/lib/web-license/admin-api'
-import { AiModelSettingsSchema } from '@/lib/ai-model-settings'
+import { AiModelSettingsSchema, AiModelSlotSchema } from '@/lib/ai-model-settings'
 import {
   AiConfigurationError,
   AiProviderError,
   apiStatusForAiError,
   createAiRequestId,
-  fetchAiNonStreamingCompletion,
-  getAiConfig
+  fetchAiNonStreamingCompletion
 } from '@/lib/ai-provider'
+
+const TestModelRequestSchema = z.object({
+  settings: AiModelSettingsSchema,
+  slot: AiModelSlotSchema
+})
 
 export async function POST(request: Request) {
   const requestId = request.headers.get('X-Request-Id') || createAiRequestId('gen')
 
   try {
     await requireAdminService(request)
-    const settings = AiModelSettingsSchema.parse(await request.json())
-    const environmentConfig = getAiConfig()
+    const { settings, slot } = TestModelRequestSchema.parse(await request.json())
+    const apiKey = process.env.AI_API_KEY?.trim()
+    if (!apiKey) throw new AiConfigurationError(['AI_API_KEY'])
+    const model = settings[slot]
     const startedAt = Date.now()
 
     await fetchAiNonStreamingCompletion({
-      ...environmentConfig,
+      apiKey,
       provider: settings.provider,
       baseUrl: settings.baseUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, ''),
-      model: settings.promptModel
+      model
     }, [
       { role: 'system', content: 'Reply with the single word OK.' },
       { role: 'user', content: 'Connection test.' }
     ], {
       maxTokens: 8,
       requestId,
-      stage: 'admin-ai-connection-test'
+      stage: 'admin-ai-connection-test',
+      timeoutMs: 30_000
     })
 
     return json({
       success: true,
       latencyMs: Date.now() - startedAt,
-      model: settings.promptModel,
+      model,
+      slot,
       requestId
     })
   } catch (error) {
@@ -53,7 +61,7 @@ export async function POST(request: Request) {
       return json({
         success: false,
         code: 'AI_KEY_MISSING',
-        message: '服务端尚未配置 AI_API_KEY，暂时无法测试连接。',
+        message: '服务端尚未配置 AI_API_KEY，请在 Vercel 环境变量中配置。',
         requestId
       }, { status: 400 })
     }

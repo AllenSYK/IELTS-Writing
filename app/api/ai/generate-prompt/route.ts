@@ -2,7 +2,8 @@ import { z } from 'zod'
 import {
   AiConfigurationError,
   AiProviderError,
-  apiStatusForAiError
+  apiStatusForAiError,
+  getEffectivePromptAiConfig
 } from '@/lib/ai-provider'
 import { generateWritingPromptWithAi } from '@/lib/writing-prompt-generation'
 import { recordAiUsage } from '@/lib/ai-usage'
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
   }
 
   let body: z.infer<typeof GeneratePromptSchema>
+  let promptModel: string | null = null
   try {
     body = GeneratePromptSchema.parse(await request.json())
   } catch (error) {
@@ -58,6 +60,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    const config = await getEffectivePromptAiConfig()
+    promptModel = config.model
     const selection = {
       ...DefaultPromptSelection,
       task1ChartType: normalizeTask1ChartType(body.selection.task1ChartType),
@@ -69,12 +73,13 @@ export async function POST(request: Request) {
       taskType: body.taskType,
       selection,
       excludePromptSummaries: body.excludePromptSummaries
-    })
+    }, { config })
     await recordAiUsage({
       check,
       action: 'generate_prompt',
       inputCharacters: JSON.stringify(body).length,
-      result: question
+      result: question,
+      model: config.model
     })
     return json({ ok: true, question })
   } catch (error) {
@@ -83,7 +88,8 @@ export async function POST(request: Request) {
       action: 'generate_prompt',
       inputCharacters: JSON.stringify(body).length,
       result: null,
-      error
+      error,
+      model: promptModel
     })
     if (error instanceof AiConfigurationError) {
       return json({ error: 'ai_not_configured', missing: error.missing }, { status: 503 })

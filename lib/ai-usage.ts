@@ -8,13 +8,15 @@ export async function recordAiUsage({
   action,
   inputCharacters,
   result,
-  error
+  error,
+  model
 }: {
   check: ActiveWebLicense
-  action: 'evaluate' | 'generate_prompt'
+  action: 'evaluate' | 'generate_prompt' | 'generate_study_plan' | 'recognize_image'
   inputCharacters: number
   result: unknown
   error?: unknown
+  model?: string | null
 }) {
   try {
     const service = createSupabaseServiceRoleClient()
@@ -30,7 +32,7 @@ export async function recordAiUsage({
           user_id: check.user.id,
           license_id: check.activation.license_id,
           action,
-          model: process.env.AI_MODEL || null,
+          model: model || null,
           input_tokens: Math.ceil(inputCharacters / 4),
           output_tokens: result ? Math.ceil(JSON.stringify(result).length / 4) : null,
           success: !error,

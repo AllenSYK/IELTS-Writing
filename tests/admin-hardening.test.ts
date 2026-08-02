@@ -75,3 +75,55 @@ test('administrator concurrency guards execute in the same database mutation', a
   assert.match(hardeningMigration, /pg_advisory_xact_lock/)
   assert.match(hardeningMigration, /LAST_ADMIN_PROTECTED/)
 })
+
+test('AI model settings normalize timestamps and report stale saves as conflicts', async () => {
+  const route = await readFile(new URL('../app/api/admin/models/route.ts', import.meta.url), 'utf8')
+
+  assert.match(route, /expectedUpdatedAt:\s*ParseableTimestampSchema\.optional\(\)/)
+  assert.match(route, /new Date\(expectedUpdatedAt\)\.toISOString\(\)/)
+  assert.match(route, /\.eq\('updated_at', normalizedExpectedUpdatedAt\)/)
+  assert.match(route, /ignoreDuplicates:\s*false/)
+  assert.match(route, /\.select\('setting_value, updated_at'\)\s*\.single\(\)/)
+  assert.match(route, /if \(!data\)[\s\S]*code:\s*'CONFLICT'[\s\S]*status:\s*409/)
+  assert.match(route, /updatedAt:\s*toIsoTimestamp\(data\?\.updated_at\)/)
+  assert.match(route, /updatedAt:\s*toIsoTimestamp\(data\.updated_at\)/)
+})
+
+test('AI model connection tests target the requested workload without exposing a key', async () => {
+  const [testRoute, client] = await Promise.all([
+    readFile(new URL('../app/api/admin/models/test/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/admin/models/AdminModelsClient.tsx', import.meta.url), 'utf8')
+  ])
+
+  assert.match(testRoute, /slot:\s*AiModelSlotSchema/)
+  assert.match(testRoute, /const model = settings\[slot\]/)
+  assert.match(testRoute, /process\.env\.AI_API_KEY/)
+  assert.doesNotMatch(testRoute, /settings\.promptModel/)
+  assert.match(client, /testConnection\('gradingModel'\)/)
+  assert.match(client, /\{ settings, slot \}/)
+  assert.match(client, /未验证图片输入能力/)
+})
+
+test('AI workloads use runtime admin slots and usage rows store the resolved model', async () => {
+  const [provider, evaluation, prompts, studyPlan, vision, usage] = await Promise.all([
+    readFile(new URL('../lib/ai-provider.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/ielts-evaluation.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/writing-prompt-generation.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../app/api/study-plan/generate/route.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/uploaded-writing-task-ai.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../lib/ai-usage.ts', import.meta.url), 'utf8')
+  ])
+
+  assert.match(provider, /getEffectivePromptAiConfig[\s\S]*slot:\s*'promptModel'/)
+  assert.match(provider, /getEffectiveGradingAiConfig[\s\S]*slot:\s*'gradingModel'/)
+  assert.match(provider, /getEffectiveStudyPlanAiConfig[\s\S]*slot:\s*'studyPlanModel'/)
+  assert.match(provider, /getEffectiveVisionAiConfig[\s\S]*slot:\s*'visionModel'/)
+  assert.match(provider, /getEffectiveVisionFallbackAiConfig[\s\S]*slot:\s*'visionFallbackModel'/)
+  assert.match(evaluation, /getEffectiveGradingAiConfig\(\)/)
+  assert.match(prompts, /getEffectivePromptAiConfig\(\)/)
+  assert.match(studyPlan, /getEffectiveStudyPlanAiConfig\(\)/)
+  assert.match(vision, /getEffectiveVisionAiConfig\(\)/)
+  assert.match(vision, /getEffectiveVisionFallbackAiConfig\(\)/)
+  assert.match(usage, /model:\s*model \|\| null/)
+  assert.doesNotMatch(usage, /process\.env\.AI_MODEL/)
+})

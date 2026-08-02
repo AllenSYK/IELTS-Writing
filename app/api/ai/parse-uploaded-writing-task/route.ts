@@ -4,8 +4,10 @@ import {
   apiStatusForAiError,
   AiConfigurationError,
   AiProviderError,
-  AiResponseError
+  AiResponseError,
+  getEffectiveVisionAiConfig
 } from '@/lib/ai-provider'
+import { recordAiUsage } from '@/lib/ai-usage'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { parseUploadedWritingTask } from '@/lib/uploaded-writing-task-ai'
@@ -118,6 +120,9 @@ export async function POST(request: Request) {
   let uploadId: string | null = null
   let storagePath: string | null = null
   let requestId = fallbackRequestId
+  let aiUsageModel: string | null = null
+  let aiRequestAttempted = false
+  let aiUsageRecorded = false
   const service = createSupabaseServiceRoleClient()
 
   try {
@@ -129,7 +134,6 @@ export async function POST(request: Request) {
     if (files.length !== 1 || !(file instanceof File)) {
       throw new UploadedTaskFlowError('TASK_IMAGE_PARSE_FAILED', '请选择一张题目图片。', 400)
     }
-
     await cleanupExpiredUploads(service, check.user.id)
 
     const { data: existingRequest } = await service
@@ -241,10 +245,23 @@ export async function POST(request: Request) {
       )
     }
 
+    const visionConfig = await getEffectiveVisionAiConfig()
+    aiUsageModel = visionConfig.model
+    aiRequestAttempted = true
     const parsed = await parseUploadedWritingTask({
       signedImageUrl: signed.signedUrl,
-      requestId
+      requestId,
+      primaryConfig: visionConfig
     })
+    aiUsageModel = parsed.model
+    await recordAiUsage({
+      check,
+      action: 'recognize_image',
+      inputCharacters: 0,
+      result: parsed.result,
+      model: parsed.model
+    })
+    aiUsageRecorded = true
 
     if (parsed.result.taskType === 'unknown') {
       const unclear = parsed.result.reason !== 'not_ielts_writing_task'
@@ -302,6 +319,16 @@ export async function POST(request: Request) {
       cached: false
     })
   } catch (error) {
+    if (aiRequestAttempted && !aiUsageRecorded) {
+      await recordAiUsage({
+        check,
+        action: 'recognize_image',
+        inputCharacters: 0,
+        result: null,
+        error,
+        model: aiUsageModel
+      })
+    }
     const errorCode = error instanceof UploadedTaskFlowError
       ? error.code
       : error instanceof AiProviderError

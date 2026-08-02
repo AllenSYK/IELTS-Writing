@@ -29,6 +29,7 @@ type CompletionOptions = {
   requestId: string
   stage?: string
   responseFormat?: { type: 'json_object' }
+  timeoutMs?: number
 }
 
 const ProviderDefaults: Record<string, Pick<AiConfig, 'baseUrl' | 'model'>> = {
@@ -228,6 +229,22 @@ export function getEffectiveGradingAiConfig() {
   })
 }
 
+export function getEffectivePromptAiConfig() {
+  return getEffectiveAiConfig({
+    slot: 'promptModel',
+    modelEnv: 'AI_MODEL',
+    defaultModel: 'qwen-plus'
+  })
+}
+
+export function getEffectiveStudyPlanAiConfig() {
+  return getEffectiveAiConfig({
+    slot: 'studyPlanModel',
+    modelEnv: 'QWEN_STUDY_PLAN_MODEL',
+    defaultModel: 'qwen3.5-plus'
+  })
+}
+
 export function getEffectiveVisionAiConfig() {
   return getEffectiveAiConfig({
     slot: 'visionModel',
@@ -256,20 +273,26 @@ function configuredTimeoutMs() {
 function providerHttpError(status: number, body?: unknown) {
   const detail = providerErrorText(body)
   if (
-    status === 403 &&
-    /(AllocationQuota\.FreeTierOnly|free quota exhausted|quota exhausted|insufficient balance|余额不足|额度.*耗尽)/i.test(detail)
+    status >= 400 && status < 500 &&
+    /(AllocationQuota\.FreeTierOnly|free quota exhausted|quota exhausted|insufficient[_\s-]*(quota|balance|credit)|billing|余额不足|额度.*耗尽)/i.test(detail)
   ) {
     return new AiProviderError(
-      'AI 服务额度已用完，请稍后重试。',
+      '模型服务额度已耗尽，请充值或更换有额度的 API Key。',
       status,
       'ai_quota_exhausted'
     )
   }
-  if (status === 401) {
-    return new AiProviderError('API Key错误：请检查 AI_API_KEY。', status, 'ai_api_key_invalid')
+  if (
+    status === 401 ||
+    (status === 403 && /(invalid|incorrect|unauthorized|authentication).*(api[ _-]?key|token)|(api[ _-]?key|token).*(invalid|incorrect|unauthorized|expired)/i.test(detail))
+  ) {
+    return new AiProviderError('服务端 API Key 无效，请检查 Vercel 环境变量 AI_API_KEY。', status, 'ai_api_key_invalid')
   }
-  if (status === 404) {
-    return new AiProviderError('模型或接口地址错误：请检查 AI_MODEL 和 AI_BASE_URL。', status, 'ai_model_or_endpoint_invalid')
+  if (
+    status === 403 || status === 404 ||
+    (status >= 400 && status < 500 && /(model|deployment|endpoint).*(not found|does not exist|invalid|permission|access|不存在|无权)|无权.*(模型|访问)/i.test(detail))
+  ) {
+    return new AiProviderError('模型不存在，或当前 API Key 没有访问权限；请同时检查 API Base URL。', status, 'ai_model_or_endpoint_invalid')
   }
   if (status === 429) {
     return new AiProviderError('请求过于频繁，请稍后重试。', status, 'ai_rate_limited')
@@ -332,7 +355,7 @@ export async function fetchAiCompletion(
   options: CompletionOptions
 ): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), configuredTimeoutMs())
+  const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? configuredTimeoutMs())
 
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -412,10 +435,10 @@ export async function fetchAiCompletion(
   } catch (error) {
     if (error instanceof AiProviderError) throw error
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new AiProviderError('AI服务响应时间过长，本次请求已停止，请稍后重试。', undefined, 'ai_request_timeout')
+      throw new AiProviderError('模型响应超时，请稍后重试或更换模型。', undefined, 'ai_request_timeout')
     }
     if (error instanceof TypeError) {
-      throw new AiProviderError('网络错误：无法连接 AI 服务，请检查网络或 AI_BASE_URL。', undefined, 'ai_network_error')
+      throw new AiProviderError('无法连接模型服务，请检查 API Base URL。', undefined, 'ai_network_error')
     }
     throw new AiProviderError('AI 请求失败：请稍后重试。', undefined, 'ai_provider_failed')
   } finally {
@@ -429,7 +452,7 @@ export async function fetchAiNonStreamingCompletion(
   options: CompletionOptions
 ): Promise<string> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), configuredTimeoutMs())
+  const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? configuredTimeoutMs())
 
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -472,10 +495,10 @@ export async function fetchAiNonStreamingCompletion(
   } catch (error) {
     if (error instanceof AiProviderError) throw error
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new AiProviderError('AI服务响应时间过长，本次请求已停止，请稍后重试。', undefined, 'ai_request_timeout')
+      throw new AiProviderError('模型响应超时，请稍后重试或更换模型。', undefined, 'ai_request_timeout')
     }
     if (error instanceof TypeError) {
-      throw new AiProviderError('网络错误：无法连接 AI 服务，请检查网络或 AI_BASE_URL。', undefined, 'ai_network_error')
+      throw new AiProviderError('无法连接模型服务，请检查 API Base URL。', undefined, 'ai_network_error')
     }
     throw new AiProviderError('AI 请求失败：请稍后重试。', undefined, 'ai_provider_failed')
   } finally {

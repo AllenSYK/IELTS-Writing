@@ -110,12 +110,14 @@ Do not output sourceImagePath; the server adds the private image path.`
 
 export async function parseUploadedWritingTask({
   signedImageUrl,
-  requestId = createAiRequestId('parse')
+  requestId = createAiRequestId('parse'),
+  primaryConfig: providedPrimaryConfig
 }: {
   signedImageUrl: string
   requestId?: string
+  primaryConfig?: AiConfig
 }): Promise<{ result: UploadedWritingTaskResult; model: string; requestId: string }> {
-  const primaryConfig = await getEffectiveVisionAiConfig()
+  const primaryConfig = providedPrimaryConfig ?? await getEffectiveVisionAiConfig()
   const messages: AiMessage[] = [
     {
       role: 'system',
