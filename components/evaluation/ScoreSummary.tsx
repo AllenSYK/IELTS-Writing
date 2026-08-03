@@ -4,6 +4,7 @@ import { useState, useCallback, useLayoutEffect, useMemo, useRef, type KeyboardE
 import { ChevronDown } from 'lucide-react'
 import { GlassPanel } from '@/components/app-ui'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
+import { ScoreLaurel } from '@/components/evaluation/ScoreLaurel'
 import {
   formatBand,
   type CriterionKey,
@@ -175,10 +176,6 @@ export function ScoreSummary({
       ? (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
       : (activeEvaluation?.summary || activeEvaluation?.overallFeedback || '本次未返回该项具体说明。'))
     : (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
-  const numericOverall = Number.parseFloat(displayOverall)
-  const scorePosition = Number.isFinite(numericOverall)
-    ? Math.max(0, Math.min(100, (numericOverall / 9) * 100))
-    : 50
 
   const measureCommentOverflow = useCallback(() => {
     const comment = commentRef.current
@@ -233,17 +230,8 @@ export function ScoreSummary({
           <div className="score-summary-hero">
             <div className="score-summary-hero-inner">
               <div className="result-score-label">写作总分</div>
-              <div className="result-score-visual">
-                <strong className="result-score-value">{displayOverall}</strong>
-              </div>
+              <ScoreLaurel score={displayOverall} />
               <div className="result-score-caption">雅思写作模拟评分</div>
-              <div className="result-score-decoration" aria-hidden="true">
-                <span className="result-score-decoration-line" />
-                <span
-                  className="result-score-decoration-dot"
-                  style={{ left: `${scorePosition}%` }}
-                />
-              </div>
             </div>
           </div>
 

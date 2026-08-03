@@ -539,20 +539,28 @@ test('result annotations open in one centered dialog without scrollIntoView', as
 })
 
 test('result detail keeps scores and content intact while using responsive aligned layout', async () => {
-  const [resultPage, scoreSummary, css, appShell] = await Promise.all([
+  const [resultPage, scoreSummary, scoreLaurel, css, appShell] = await Promise.all([
     readFile(new URL('../app/result/page.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/evaluation/ScoreSummary.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/evaluation/ScoreLaurel.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../app/styles/web-audit-refactor.css', import.meta.url), 'utf8'),
     readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
   ])
 
   assert.match(resultPage, /<h1 className="ui-title-display result-title">\{record\.title\}<\/h1>/)
   assert.match(scoreSummary, /<div className="result-score-label">写作总分<\/div>/)
-  assert.match(scoreSummary, /<strong className="result-score-value">\{displayOverall\}<\/strong>/)
+  assert.match(scoreSummary, /<ScoreLaurel score=\{displayOverall\} \/>/)
   assert.match(scoreSummary, /<div className="result-score-caption">雅思写作模拟评分<\/div>/)
-  assert.match(scoreSummary, /Math\.max\(0, Math\.min\(100, \(numericOverall \/ 9\) \* 100\)\)/)
-  assert.match(scoreSummary, /className="result-score-decoration" aria-hidden="true"/)
+  assert.doesNotMatch(scoreSummary, /scorePosition|numericOverall|result-score-decoration/)
   assert.doesNotMatch(scoreSummary, /接近 7 分|当前水平|分数等级|四项评分明细/)
+
+  assert.match(scoreLaurel, /function LaurelBranch/)
+  assert.equal((scoreLaurel.match(/<LaurelBranch/g) ?? []).length, 2)
+  assert.equal((scoreLaurel.match(/<svg/g) ?? []).length, 1)
+  assert.match(scoreLaurel, /result-score-laurel-branch-left/)
+  assert.match(scoreLaurel, /result-score-laurel-branch-right/)
+  assert.match(scoreLaurel, /<strong className="result-score-value">\{score\}<\/strong>/)
+  assert.doesNotMatch(scoreLaurel, /\bfetch\s*\(/)
 
   assert.match(scoreSummary, /const \[isCommentExpanded, setIsCommentExpanded\] = useState\(false\)/)
   assert.match(scoreSummary, /comment\.scrollHeight > comment\.clientHeight \+ 1/)
@@ -586,13 +594,20 @@ test('result detail keeps scores and content intact while using responsive align
 
   assert.match(css, /\.result-title\s*\{[\s\S]*?font-size:\s*clamp\(2rem, 3\.1vw, 2\.75rem\);[\s\S]*?overflow:\s*visible;/)
   assert.match(css, /\.score-summary-heading\s*\{[\s\S]*?grid-template-columns:\s*minmax\(260px, 0\.9fr\) minmax\(0, 2\.2fr\);/)
-  assert.match(css, /\.score-summary-hero-inner\s*\{[\s\S]*?max-width:\s*220px;[\s\S]*?align-items:\s*center;[\s\S]*?text-align:\s*center;/)
+  assert.match(css, /\.score-summary-panel\s*\{[\s\S]*?gap:\s*0;/)
+  assert.match(css, /\.score-summary-heading\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?height:\s*auto;/)
+  assert.match(css, /\.score-summary-hero-inner\s*\{[\s\S]*?max-width:\s*260px;[\s\S]*?align-items:\s*center;[\s\S]*?padding:\s*28px 24px 24px;[\s\S]*?text-align:\s*center;/)
   assert.doesNotMatch(css, /\.score-summary-hero-inner\s*\{[^}]*transform:/)
-  assert.match(css, /\.score-summary-hero \.result-score-value\s*\{[\s\S]*?font-size:\s*clamp\(3\.8rem, 5vw, 5rem\);/)
-  assert.match(css, /\.result-score-decoration\s*\{[\s\S]*?width:\s*min\(150px, 80%\);[\s\S]*?height:\s*16px;/)
+  assert.match(css, /\.result-score-laurel-branch\s*\{[\s\S]*?color:\s*var\(--primary\);[\s\S]*?opacity:\s*0\.42;/)
+  assert.match(css, /\.result-score-laurel-branch-right\s*\{[\s\S]*?transform:\s*scaleX\(-1\);/)
+  assert.doesNotMatch(css, /result-score-decoration(?:-line|-dot)?/)
   assert.match(css, /\.result-comment-text\.is-collapsed\s*\{[\s\S]*?-webkit-line-clamp:\s*7;[\s\S]*?overflow:\s*hidden;/)
   assert.match(css, /\.result-comment-text\.is-expanded\s*\{[\s\S]*?overflow:\s*visible;/)
-  assert.match(css, /\.result-comment-toggle\s*\{[\s\S]*?align-self:\s*flex-end;[\s\S]*?min-height:\s*32px;/)
+  const commentToggleStyles = css.match(/\.result-comment-toggle\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(commentToggleStyles, /align-self:\s*flex-end;/)
+  assert.match(commentToggleStyles, /margin-top:\s*14px;/)
+  assert.doesNotMatch(commentToggleStyles, /margin-top:\s*auto;/)
+  assert.match(css, /\.score-summary-overview\s*\{[\s\S]*?justify-content:\s*flex-start;[\s\S]*?padding:\s*28px 38px 8px;/)
 
   assert.match(css, /\.criteria-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);[\s\S]*?gap:\s*14px;[\s\S]*?margin-top:\s*24px;/)
   assert.match(css, /\.criterion-card\s*\{[\s\S]*?min-height:\s*210px;[\s\S]*?padding:\s*22px 20px 18px;/)
@@ -604,6 +619,7 @@ test('result detail keeps scores and content intact while using responsive align
   assert.match(css, /@media \(max-width: 1040px\)[\s\S]*?\.criteria-grid\s*\{[\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/)
   assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.criteria-grid\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
   assert.match(css, /@media \(max-width: 768px\)[\s\S]*?\.score-summary-heading\s*\{\s*grid-template-columns:\s*1fr;/)
+  assert.match(css, /@media \(max-width: 768px\)[\s\S]*?\.result-score-laurel-branch\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*76px;/)
   assert.match(appShell, /pathname\.startsWith\('\/result'\), title: '批改结果'/)
 })
 
