@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useMemo, type KeyboardEvent } from 'react'
+import { useState, useCallback, useLayoutEffect, useMemo, useRef, type KeyboardEvent } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { GlassPanel } from '@/components/app-ui'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import {
@@ -139,10 +140,12 @@ export function ScoreSummary({
 }) {
   const overall = formatBand(evaluation.overallBand || evaluation.bandEstimate)
   const [activeCriterion, setActiveCriterion] = useState<CriterionSummary | null>(null)
+  const [isCommentExpanded, setIsCommentExpanded] = useState(false)
+  const [isCommentOverflowing, setIsCommentOverflowing] = useState(false)
+  const commentRef = useRef<HTMLParagraphElement>(null)
   const [mockTask, setMockTask] = useState<'task1' | 'task2'>(() => {
     if (record.taskType !== 'mock') return 'task1'
     const t1 = record.components?.task1?.evaluation
-    const t2 = record.components?.task2?.evaluation
     const t1Ready = Boolean(t1?.overallBand || t1?.bandEstimate)
     return t1Ready ? 'task1' : 'task2'
   })
@@ -172,21 +175,47 @@ export function ScoreSummary({
       ? (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
       : (activeEvaluation?.summary || activeEvaluation?.overallFeedback || '本次未返回该项具体说明。'))
     : (evaluation.summary || evaluation.overallFeedback || '本次未返回总体评价。')
-  const taskLabel = isMock ? (mockTask === 'task1' ? 'Task 1' : 'Task 2') : null
-  const mockPartialMessage = isMock && !mockComplete
-    ? (t1Ready ? 'Task 2 批改尚未完成' : 'Task 1 批改尚未完成')
-    : null
+  const numericOverall = Number.parseFloat(displayOverall)
+  const scorePosition = Number.isFinite(numericOverall)
+    ? Math.max(0, Math.min(100, (numericOverall / 9) * 100))
+    : 50
+
+  const measureCommentOverflow = useCallback(() => {
+    const comment = commentRef.current
+    if (!comment) return
+
+    const wasExpanded = comment.classList.contains('is-expanded')
+    comment.classList.remove('is-expanded')
+    comment.classList.add('is-collapsed')
+    setIsCommentOverflowing(comment.scrollHeight > comment.clientHeight + 1)
+
+    if (wasExpanded) {
+      comment.classList.remove('is-collapsed')
+      comment.classList.add('is-expanded')
+    }
+  }, [setIsCommentOverflowing])
+
+  useLayoutEffect(() => {
+    measureCommentOverflow()
+    window.addEventListener('resize', measureCommentOverflow)
+    return () => window.removeEventListener('resize', measureCommentOverflow)
+  }, [displaySummary, measureCommentOverflow])
+
+  const handleMockTaskChange = useCallback((task: 'task1' | 'task2') => {
+    setIsCommentExpanded(false)
+    setMockTask(task)
+  }, [setIsCommentExpanded, setMockTask])
 
   const handleCardClick = useCallback((criterion: CriterionSummary) => {
     setActiveCriterion(criterion)
-  }, [])
+  }, [setActiveCriterion])
 
   const handleCardKeyDown = useCallback((criterion: CriterionSummary, event: KeyboardEvent) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       setActiveCriterion(criterion)
     }
-  }, [])
+  }, [setActiveCriterion])
 
   return (
     <>
@@ -196,29 +225,49 @@ export function ScoreSummary({
             activeTask={mockTask}
             task1Component={task1Component}
             task2Component={task2Component}
-            onChange={setMockTask}
+            onChange={handleMockTaskChange}
           />
         )}
 
         <div className="score-summary-heading">
           <div className="score-summary-hero">
             <div className="score-summary-hero-inner">
-              <span className="ui-label">{taskLabel ? `${taskLabel} 写作分数` : '写作总分'}</span>
-              <strong>{displayOverall}</strong>
-              <p className="ui-body-md">
-                {isMock
-                  ? (mockComplete ? 'Task 2 加权综合评分' : (activeEvaluation ? `${taskLabel} 评分` : `${taskLabel} 批改未完成`))
-                  : '雅思写作模拟评分'}
-              </p>
-              {mockPartialMessage && (
-                <p className="ui-label" style={{ color: 'var(--warning, #d06b00)', marginTop: 4 }}>{mockPartialMessage}</p>
-              )}
+              <div className="result-score-label">写作总分</div>
+              <div className="result-score-visual">
+                <strong className="result-score-value">{displayOverall}</strong>
+              </div>
+              <div className="result-score-caption">雅思写作模拟评分</div>
+              <div className="result-score-decoration" aria-hidden="true">
+                <span className="result-score-decoration-line" />
+                <span
+                  className="result-score-decoration-dot"
+                  style={{ left: `${scorePosition}%` }}
+                />
+              </div>
             </div>
           </div>
 
           <div className="score-summary-overview">
-            <span className="ui-label">总体评价</span>
-            <p>{displaySummary}</p>
+            <span className="result-comment-title">总体评价</span>
+            <p
+              ref={commentRef}
+              id="result-overall-comment"
+              className={`result-comment-text ${isCommentExpanded ? 'is-expanded' : 'is-collapsed'}`}
+            >
+              {displaySummary}
+            </p>
+            {isCommentOverflowing && (
+              <button
+                type="button"
+                className="result-comment-toggle"
+                aria-expanded={isCommentExpanded}
+                aria-controls="result-overall-comment"
+                onClick={() => setIsCommentExpanded((value) => !value)}
+              >
+                {isCommentExpanded ? '收起' : '展开全文'}
+                <ChevronDown aria-hidden="true" size={15} strokeWidth={2} />
+              </button>
+            )}
           </div>
         </div>
 
