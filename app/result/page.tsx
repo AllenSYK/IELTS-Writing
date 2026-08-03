@@ -412,7 +412,7 @@ export default function ResultPage() {
       <section className="result-main">
         <header className="result-header">
           <div className="result-header-copy">
-            <h1 className="ui-title-display">{record.title}</h1>
+            <h1 className="ui-title-display result-title">{record.title}</h1>
             <p className="ui-body-md">
               提交于 {formatDate(record.submittedAt)} · {record.wordCount} 词 · {TaskTypeLabels[record.taskType]}
               {Boolean((record as Record<string, unknown>).studyPlanTaskId) && ' • 来源：学习计划'}
@@ -498,22 +498,23 @@ export default function ResultPage() {
                   ) : null}
                 </div>
               ) : null}
-              <div className="result-tabs" role="tablist" aria-label="作文版本">
+              <div className="result-tabs result-primary-tabs" role="tablist" aria-label="作文版本">
                 <button className={`result-tab ${tab === 'original' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'original'} onClick={() => setTab('original')}>
-                  原文
+                  <span>原文</span>
                 </button>
                 <button className={`result-tab ${tab === 'corrected' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'corrected'} onClick={() => setTab('corrected')}>
-                  批改标注
+                  <span>批改标注</span>
                 </button>
                 <button className={`result-tab ${tab === 'revised' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'revised'} onClick={() => setTab('revised')}>
-                  改写版本
+                  <span>改写版本</span>
                 </button>
                 <button className={`result-tab ${tab === 'model' ? 'is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'model'} onClick={() => setTab('model')}>
-                  <MaterialIcon name="auto_awesome" size={16} /> 高分范文
+                  <MaterialIcon name="auto_awesome" size={16} />
+                  <span>高分范文</span>
                 </button>
               </div>
 
-              <article className={`essay-prose ${tab === 'corrected' ? 'annotation-prose' : ''}`} role="tabpanel">
+              <article className={`essay-prose result-document-content ${tab === 'corrected' ? 'annotation-prose' : ''}`} role="tabpanel">
                 {tab === 'original' ? (
                   <div className="original-essay-view">
                     <div className="original-essay-hint">

@@ -202,16 +202,18 @@ export function ScoreSummary({
 
         <div className="score-summary-heading">
           <div className="score-summary-hero">
-            <span className="ui-label">{taskLabel ? `${taskLabel} 写作分数` : '写作总分'}</span>
-            <strong>{displayOverall}</strong>
-            <p className="ui-body-md">
-              {isMock
-                ? (mockComplete ? 'Task 2 加权综合评分' : (activeEvaluation ? `${taskLabel} 评分` : `${taskLabel} 批改未完成`))
-                : '雅思写作模拟评分'}
-            </p>
-            {mockPartialMessage && (
-              <p className="ui-label" style={{ color: 'var(--warning, #d06b00)', marginTop: 4 }}>{mockPartialMessage}</p>
-            )}
+            <div className="score-summary-hero-inner">
+              <span className="ui-label">{taskLabel ? `${taskLabel} 写作分数` : '写作总分'}</span>
+              <strong>{displayOverall}</strong>
+              <p className="ui-body-md">
+                {isMock
+                  ? (mockComplete ? 'Task 2 加权综合评分' : (activeEvaluation ? `${taskLabel} 评分` : `${taskLabel} 批改未完成`))
+                  : '雅思写作模拟评分'}
+              </p>
+              {mockPartialMessage && (
+                <p className="ui-label" style={{ color: 'var(--warning, #d06b00)', marginTop: 4 }}>{mockPartialMessage}</p>
+              )}
+            </div>
           </div>
 
           <div className="score-summary-overview">

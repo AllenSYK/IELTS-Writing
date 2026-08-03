@@ -538,6 +538,51 @@ test('result annotations open in one centered dialog without scrollIntoView', as
   assert.doesNotMatch(layout, /evaluation-inspector-column/)
 })
 
+test('result detail keeps scores and content intact while using responsive aligned layout', async () => {
+  const [resultPage, scoreSummary, css, appShell] = await Promise.all([
+    readFile(new URL('../app/result/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/evaluation/ScoreSummary.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/styles/web-audit-refactor.css', import.meta.url), 'utf8'),
+    readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
+  ])
+
+  assert.match(resultPage, /<h1 className="ui-title-display result-title">\{record\.title\}<\/h1>/)
+  assert.match(scoreSummary, /<strong>\{displayOverall\}<\/strong>/)
+  assert.match(scoreSummary, /displayCriteria\.map\(\(criterion\) =>/)
+  assert.match(scoreSummary, /<strong className="criterion-card-score">\{criterion\.score\}<\/strong>/)
+  assert.match(scoreSummary, /className="criterion-card"[\s\S]*?onClick=\{\(\) => handleCardClick\(criterion\)\}/)
+  assert.match(scoreSummary, /className="criteria-detail-btn"[\s\S]*?>[\s\S]*?查看详情/)
+
+  const primaryTabs = resultPage.match(/<div className="result-tabs result-primary-tabs"[\s\S]*?<\/div>\s*<article/)?.[0] ?? ''
+  assert.equal((primaryTabs.match(/role="tab"/g) ?? []).length, 4)
+  for (const label of ['原文', '批改标注', '改写版本', '高分范文']) {
+    assert.match(primaryTabs, new RegExp(`<span>${label}<\\/span>`))
+  }
+  assert.match(primaryTabs, /<MaterialIcon name="auto_awesome" size=\{16\} \/>/)
+  for (const tab of ['original', 'corrected', 'revised', 'model']) {
+    assert.match(primaryTabs, new RegExp(`onClick=\\{\\(\\) => setTab\\('${tab}'\\)\\}`))
+  }
+
+  for (const action of ['基于原题重写', '根据反馈重写', '重新练习', '保存到错题本', '复制高分范文']) {
+    assert.match(resultPage, new RegExp(action))
+  }
+
+  assert.match(css, /\.result-title\s*\{[\s\S]*?font-size:\s*clamp\(2rem, 3\.1vw, 2\.75rem\);[\s\S]*?overflow:\s*visible;/)
+  assert.match(css, /\.score-summary-heading\s*\{[\s\S]*?grid-template-columns:\s*minmax\(250px, 0\.8fr\) minmax\(0, 2\.2fr\);/)
+  assert.match(css, /\.score-summary-hero-inner\s*\{[\s\S]*?transform:\s*translateX\(12px\);/)
+  assert.match(css, /\.score-summary-overview\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?overflow:\s*visible;/)
+  assert.match(css, /\.criteria-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\);[\s\S]*?align-items:\s*stretch;/)
+  assert.match(css, /\.criterion-card\s*\{[\s\S]*?height:\s*100%;[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/)
+  assert.match(css, /\.criterion-card-label\s*\{[\s\S]*?min-height:\s*48px;[\s\S]*?align-items:\s*center;/)
+  assert.match(css, /\.criteria-detail-btn\s*\{[\s\S]*?margin-top:\s*auto;[\s\S]*?width:\s*min\(100%, 200px\);[\s\S]*?min-height:\s*40px;/)
+  assert.match(css, /\.result-primary-tabs\s*\{[\s\S]*?overflow-x:\s*auto;/)
+  assert.match(css, /\.result-primary-tabs \.result-tab\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?align-items:\s*center;/)
+  assert.match(css, /\.result-primary-tabs \.result-tab::after\s*\{[\s\S]*?transform:\s*scaleX\(0\);/)
+  assert.match(css, /@media \(max-width: 1100px\)[\s\S]*?\.criteria-grid\s*\{[\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/)
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*?\.criteria-grid\s*\{\s*grid-template-columns:\s*1fr;/)
+  assert.match(appShell, /pathname\.startsWith\('\/result'\), title: '批改结果'/)
+})
+
 test('grading pipeline parallelizes annotation blocks and leaves essays on demand', async () => {
   const [pipeline, provider, derivativeRoute] = await Promise.all([
     readFile(new URL('../lib/ielts-evaluation.ts', import.meta.url), 'utf8'),
