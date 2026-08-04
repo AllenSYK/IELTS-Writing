@@ -59,7 +59,9 @@ function userBusinessError(error: unknown) {
     LAST_ADMIN_PROTECTED: '系统必须至少保留一位可用管理员。',
     ACTOR_NOT_ADMIN: '当前账号已不再是管理员，请重新登录。',
     ADMIN_ROLE_PROTECTED: '请先取消管理员角色，再禁用或删除该账号。',
-    ADMIN_LICENSE_NOT_ALLOWED: '管理员账号不使用普通激活码。'
+    ADMIN_LICENSE_NOT_ALLOWED: '管理员账号不使用普通激活码。',
+    ACCOUNT_DISABLED: '该账号已禁用，请先启用账号。',
+    ACCOUNT_DELETED: '已删除账号不能再修改。'
   }
   const code = Object.keys(messages).find((item) => error.message.includes(item))
   if (!code) return null
@@ -122,21 +124,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         if (target.profile.role === 'admin') throw new Error('ADMIN_ROLE_PROTECTED')
       }
 
-      const { error: authError } = await service.auth.admin.updateUserById(id, {
-        ban_duration: body.action === 'disable' ? '876000h' : 'none'
-      })
-      if (authError) throw authError
-
+      // The RPC updates auth.users and public license state in one transaction.
       const { error: accessError } = await service.rpc('admin_set_user_access', {
         p_user_id: id,
         p_action: body.action
       })
-      if (accessError) {
-        await service.auth.admin.updateUserById(id, {
-          ban_duration: body.action === 'disable' ? 'none' : '876000h'
-        }).catch(() => undefined)
-        throw accessError
-      }
+      if (accessError) throw accessError
     } else if (body.action === 'bind') {
       const { authUser, profile } = await loadTargetUser(service, id)
       if (profile.role === 'admin') throw new Error('ADMIN_LICENSE_NOT_ALLOWED')
@@ -191,19 +184,14 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     if (id === user.id) throw new Error('CANNOT_CHANGE_SELF')
     if (target.profile.role === 'admin') throw new Error('ADMIN_ROLE_PROTECTED')
 
-    const { error: banError } = await service.auth.admin.updateUserById(id, {
-      ban_duration: '876000h'
-    })
-    if (banError) throw banError
-
+    // Preparation atomically bans the Auth account and freezes public access.
     const { error: prepareError } = await service.rpc('admin_prepare_user_deletion', {
       p_user_id: id
     })
-    if (prepareError) {
-      await service.auth.admin.updateUserById(id, { ban_duration: 'none' }).catch(() => undefined)
-      throw prepareError
-    }
+    if (prepareError) throw prepareError
 
+    // Keep the Auth identity as a Supabase soft deletion so foreign-key-backed
+    // business records, binding history, and audit history are not cascaded.
     const { error: deleteError } = await service.auth.admin.deleteUser(id, true)
     if (deleteError) {
       await logAdminAudit(service, {
