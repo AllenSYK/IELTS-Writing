@@ -12,7 +12,13 @@ import {
 } from '../lib/web-license/admin-license-data'
 import { readStorageValue } from '../lib/user-storage'
 import { accountDisplayName, maskPhone, normalizeMainlandPhone } from '../lib/phone-auth'
-import { LegalContactEmail, PrivacySections, TermsEffectiveDate, TermsSections } from '../lib/legal-content'
+import {
+  LegalContactEmail,
+  PrivacyEffectiveDate,
+  PrivacySections,
+  TermsEffectiveDate,
+  TermsSections
+} from '../lib/legal-content'
 import {
   MonthlyStudyPlanAdjustmentLimit,
   studyPlanAdjustmentMonthRange,
@@ -287,6 +293,8 @@ test('auth forms require explicit agreement consent and record versions server-s
     assert.match(source, /agreementsAccepted/)
     assert.match(source, /disabled=\{[^}]*!agreementsAccepted/)
   }
+  assert.match(registerPage, /requireReading/)
+  assert.doesNotMatch(registerPage, /CrossBorderConsent|crossBorderAccepted/)
   for (const source of [loginRoute, registerRoute]) {
     assert.match(source, /agreementsAccepted:\s*z\.literal\(true\)/)
     assert.match(source, /recordUserAgreements/)
@@ -337,6 +345,10 @@ test('agreement controls use one centered dialog and shared legal content withou
   assert.match(consent, /className="agreement-copy"/)
   assert.match(consent, /setOpenDocument\('terms'\)/)
   assert.match(consent, /setOpenDocument\('privacy'\)/)
+  assert.match(consent, /setOpenDocument\('required-reading'\)/)
+  assert.match(consent, /reader\.scrollTop \+ reader\.clientHeight/)
+  assert.match(consent, /disabled=\{!hasReachedEnd\}/)
+  assert.match(consent, /隐私政策（含个人信息跨境传输说明）/)
   assert.match(consent, /event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)/)
   assert.doesNotMatch(consent, /next\/link|href="\/terms"|href="\/privacy"/)
   assert.match(terms, /TermsSections/)
@@ -460,11 +472,14 @@ test('legal pages share the current contact email, AI notice, and final terms ef
 
   assert.equal(LegalContactEmail, 'qgyxzq@gmail.com')
   assert.equal(TermsEffectiveDate, '2026年7月1日')
+  assert.equal(PrivacyEffectiveDate, '2026年8月5日')
   assert.equal(TermsSections.at(-1)?.[0], '生效日期')
   assert.equal(TermsSections.at(-1)?.[1], '生效日期：2026年7月1日。最近更新日期：2026年7月1日')
   assert.ok(TermsSections.some(([title, body]) => title === '人工智能服务说明' && body.includes('阿里云通义千问')))
   assert.ok(TermsSections.some(([, body]) => body.includes(LegalContactEmail)))
   assert.ok(PrivacySections.some(([, body]) => body.includes(LegalContactEmail)))
+  assert.ok(PrivacySections.some(([title]) => title === '个人信息的跨境传输'))
+  assert.ok(PrivacySections.some(([, body]) => body.includes('该说明已并入本隐私政策')))
   assert.doesNotMatch(legalSource, /support@ieltswriting\.online/)
   assert.doesNotMatch(legalSource, /qwen-[a-z0-9._-]+|具体模型版本|官方认证模型/i)
   assert.match(legalSections, /mailto:\$\{LegalContactEmail\}/)

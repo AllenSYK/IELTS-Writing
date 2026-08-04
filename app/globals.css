@@ -7802,6 +7802,74 @@ img {
   font-size: 13px;
 }
 
+.legal-required-reading-body {
+  overflow: hidden;
+  padding-right: 0;
+}
+
+.legal-required-reader {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  scroll-behavior: smooth;
+}
+
+.legal-required-reader:focus-visible {
+  outline: 3px solid rgba(10, 102, 255, 0.2);
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+
+.legal-required-document-heading {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 18px;
+  padding: 16px;
+  border: 1px solid rgba(0, 88, 188, 0.14);
+  border-radius: 16px;
+  background: rgba(216, 226, 255, 0.34);
+}
+
+.legal-required-document-heading:not(:first-child) {
+  margin-top: 24px;
+}
+
+.legal-required-document-heading span,
+.legal-required-document-heading h3,
+.legal-required-document-heading p {
+  margin: 0;
+}
+
+.legal-required-document-heading span {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.legal-required-document-heading h3 {
+  color: var(--on-surface);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.legal-required-document-heading p {
+  color: var(--on-surface-variant);
+  font-size: 12px;
+}
+
+.legal-required-end {
+  margin: 18px 0 2px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .task-badge.is-custom {
   color: #0a66ff;
   background: rgba(216, 226, 255, 0.76);

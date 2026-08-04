@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const TermsAgreementVersion = '2026-06'
-export const PrivacyAgreementVersion = '2026-06'
+export const PrivacyAgreementVersion = '2026-08'
 
 export const CurrentAgreementVersions = {
   terms: TermsAgreementVersion,
