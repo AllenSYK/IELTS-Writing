@@ -131,6 +131,7 @@ export function WritingModeSelector({
     }
   })
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [activeMode, setActiveMode] = useState<WritingTaskType>('task2')
   const [pendingMode, setPendingMode] = useState<WritingTaskType | null>(null)
 
   const task1SubtypeOptions = useMemo(() => selectedTask1SubtypeOptions(selection.task1ChartType), [selection.task1ChartType])
@@ -215,7 +216,7 @@ export function WritingModeSelector({
         <div className="settings-section-header">
           <div>
             <h2 className="ui-title-md">练习设置</h2>
-            <p className="ui-body-md">可选配置；直接点击上方卡片时，未选择的项目会自动随机。</p>
+            <p className="ui-body-md">先选择练习模式并配置题目偏好，再点击下方“开始练习”；上方卡片为使用当前设置的快速开始入口。</p>
           </div>
           <div className="prompt-choice-actions">
             <button className="ui-secondary-button" type="button" onClick={() => setShowAdvanced((value) => !value)}>
@@ -230,74 +231,88 @@ export function WritingModeSelector({
         </div>
 
         <div className="prompt-choice-list">
-          <PracticeSettingRow title="练习模式" description="选择单项练习或完整 60 分钟模考。">
+          <PracticeSettingRow title="练习模式" description="选择单项练习或完整 60 分钟模考；下方只展示该模式相关的设置。">
             <div className="choice-chip-row">
               {modes.map((mode) => (
-                <button
+                <Chip
                   key={mode.mode}
-                  className="choice-chip choice-link"
-                  type="button"
-                  onClick={() => setPendingMode(mode.mode)}
-                >
-                  {mode.title}
-                </button>
+                  selected={activeMode === mode.mode}
+                  label={mode.title}
+                  onClick={() => setActiveMode(mode.mode)}
+                />
               ))}
             </div>
           </PracticeSettingRow>
 
-          <PracticeSettingRow title="Task 1 题型" description="指定图表、地图或流程题；未选择时将随机生成。">
-            <div className="practice-setting-control-stack">
-              <div className="choice-chip-row">
-                {[...primaryTask1Types, ...(showAdvanced ? advancedTask1Types : [])].map((type) => (
-                  <Chip
-                    key={type}
-                    selected={selection.task1ChartType === type}
-                    label={compactLabel(type, Task1ChartLabels[type])}
-                    title={type === 'mixed_charts' ? '组合图表会同时包含两种或多种数据呈现方式。' : undefined}
-                    onClick={() => updateSelection({ task1ChartType: selection.task1ChartType === type ? 'random' : type })}
-                  />
-                ))}
-              </div>
-              {task1SubtypeOptions.length > 1 ? (
-                <div className="choice-chip-row is-subtype">
-                  {task1SubtypeOptions.map((type) => (
+          {activeMode !== 'task2' ? (
+            <PracticeSettingRow title="Task 1 题型" description="指定图表、地图或流程题；未选择时将随机生成。当前为学术类图表写作。">
+              <div className="practice-setting-control-stack">
+                <div className="choice-chip-row">
+                  {[...primaryTask1Types, ...(showAdvanced ? advancedTask1Types : [])].map((type) => (
                     <Chip
                       key={type}
-                      selected={selection.task1Subtype === type}
-                      label={compactLabel(type, Task1SubtypeLabels[type])}
-                      onClick={() => updateSelection({ task1Subtype: selection.task1Subtype === type ? 'random' : type })}
+                      selected={selection.task1ChartType === type}
+                      label={compactLabel(type, Task1ChartLabels[type])}
+                      title={type === 'mixed_charts' ? '组合图表会同时包含两种或多种数据呈现方式。' : undefined}
+                      onClick={() => updateSelection({ task1ChartType: selection.task1ChartType === type ? 'random' : type })}
                     />
                   ))}
                 </div>
-              ) : null}
-            </div>
-          </PracticeSettingRow>
+                {task1SubtypeOptions.length > 1 ? (
+                  <div className="choice-chip-row is-subtype">
+                    {task1SubtypeOptions.map((type) => (
+                      <Chip
+                        key={type}
+                        selected={selection.task1Subtype === type}
+                        label={compactLabel(type, Task1SubtypeLabels[type])}
+                        onClick={() => updateSelection({ task1Subtype: selection.task1Subtype === type ? 'random' : type })}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </PracticeSettingRow>
+          ) : null}
 
-          <PracticeSettingRow title="Task 2 题型" description="选择议论文问题结构，保留所有子问题要求。">
-            <div className="choice-chip-row">
-              {[...primaryTask2Types, ...(showAdvanced ? advancedTask2Types : [])].map((type) => (
-                <Chip
-                  key={type}
-                  selected={selection.task2EssayType === type}
-                  label={compactLabel(type, Task2EssayLabels[type])}
-                  onClick={() => updateSelection({ task2EssayType: selection.task2EssayType === type ? 'random' : type })}
-                />
-              ))}
-            </div>
-          </PracticeSettingRow>
+          {activeMode !== 'task1' ? (
+            <PracticeSettingRow title="Task 2 题型" description="选择议论文问题结构，保留所有子问题要求。">
+              <div className="choice-chip-row">
+                {[...primaryTask2Types, ...(showAdvanced ? advancedTask2Types : [])].map((type) => (
+                  <Chip
+                    key={type}
+                    selected={selection.task2EssayType === type}
+                    label={compactLabel(type, Task2EssayLabels[type])}
+                    onClick={() => updateSelection({ task2EssayType: selection.task2EssayType === type ? 'random' : type })}
+                  />
+                ))}
+              </div>
+            </PracticeSettingRow>
+          ) : null}
 
-          <PracticeSettingRow title="Task 2 主题" description="选择练习主题；高级选项包含更多常见考试领域。">
-            <div className="choice-chip-row">
-              {[...primaryTopics, ...(showAdvanced ? advancedTopics : [])].map((topic) => (
-                <Chip
-                  key={topic}
-                  selected={selection.task2Topic === topic}
-                  label={compactLabel(topic, Task2TopicLabels[topic])}
-                  onClick={() => updateSelection({ task2Topic: selection.task2Topic === topic ? 'random' : topic })}
-                />
-              ))}
-            </div>
-          </PracticeSettingRow>
+          {activeMode !== 'task1' ? (
+            <PracticeSettingRow title="Task 2 主题" description="选择练习主题；高级选项包含更多常见考试领域。">
+              <div className="choice-chip-row">
+                {[...primaryTopics, ...(showAdvanced ? advancedTopics : [])].map((topic) => (
+                  <Chip
+                    key={topic}
+                    selected={selection.task2Topic === topic}
+                    label={compactLabel(topic, Task2TopicLabels[topic])}
+                    onClick={() => updateSelection({ task2Topic: selection.task2Topic === topic ? 'random' : topic })}
+                  />
+                ))}
+              </div>
+            </PracticeSettingRow>
+          ) : null}
+        </div>
+
+        <div className="practice-start-bar">
+          <p className="ui-body-md">
+            将开始：{modes.find((mode) => mode.mode === activeMode)?.title}
+            （{activeMode === 'mock' ? '60 分钟' : activeMode === 'task1' ? '20 分钟' : '40 分钟'}）
+          </p>
+          <button className="ui-primary-button" type="button" onClick={() => setPendingMode(activeMode)}>
+            开始练习
+          </button>
         </div>
 
         <UploadedTaskPanel />
@@ -305,7 +320,7 @@ export function WritingModeSelector({
 
       <CenteredDialog
         open={pendingMode !== null}
-        title={`开始${pendingMode === 'mock' ? '完整测试' : pendingMode === 'task1' ? ' Task 1' : ' Task 2'}？`}
+        title={`开始${pendingMode === 'mock' ? '完整测试' : pendingMode === 'task1' ? 'Task 1' : 'Task 2'}练习？`}
         description="确认后将按当前练习设置准备题目。"
         className="practice-start-confirm-dialog"
         onClose={() => setPendingMode(null)}

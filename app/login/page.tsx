@@ -6,7 +6,12 @@ import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
-import { CurrentAgreementVersions } from '@/lib/legal-agreements'
+import { sanitizeAuthNext } from '@/lib/auth/route-access'
+import {
+  CurrentAgreementVersions,
+  hasRememberedAgreementConsent,
+  rememberAgreementConsent
+} from '@/lib/legal-agreements'
 
 type LoginResponse = {
   success?: boolean
@@ -42,8 +47,18 @@ export default function LoginPage() {
   const [agreementsAccepted, setAgreementsAccepted] = useState(false)
 
   useEffect(() => {
+    // 仅在首次同意或协议版本更新时要求重新勾选。
+    window.queueMicrotask(() => {
+      if (hasRememberedAgreementConsent()) {
+        setAgreementsAccepted(true)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
     if (sessionStatus === 'authenticated') {
-      window.location.replace('/practice')
+      const nextPath = sanitizeAuthNext(new URLSearchParams(window.location.search).get('next'))
+      window.location.replace(nextPath || '/practice')
     }
   }, [sessionStatus])
 
@@ -74,7 +89,13 @@ export default function LoginPage() {
       }
 
       await refreshUser()
-      window.location.replace(data.redirectTo || '/activate')
+      rememberAgreementConsent()
+      const nextPath = sanitizeAuthNext(new URLSearchParams(window.location.search).get('next'))
+      if (nextPath && data.redirectTo === '/activate') {
+        window.location.replace(`/activate?next=${encodeURIComponent(nextPath)}`)
+      } else {
+        window.location.replace(nextPath || data.redirectTo || '/practice')
+      }
     } catch (caught) {
       setError(caught instanceof DOMException && caught.name === 'AbortError' ? '请求超时，请检查网络后重试。' : '登录失败，请稍后重试。')
     } finally {

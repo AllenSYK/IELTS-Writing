@@ -16,7 +16,7 @@ const modes = [
     icon: 'bar_chart',
     minutes: '20 分钟',
     title: 'Task 1',
-    subtitle: '学术类 / 培训类',
+    subtitle: '学术类图表写作',
     words: '至少 150 词',
     action: '开始',
     focuses: ['task', 'lexical', 'cohesion'] as PracticeFocus[]

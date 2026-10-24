@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { sanitizeAuthNext } from '@/lib/auth/route-access'
 import { createSingleFlight } from '@/lib/web-license/single-flight'
 
 type ActivateResponse = {
@@ -52,7 +53,8 @@ export default function ActivatePage() {
           return
         }
         setMessage(`激活成功，到期时间：${data.expiresAt ? new Date(data.expiresAt).toLocaleString('zh-CN') : '未知'}`)
-        window.setTimeout(() => window.location.replace('/practice'), 700)
+        const nextPath = sanitizeAuthNext(new URLSearchParams(window.location.search).get('next'))
+        window.setTimeout(() => window.location.replace(nextPath || '/practice'), 700)
       } catch (caught) {
         setError(caught instanceof DOMException && caught.name === 'AbortError' ? '激活请求超时，请重试。' : '激活失败，请稍后重试。')
       } finally {

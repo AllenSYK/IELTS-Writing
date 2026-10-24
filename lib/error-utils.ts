@@ -3,6 +3,8 @@
  * Prevents technical errors from being displayed to users.
  */
 
+import { recordRecentErrorCode } from '@/lib/recent-error-code'
+
 // Technical error patterns that should never be shown to users
 const TECHNICAL_PATTERNS = [
   /not found/i,
@@ -108,6 +110,9 @@ export function toUserFacingError(
   } else {
     console.error(`[${context}]`, error)
   }
+
+  // 记录脱敏错误编号，供“复制诊断信息”时向支持人员提供可追溯线索。
+  recordRecentErrorCode(context, error instanceof Error ? error.name : typeof error)
 
   // Get context-specific message
   const contextMessage = CONTEXT_MESSAGES[context] || CONTEXT_MESSAGES['unknown']

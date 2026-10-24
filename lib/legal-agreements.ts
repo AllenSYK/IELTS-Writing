@@ -38,3 +38,35 @@ export async function recordUserAgreements(
 
   if (error) throw error
 }
+
+const AgreementConsentStorageKey = 'ielts-writing-agreement-consent-v1'
+
+/**
+ * 记录本浏览器已同意的协议版本（登录成功后调用）。
+ * 仅用于减少重复勾选，不替代服务端的同意记录。
+ */
+export function rememberAgreementConsent() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(AgreementConsentStorageKey, JSON.stringify(CurrentAgreementVersions))
+  } catch {
+    // 存储不可用时忽略
+  }
+}
+
+/**
+ * 若本浏览器已同意的协议版本与当前版本一致，则登录页无需再次勾选；
+ * 协议版本更新后会自动要求重新确认。
+ */
+export function hasRememberedAgreementConsent(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const raw = window.localStorage.getItem(AgreementConsentStorageKey)
+    if (!raw) return false
+    const parsed = JSON.parse(raw) as Partial<typeof CurrentAgreementVersions>
+    return parsed?.terms === CurrentAgreementVersions.terms
+      && parsed?.privacy === CurrentAgreementVersions.privacy
+  } catch {
+    return false
+  }
+}
