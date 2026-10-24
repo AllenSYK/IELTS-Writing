@@ -97,7 +97,7 @@ export async function POST(request: Request) {
         {
           error: apiKeyMissing ? 'AI_KEY_MISSING' : 'ai_model_or_endpoint_invalid',
           message: apiKeyMissing
-            ? '服务端尚未配置 AI_API_KEY，请在 Vercel 环境变量中配置。'
+            ? '请联系管理员在管理端配置 API 密钥。'
             : '模型名称或 API Base URL 不正确。',
           missing: error.missing
         },

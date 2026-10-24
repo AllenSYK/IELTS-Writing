@@ -4,6 +4,24 @@ export const AI_MODEL_SETTINGS_ID = 'ai_models'
 
 const ModelNameSchema = z.string().trim().min(1, '模型名称不能为空').max(160)
 
+export function normalizeAiBaseUrl(value: string) {
+  return value.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
+}
+
+export const AiApiKeyInputSchema = z.string().trim().max(4096, 'API 密钥过长').refine(
+  (value) => /^[!-~]*$/.test(value),
+  'API 密钥不能包含空白或非 ASCII 字符'
+)
+
+export const AiCredentialUpdateSchema = z.object({
+  // Empty input preserves the saved key. Clearing is always explicit.
+  apiKey: AiApiKeyInputSchema.optional(),
+  clearApiKey: z.boolean().optional()
+}).refine((value) => !(value.apiKey && value.clearApiKey), {
+  message: '不能同时更换和移除 API 密钥',
+  path: ['apiKey']
+})
+
 export const ParseableTimestampSchema = z
   .string()
   .trim()
@@ -21,10 +39,16 @@ export function normalizeAiModelSettingsTimestamp(value: unknown) {
 export const AiModelSettingsSchema = z.object({
   enabled: z.boolean(),
   provider: z.string().trim().min(1, '服务商不能为空').max(80),
-  baseUrl: z.string().trim().url('请输入完整的接口地址').max(500).refine(
-    (value) => value.startsWith('https://') || value.startsWith('http://localhost') || value.startsWith('http://127.0.0.1'),
-    '接口地址必须使用 HTTPS'
-  ),
+  baseUrl: z.string().trim().url('请输入完整的接口地址').max(500).refine((value) => {
+    try {
+      const url = new URL(value)
+      const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+      return (url.protocol === 'https:' || (url.protocol === 'http:' && local)) &&
+        !url.username && !url.password && !url.search && !url.hash
+    } catch {
+      return false
+    }
+  }, '接口地址必须使用 HTTPS（本机开发除外），且不能包含账号、查询参数或锚点').transform(normalizeAiBaseUrl),
   promptModel: ModelNameSchema,
   gradingModel: ModelNameSchema,
   studyPlanModel: ModelNameSchema,

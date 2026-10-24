@@ -4,10 +4,13 @@ import { createSupabaseServiceRoleClient } from '@/lib/supabase/service'
 import {
   AI_MODEL_SETTINGS_ID,
   AiModelSettingsSchema,
+  normalizeAiBaseUrl,
   type AiModelSettings,
   type AiModelSlot,
   DEFAULT_AI_MODEL_SETTINGS
 } from '@/lib/ai-model-settings'
+import { resolveAiApiKey, AiModelSecretError } from '@/lib/ai-model-secrets'
+import { getSupabaseUrl, getSupabaseServiceRoleKey } from '@/lib/supabase/env'
 
 export type AiConfig = {
   provider: string
@@ -97,6 +100,7 @@ export function apiStatusForAiError(error: AiProviderError) {
   if (error.code === 'ai_rate_limited') return 429
   if (error.code === 'ai_request_timeout') return 504
   if (error.code === 'ai_quota_exhausted') return 503
+  if (error.code === 'ai_settings_unavailable' || error.code === 'ai_settings_invalid') return 503
   return 502
 }
 
@@ -105,7 +109,7 @@ function env(name: string) {
 }
 
 function normalizeBaseUrl(baseUrl: string) {
-  return baseUrl.replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
+  return normalizeAiBaseUrl(baseUrl)
 }
 
 export function getAiModelEnvironmentDefaults(): AiModelSettings {
@@ -121,7 +125,8 @@ export function getAiModelEnvironmentDefaults(): AiModelSettings {
   }
 }
 
-async function getStoredAiModelSettings(): Promise<AiModelSettings | null> {
+async function getStoredAiModelSettings(): Promise<{ settings: AiModelSettings; value: unknown } | null> {
+  if (!getSupabaseUrl() || !getSupabaseServiceRoleKey()) return null
   try {
     const service = createSupabaseServiceRoleClient()
     const { data, error } = await service
@@ -131,11 +136,13 @@ async function getStoredAiModelSettings(): Promise<AiModelSettings | null> {
       .maybeSingle()
 
     if (error) throw error
+    if (!data) return null
     const parsed = AiModelSettingsSchema.safeParse(data?.setting_value)
-    return parsed.success && parsed.data.enabled ? parsed.data : null
+    if (!parsed.success) throw new AiProviderError('后台模型配置无效，请在管理端重新保存。', 503, 'ai_settings_invalid')
+    return parsed.data.enabled ? { settings: parsed.data, value: data.setting_value } : null
   } catch (error) {
-    console.warn('[ai-model-settings-fallback]', error instanceof Error ? error.message : 'unknown error')
-    return null
+    if (error instanceof AiProviderError) throw error
+    throw new AiProviderError('暂时无法读取后台模型配置，请稍后重试。', 503, 'ai_settings_unavailable')
   }
 }
 
@@ -207,11 +214,18 @@ export async function getEffectiveAiConfig({
   modelEnv?: string
   defaultModel?: string
 }): Promise<AiConfig> {
-  const settings = await getStoredAiModelSettings()
-  if (!settings) return getAiConfig({ modelEnv, defaultModel })
+  const stored = await getStoredAiModelSettings()
+  if (!stored) return getAiConfig({ modelEnv, defaultModel })
 
-  const apiKey = env('AI_API_KEY')
+  let apiKey: string
+  try {
+    apiKey = resolveAiApiKey(stored.value)
+  } catch (error) {
+    if (error instanceof AiModelSecretError) throw new AiProviderError(error.message, undefined, 'ai_api_key_unreadable')
+    throw error
+  }
   if (!apiKey) throw new AiConfigurationError(['AI_API_KEY'])
+  const { settings } = stored
 
   return {
     provider: settings.provider,
@@ -286,7 +300,7 @@ function providerHttpError(status: number, body?: unknown) {
     status === 401 ||
     (status === 403 && /(invalid|incorrect|unauthorized|authentication).*(api[ _-]?key|token)|(api[ _-]?key|token).*(invalid|incorrect|unauthorized|expired)/i.test(detail))
   ) {
-    return new AiProviderError('服务端 API Key 无效，请检查 Vercel 环境变量 AI_API_KEY。', status, 'ai_api_key_invalid')
+    return new AiProviderError('API 密钥无效，请在管理端检查或更换密钥。', status, 'ai_api_key_invalid')
   }
   if (
     status === 403 || status === 404 ||
@@ -360,6 +374,7 @@ export async function fetchAiCompletion(
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'
@@ -457,6 +472,7 @@ export async function fetchAiNonStreamingCompletion(
   try {
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
+      redirect: 'error',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'

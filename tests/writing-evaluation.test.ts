@@ -65,8 +65,8 @@ test('evaluation requests classify provider rate limits for the UI', async () =>
 test('evaluation requests preserve actionable AI service error categories', async () => {
   const originalFetch = globalThis.fetch
   const cases = [
-    ['AI_KEY_MISSING', 503, 'configuration', '服务端尚未配置 AI_API_KEY，请在 Vercel 环境变量中配置。'],
-    ['ai_api_key_invalid', 502, 'api-key', '服务端 API Key 无效，请检查 Vercel 环境变量 AI_API_KEY。'],
+    ['AI_KEY_MISSING', 503, 'configuration', '请联系管理员在管理端配置 API 密钥。'],
+    ['ai_api_key_invalid', 502, 'api-key', 'API 密钥无效，请联系管理员检查或更换密钥。'],
     ['ai_model_or_endpoint_invalid', 502, 'model', '模型名称或 API Base URL 不正确。'],
     ['ai_quota_exhausted', 503, 'quota', '模型服务额度已耗尽，请充值或更换有额度的 API Key。'],
     ['ai_request_timeout', 504, 'timeout', '批改服务响应超时，请稍后重试。'],
