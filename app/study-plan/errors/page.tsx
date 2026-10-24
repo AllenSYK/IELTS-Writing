@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
@@ -70,6 +70,24 @@ export default function ErrorNotebookPage() {
   const [reviewingPattern, setReviewingPattern] = useState<ErrorPattern | null>(null)
   const [backfilling, setBackfilling] = useState(false)
   const [backfillProgress, setBackfillProgress] = useState<BackfillResult | null>(null)
+  const [recordFilter, setRecordFilter] = useState<string | null>(null)
+  const [recordFilterReady, setRecordFilterReady] = useState(false)
+
+  useEffect(() => {
+    window.queueMicrotask(() => {
+      const id = new URLSearchParams(window.location.search).get('record')
+      setRecordFilter(id ? id : null)
+      setRecordFilterReady(true)
+    })
+  }, [])
+
+  const clearRecordFilter = useCallback(() => {
+    setRecordFilter(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('record')
+    window.history.replaceState(window.history.state, '', url)
+    setPage(1)
+  }, [])
 
   const params = new URLSearchParams()
   if (category) params.set('category', category)
@@ -77,9 +95,10 @@ export default function ErrorNotebookPage() {
   params.set('sort', sort)
   params.set('page', String(page))
   params.set('limit', '20')
+  if (recordFilter) params.set('writingRecordId', recordFilter)
 
   const { data, error, isLoading, mutate } = useSWR<ErrorsData>(
-    userId ? [`/api/study-plan/errors?${params.toString()}`, userId] as const : null,
+    userId && recordFilterReady ? [`/api/study-plan/errors?${params.toString()}`, userId] as const : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 10000 }
   )
@@ -116,7 +135,7 @@ export default function ErrorNotebookPage() {
     }
   }, [backfilling, pushToast, mutate, mutateBackfill])
 
-  if (!userId || isLoading) return <PageSkeleton variant="chart" />
+  if (!userId || !recordFilterReady || isLoading) return <PageSkeleton variant="chart" />
 
   if (error) {
     return (
@@ -155,7 +174,32 @@ export default function ErrorNotebookPage() {
           </a>
         </header>
 
-        {hasRecords && hasRemaining && (
+        {recordFilter ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              padding: '10px 14px',
+              borderRadius: 12,
+              background: 'rgba(0, 88, 188, 0.08)',
+              border: '1px solid rgba(0, 88, 188, 0.18)',
+              marginBottom: 8
+            }}
+          >
+            <MaterialIcon name="filter_alt" size={18} />
+            <span className="ui-body-md">正在只显示某篇作文提取出的错误</span>
+            <button className="ui-secondary-button" type="button" onClick={clearRecordFilter} style={{ marginLeft: 'auto' }}>
+              显示全部错误
+            </button>
+            <a className="ui-secondary-button" href={`/result?id=${encodeURIComponent(recordFilter)}`}>
+              返回这篇作文
+            </a>
+          </div>
+        ) : null}
+
+        {!recordFilter && hasRecords && hasRemaining && (
           <BackfillBanner
             totalRecords={backfillStatus?.totalRecords ?? 0}
             extractedRecords={backfillStatus?.extractedRecords ?? 0}
@@ -179,7 +223,21 @@ export default function ErrorNotebookPage() {
           />
         )}
 
-        {!hasPatterns && !hasRecords && (
+        {recordFilter && !hasPatterns && (
+          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+            <MaterialIcon name="bookmark_remove" size={48} />
+            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>这篇作文暂无错误记录</h2>
+            <p className="ui-body-md" style={{ maxWidth: 420, margin: '8px auto' }}>
+              可能是本次批改未发现可提取的错误模式。你可以查看全部错误，或返回这篇作文重新保存。
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
+              <button className="ui-primary-button" type="button" onClick={() => void mutate()}>重新检查</button>
+              <button className="ui-secondary-button" type="button" onClick={clearRecordFilter}>显示全部错误</button>
+            </div>
+          </GlassPanel>
+        )}
+
+        {!recordFilter && !hasPatterns && !hasRecords && (
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
             <MaterialIcon name="check_circle" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>暂无写作记录</h2>
@@ -192,7 +250,7 @@ export default function ErrorNotebookPage() {
           </GlassPanel>
         )}
 
-        {!hasPatterns && hasRecords && !hasRemaining && isBackfillComplete && (
+        {!recordFilter && !hasPatterns && hasRecords && !hasRemaining && isBackfillComplete && (
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
             <MaterialIcon name="check_circle" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>暂未发现重复错误</h2>
@@ -202,7 +260,7 @@ export default function ErrorNotebookPage() {
           </GlassPanel>
         )}
 
-        {!hasPatterns && hasRecords && hasRemaining && !backfilling && (
+        {!recordFilter && !hasPatterns && hasRecords && hasRemaining && !backfilling && (
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
             <MaterialIcon name="analytics" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>分析历史作文</h2>

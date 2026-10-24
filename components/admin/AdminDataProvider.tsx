@@ -62,6 +62,8 @@ export const ADMIN_CACHE_KEYS = {
   SETTINGS: '/api/admin/settings',
   // AI 模型配置
   MODELS: '/api/admin/models',
+  // 用户反馈
+  FEEDBACK: '/api/admin/feedback',
 } as const
 
 /**

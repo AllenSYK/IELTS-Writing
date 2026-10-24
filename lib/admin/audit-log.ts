@@ -24,6 +24,7 @@ export type AuditAction =
   | 'import_recalled'
   | 'batch_publish'
   | 'batch_archive'
+  | 'update_feedback'
 
 export type ResourceType = 
   | 'license'
@@ -32,6 +33,7 @@ export type ResourceType =
   | 'settings'
   | 'binding'
   | 'batch_task'
+  | 'feedback'
 
 export type AuditResult = 'success' | 'failure' | 'partial'
 

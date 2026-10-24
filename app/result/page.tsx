@@ -26,7 +26,6 @@ import {
   formatBand,
   formatDate,
   getWritingRecordFromServer,
-  saveMistakeRecord,
   saveWritingRecord,
   type AcceptedAnnotationChange,
   type CriterionKey,
@@ -146,6 +145,7 @@ export default function ResultPage() {
   const [generatingDerivative, setGeneratingDerivative] = useState<'revised' | 'model' | null>(null)
   const [revisedSubTab, setRevisedSubTab] = useState<RevisedSubTab>('annotation')
   const [mistakeSaved, setMistakeSaved] = useState(false)
+  const [mistakeSaving, setMistakeSaving] = useState(false)
   const [rewriting, setRewriting] = useState(false)
   const [mockAnnotationTask, setMockAnnotationTask] = useState<'task1' | 'task2'>('task2')
 
@@ -235,15 +235,58 @@ export default function ResultPage() {
   }
 
   function saveToMistakes() {
-    if (!record || !userId || mistakeSaved) return
-    const result = saveMistakeRecord(userId, record)
-    if (result.alreadyExists) {
-      setMistakeSaved(true)
-      pushToast({ kind: 'info', title: '已在错题本中', message: '该作文已保存过，无需重复保存。' })
-    } else {
-      setMistakeSaved(true)
-      pushToast({ kind: 'success', title: '已保存到错题本', message: '可在历史记录中继续复盘。' })
-    }
+    if (!record || !userId || mistakeSaved || mistakeSaving) return
+    setMistakeSaving(true)
+    void (async () => {
+      try {
+        const res = await fetch('/api/study-plan/errors/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ writingRecordId: record.id })
+        })
+        const data = await res.json() as {
+          success?: boolean
+          message?: string
+          extracted?: number
+          total?: number
+        }
+        if (!res.ok || !data.success) {
+          pushToast({
+            kind: 'error',
+            title: '保存到错题本失败',
+            message: data.message || '请稍后重试。'
+          })
+          return
+        }
+        setMistakeSaved(true)
+        const navigateToNotebook = () => {
+          window.location.href = `/study-plan/errors?record=${encodeURIComponent(record.id)}`
+        }
+        if (data.total && data.total > 0) {
+          pushToast({
+            kind: 'success',
+            title: '已保存到错题本',
+            message: `已提取 ${data.total} 条错误模式，可定位到本次作文的错误。`,
+            actionLabel: '查看错题本',
+            onAction: navigateToNotebook,
+            durationMs: 8000
+          })
+        } else {
+          pushToast({
+            kind: 'info',
+            title: '已记录该作文',
+            message: '本次批改未发现可提取的错误模式，作文已记录，可随时在错题本中查看。',
+            actionLabel: '查看错题本',
+            onAction: navigateToNotebook,
+            durationMs: 8000
+          })
+        }
+      } catch {
+        pushToast({ kind: 'error', title: '保存到错题本失败', message: '网络异常，请稍后重试。' })
+      } finally {
+        setMistakeSaving(false)
+      }
+    })()
   }
 
   async function handleRewrite() {
@@ -439,9 +482,9 @@ export default function ResultPage() {
             <MaterialIcon name="replay" size={18} />
             重新练习
           </a>
-          <button className="ui-secondary-button" type="button" onClick={saveToMistakes} disabled={mistakeSaved}>
+          <button className="ui-secondary-button" type="button" onClick={saveToMistakes} disabled={mistakeSaved || mistakeSaving}>
             <MaterialIcon name={mistakeSaved ? 'bookmark' : 'bookmark_add'} size={18} />
-            {mistakeSaved ? '已保存到错题本' : '保存到错题本'}
+            {mistakeSaving ? '保存中…' : mistakeSaved ? '已保存到错题本' : '保存到错题本'}
           </button>
           <button
             className="ui-secondary-button"

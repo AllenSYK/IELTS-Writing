@@ -8,7 +8,8 @@ const QuerySchema = z.object({
   status: z.enum(['active', 'improving', 'mastered', 'archived']).optional(),
   sort: z.enum(['count', 'recent', 'mastery']).optional().default('recent'),
   page: z.coerce.number().int().min(1).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(20)
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  writingRecordId: z.string().uuid().optional()
 })
 
 export async function GET(request: Request) {
@@ -28,10 +29,39 @@ export async function GET(request: Request) {
   const userId = check.user.id
   const offset = (query.page - 1) * query.limit
 
+  let writingRecordPatternIds: string[] | null = null
+  if (query.writingRecordId) {
+    const { data: occurrences, error: occurrenceError } = await service
+      .from('writing_error_occurrences')
+      .select('error_pattern_id')
+      .eq('user_id', userId)
+      .eq('writing_record_id', query.writingRecordId)
+    if (occurrenceError) {
+      return json({ success: false, message: occurrenceError.message }, { status: 500 })
+    }
+    writingRecordPatternIds = Array.from(
+      new Set((occurrences ?? []).map((row) => row.error_pattern_id).filter((id): id is string => Boolean(id)))
+    )
+  }
+
   let dbQuery = service
     .from('writing_error_patterns')
     .select('*', { count: 'exact' })
     .eq('user_id', userId)
+
+  if (writingRecordPatternIds) {
+    if (writingRecordPatternIds.length === 0) {
+      return json({
+        success: true,
+        patterns: [],
+        total: 0,
+        page: query.page,
+        limit: query.limit,
+        stats: { total: 0, active: 0, improving: 0, mastered: 0 }
+      })
+    }
+    dbQuery = dbQuery.in('id', writingRecordPatternIds)
+  }
 
   if (query.category) {
     dbQuery = dbQuery.eq('category', query.category)

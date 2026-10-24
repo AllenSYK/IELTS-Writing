@@ -8,12 +8,14 @@ import {
   KeyRound,
   LayoutDashboard,
   Link2,
+  MessageSquareText,
   Settings,
   UsersRound,
   X
 } from 'lucide-react'
 import { BrandLogo } from '@/components/BrandLogo'
 import { BRAND_NAME } from '@/lib/brand'
+import { AdminPreviewCookieName } from '@/lib/auth/route-access'
 import { AdminLogoutButton } from './AdminLogoutButton'
 
 const navigation = [
@@ -29,7 +31,8 @@ const navigation = [
       { href: '/admin/licenses', label: '激活码管理', icon: KeyRound },
       { href: '/admin/bindings', label: '邮箱绑定', icon: Link2 },
       { href: '/admin/users', label: '用户管理', icon: UsersRound },
-      { href: '/admin/past-papers', label: '真题题库', icon: FileText }
+      { href: '/admin/past-papers', label: '真题题库', icon: FileText },
+      { href: '/admin/feedback', label: '用户反馈', icon: MessageSquareText }
     ]
   },
   {
@@ -95,14 +98,21 @@ export function AdminSidebar({
         </nav>
 
         <div className="admin-sidebar-bottom">
-          <a className="admin-user-card" href="/">
+          <button
+            className="admin-user-card"
+            type="button"
+            onClick={() => {
+              document.cookie = `${AdminPreviewCookieName}=1; path=/; max-age=1800; SameSite=Lax`
+              window.location.assign('/practice')
+            }}
+          >
             <span className="admin-user-avatar">{(adminEmail || 'A').slice(0, 1).toUpperCase()}</span>
             <span>
               <strong>{adminEmail || '管理员账号'}</strong>
-              <small>返回用户端</small>
+              <small>用户端预览</small>
             </span>
             <BookOpen size={17} aria-hidden="true" />
-          </a>
+          </button>
           <AdminLogoutButton />
         </div>
       </aside>

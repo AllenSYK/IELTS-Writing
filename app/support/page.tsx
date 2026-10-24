@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { AsyncButton, useToast } from '@/components/interaction-system'
 import { FaqDialog } from '@/components/support/FaqDialog'
+import { MyFeedbackList } from '@/components/support/MyFeedbackList'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import {
   SupportFaqs,
@@ -11,6 +12,7 @@ import {
   type SupportFaq,
   type SupportFeedbackCategory
 } from '@/lib/support-feedback'
+import { readRecentErrorCodes, type RecentErrorCodeEntry } from '@/lib/recent-error-code'
 
 type DeviceInfo = {
   platform: string
@@ -40,6 +42,8 @@ export default function SupportPage() {
   const [submitError, setSubmitError] = useState('')
   const [result, setResult] = useState<FeedbackResult | null>(null)
   const [selectedFaq, setSelectedFaq] = useState<SupportFaq | null>(null)
+  const [feedbackListToken, setFeedbackListToken] = useState(0)
+  const [recentErrors, setRecentErrors] = useState<RecentErrorCodeEntry[]>([])
 
   useEffect(() => {
     window.queueMicrotask(() => {
@@ -47,17 +51,22 @@ export default function SupportPage() {
         platform: navigator.platform || '浏览器',
         arch: 'Web'
       })
+      setRecentErrors(readRecentErrorCodes())
     })
   }, [])
+
+  const recentErrorCodeLabel = recentErrors.length > 0
+    ? `${recentErrors[0].code}（${new Date(recentErrors[0].at).toLocaleString('zh-CN')} · ${recentErrors[0].context}）`
+    : '无'
 
   const diagnostics = useMemo(
     () => ({
       appVersion: version,
       platform: `${deviceInfo.platform} ${deviceInfo.arch}`,
       osVersion: typeof navigator === 'undefined' ? '未提供' : navigator.userAgent || '未提供',
-      recentErrorCode: '无'
+      recentErrorCode: recentErrorCodeLabel
     }),
-    [deviceInfo.arch, deviceInfo.platform, version]
+    [deviceInfo.arch, deviceInfo.platform, recentErrorCodeLabel, version]
   )
 
   const diagnosticsText = useMemo(
@@ -65,9 +74,12 @@ export default function SupportPage() {
       `应用版本: ${diagnostics.appVersion}`,
       `系统平台: ${diagnostics.platform}`,
       `系统版本: ${diagnostics.osVersion}`,
-      `最近错误码: ${diagnostics.recentErrorCode}`
+      `最近错误码: ${diagnostics.recentErrorCode}`,
+      ...recentErrors.slice(1).map((entry) =>
+        `历史错误码: ${entry.code}（${new Date(entry.at).toLocaleString('zh-CN')} · ${entry.context}）`
+      )
     ].join('\n'),
-    [diagnostics]
+    [diagnostics, recentErrors]
   )
 
   const canSubmit = subject.trim().length >= 2 && description.trim().length >= 10
@@ -112,6 +124,7 @@ export default function SupportPage() {
         throw new Error(data.message || (data.error === 'invalid_input' ? '请检查标题、描述和邮箱格式。' : '反馈提交失败，请稍后重试。'))
       }
       setResult(data as FeedbackResult)
+      setFeedbackListToken((value) => value + 1)
       pushToast({ kind: 'success', title: '反馈已提交', message: `反馈编号 ${data.displayId}` })
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : '反馈提交失败，请稍后重试。')
@@ -183,7 +196,7 @@ export default function SupportPage() {
             </div>
             <div className="settings-save-bar">
               <p className={`settings-message ${submitError ? 'is-error' : result ? 'is-success' : ''}`}>
-                {submitError || (result ? '反馈已进入后台，管理员可以查看和更新处理状态。' : '诊断信息只包含应用版本、系统平台、系统版本和最近错误码。')}
+                {submitError || (result ? '反馈已进入后台处理队列，可在下方“我的反馈”查看处理进度。' : '诊断信息只包含应用版本、系统平台、系统版本和最近错误码。')}
               </p>
               <AsyncButton
                 icon="send"
@@ -198,6 +211,8 @@ export default function SupportPage() {
             </div>
           </form>
         </GlassPanel>
+
+        <MyFeedbackList refreshToken={feedbackListToken} />
 
         <div className="support-grid">
           <GlassPanel className="settings-section">
