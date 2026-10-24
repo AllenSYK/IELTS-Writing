@@ -35,6 +35,36 @@ export async function GET(request: Request) {
     const status = url.searchParams.get('status')?.trim() || 'all'
     const plan = url.searchParams.get('plan')?.trim() || 'all'
     const licenseId = url.searchParams.get('licenseId')?.trim() || ''
+    // 导出按完整筛选条件读取（不再受当前已加载页限制），单次上限 10000 条。
+    const exportAll = url.searchParams.get('export') === '1'
+    const effectivePage = exportAll ? 1 : page
+    const effectivePageSize = exportAll ? 10000 : pageSize
+
+    // 优先走数据库分页（RPC 尚未部署时回退到旧路径）。
+    const rpcResult = await service.rpc('admin_list_licenses', {
+      p_search: search,
+      p_status: status,
+      p_plan: plan,
+      p_license_id: licenseId || null,
+      p_page: effectivePage,
+      p_page_size: effectivePageSize
+    })
+    if (!rpcResult.error && rpcResult.data) {
+      const payload = rpcResult.data as { items?: Array<Record<string, unknown>>; total?: number }
+      const items = (payload.items ?? []).map((row) => ({
+        ...row,
+        activation_count: Number(row.activation_count ?? 0),
+        remaining_count: Math.max(0, Number(row.max_activations ?? 0) - Number(row.activation_count ?? 0)),
+        status: row.effective_status ?? row.status
+      }))
+      return json({
+        success: true,
+        licenses: items,
+        total: Number(payload.total ?? items.length),
+        page: effectivePage,
+        pageSize: effectivePageSize
+      })
+    }
 
     let query = service
       .from('license_codes')
@@ -86,12 +116,15 @@ export async function GET(request: Request) {
     const filtered = status === 'all'
       ? normalized
       : normalized.filter((license) => license.status === status)
-    const offset = (page - 1) * pageSize
+    const offset = (exportAll ? 0 : (page - 1) * pageSize)
+    const slice = exportAll ? filtered.slice(0, 10000) : filtered.slice(offset, offset + pageSize)
 
     return json({
       success: true,
-      licenses: filtered.slice(offset, offset + pageSize),
-      total: filtered.length
+      licenses: slice,
+      total: filtered.length,
+      page: effectivePage,
+      pageSize: effectivePageSize
     })
   } catch (error) {
     return adminApiError(error, '无法加载激活码')

@@ -66,9 +66,10 @@ export function AdminSettingsClient() {
   const [settings, setSettings] = useState<Settings>(defaults)
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [conflictDetected, setConflictDetected] = useState(false)
 
   // 使用 SWR 加载设置
-  const { data, error, isLoading, mutate } = useSWR(
+  const { error, isLoading, mutate } = useSWR(
     ADMIN_CACHE_KEYS.SETTINGS,
     adminJsonFetcher<{ settings?: Settings; updatedAt?: string }>,
     {
@@ -86,7 +87,7 @@ export function AdminSettingsClient() {
   // 使用 SWR mutation 保存设置
   const { trigger: saveSettings, isMutating: saving } = useSWRMutation(
     ADMIN_CACHE_KEYS.SETTINGS,
-    async () => {
+    async (_: string, { arg }: { arg?: { expectedUpdatedAt?: string | null } }) => {
       // 前端验证
       const errors: Record<string, string> = {}
       
@@ -108,12 +109,20 @@ export function AdminSettingsClient() {
         throw new Error('请检查输入项')
       }
       setValidationErrors({})
-      
-      // 发送保存请求
-      return adminApiRequest<{ settings?: Settings; updatedAt?: string }>('/api/admin/settings', 'PATCH', settings)
+
+      // 已有设置必须携带 expectedUpdatedAt，否则服务端会按首次创建处理并返回冲突。
+      const expectedUpdatedAt = arg?.expectedUpdatedAt !== undefined ? arg.expectedUpdatedAt : updatedAt
+      return adminApiRequest<{ settings?: Settings; updatedAt?: string }>(
+        '/api/admin/settings',
+        'PATCH',
+        expectedUpdatedAt
+          ? { ...settings, expectedUpdatedAt }
+          : settings
+      )
     },
     {
       onSuccess: (data) => {
+        setConflictDetected(false)
         if (data?.settings) {
           setSettings({ ...defaults, ...data.settings })
           setUpdatedAt(data.updatedAt || null)
@@ -123,7 +132,10 @@ export function AdminSettingsClient() {
         pushToast({ kind: 'success', title: '管理设置已保存' })
       },
       onError: (error) => {
-        if (error instanceof AdminApiError) {
+        if (error instanceof AdminApiError && (error.status === 409 || error.code === 'CONFLICT')) {
+          setConflictDetected(true)
+          pushToast({ kind: 'warning', title: '设置已被其他管理员更新', message: '可保留当前编辑后覆盖，或放弃编辑载入最新设置。' })
+        } else if (error instanceof AdminApiError) {
           pushToast({ kind: 'error', title: '设置保存失败', message: error.message })
         } else if (error.message !== '请检查输入项') {
           pushToast({ kind: 'error', title: '设置保存失败', message: '请稍后重试。' })
@@ -138,7 +150,30 @@ export function AdminSettingsClient() {
     event.preventDefault()
     // 防抖：如果正在保存，忽略点击
     if (saving) return
-    saveSettings()
+    void saveSettings()
+  }
+
+  async function overwriteWithLocalEdits() {
+    if (saving) return
+    try {
+      const latest = await adminJsonFetcher<{ settings?: Settings; updatedAt?: string }>(ADMIN_CACHE_KEYS.SETTINGS)
+      setUpdatedAt(latest?.updatedAt || null)
+      await saveSettings({ expectedUpdatedAt: latest?.updatedAt || null })
+    } catch (caught) {
+      if (!(caught instanceof AdminApiError && (caught.status === 409 || caught.code === 'CONFLICT'))) {
+        pushToast({
+          kind: 'error',
+          title: '覆盖保存失败',
+          message: caught instanceof Error ? caught.message : '请稍后重试。'
+        })
+      }
+    }
+  }
+
+  async function reloadLatestSettings() {
+    setConflictDetected(false)
+    await mutate()
+    pushToast({ kind: 'info', title: '已载入最新设置', message: '当前编辑已被服务端版本替换。' })
   }
 
   function updateSetting(key: keyof Settings, value: string | number) {
@@ -166,6 +201,26 @@ export function AdminSettingsClient() {
           message={error instanceof AdminApiError ? error.message : '无法加载设置。'} 
           onRetry={() => mutate()} 
         />
+      ) : null}
+
+      {conflictDetected && !isLoading ? (
+        <section className="admin-panel" role="alert" style={{ borderColor: 'var(--admin-warning, #b26a00)' }}>
+          <div className="admin-settings-heading">
+            <span><ShieldCheck size={20} /></span>
+            <div>
+              <h2>设置已被其他管理员更新</h2>
+              <p>你可以保留当前编辑并覆盖最新版本，或放弃当前编辑并载入最新设置。</p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button className="admin-primary-button" type="button" disabled={saving} onClick={() => void overwriteWithLocalEdits()}>
+              保留我的修改并覆盖
+            </button>
+            <button className="admin-secondary-button" type="button" disabled={saving} onClick={() => void reloadLatestSettings()}>
+              放弃编辑并载入最新
+            </button>
+          </div>
+        </section>
       ) : null}
       
       {isLoading ? <AdminTableSkeleton columns={2} rows={6} /> : (
@@ -223,7 +278,7 @@ export function AdminSettingsClient() {
           <section className="admin-panel">
             <div className="admin-settings-heading">
               <span><Clock3 size={20} /></span>
-              <div><h2>到期提醒</h2><p>控制总览中&quot;即将到期&quot;的时间窗口。</p></div>
+              <div><h2>到期提醒</h2><p>控制邮箱绑定列表中“即将到期”状态的判定窗口：到期前该天数内的绑定会被标记为即将到期。</p></div>
             </div>
             <label className="admin-field">
               <span>提前提醒天数</span>

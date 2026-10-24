@@ -27,7 +27,11 @@ export function getEffectiveLicenseStatus(license: LicenseStatusInput, now = Dat
   return 'unused'
 }
 
-export function getEffectiveBindingStatus(binding: BindingStatusInput, now = Date.now()) {
+export function getEffectiveBindingStatus(
+  binding: BindingStatusInput,
+  now = Date.now(),
+  expiringReminderDays: number = BINDING_EXPIRING_DAYS
+) {
   if (binding.revoked_reason === UNBOUND_BINDING_REASON) return 'unbound'
   if (
     binding.status === 'revoked'
@@ -44,9 +48,32 @@ export function getEffectiveBindingStatus(binding: BindingStatusInput, now = Dat
     || expiresAt <= now
   ) return 'expired'
 
-  const expiringAt = now + BINDING_EXPIRING_DAYS * 24 * 60 * 60 * 1000
+  const reminderDays = Number.isFinite(expiringReminderDays) && expiringReminderDays > 0
+    ? expiringReminderDays
+    : BINDING_EXPIRING_DAYS
+  const expiringAt = now + reminderDays * 24 * 60 * 60 * 1000
   if (expiresAt <= expiringAt) return 'expiring'
   return 'active'
+}
+
+/**
+ * 读取系统设置中的“到期提醒天数”，用于判定“即将到期”状态。
+ * 设置缺失或非法时回退到默认窗口。
+ */
+export async function loadExpiringReminderDays(service: SupabaseClient): Promise<number> {
+  try {
+    const { data } = await service
+      .from('admin_settings')
+      .select('setting_value')
+      .eq('id', 'default')
+      .maybeSingle()
+    const raw = (data?.setting_value as { expiringReminderDays?: unknown } | null)?.expiringReminderDays
+    const parsed = typeof raw === 'number' ? raw : Number(raw)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  } catch {
+    // 回退默认值
+  }
+  return BINDING_EXPIRING_DAYS
 }
 
 export async function syncLicenseActivationCount(service: SupabaseClient, licenseId: string) {

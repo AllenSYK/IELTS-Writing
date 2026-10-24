@@ -21,6 +21,7 @@ import { maskLicensePrefix } from '@/lib/admin/mask-license'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
+import { useAdminSettings } from '@/lib/admin/admin-settings'
 
 type LicenseRef = {
   id: string
@@ -82,16 +83,19 @@ export function AdminBindingsClient() {
   const email = searchParams.get('email') || ''
   const userId = searchParams.get('userId') || ''
   const { pushToast } = useToast()
+  const { settings: adminSettings } = useAdminSettings()
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [status, setStatus] = useState('all')
+  const [page, setPage] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<BindingRow | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
 
   const bindingsKey = useMemo(() => {
     const params = new URLSearchParams({
-      pageSize: '200',
+      page: String(page),
+      pageSize: String(Math.min(Math.max(adminSettings.pageSize, 10), 200)),
       search: debouncedSearch,
       status
     })
@@ -99,7 +103,7 @@ export function AdminBindingsClient() {
     if (email) params.set('email', email)
     if (userId) params.set('userId', userId)
     return `/api/admin/bindings?${params.toString()}`
-  }, [debouncedSearch, email, licenseId, status, userId])
+  }, [adminSettings.pageSize, debouncedSearch, email, licenseId, page, status, userId])
 
   const {
     data,
@@ -111,11 +115,57 @@ export function AdminBindingsClient() {
   const bindings = data?.bindings || []
   const labels = data?.filterLabels || { license: '', email: '', user: '' }
   const loading = !data && isLoading
+  const pageSize = Math.min(Math.max(adminSettings.pageSize, 10), 200)
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize))
 
   function clearFilter(key: 'licenseId' | 'email' | 'userId') {
     const params = new URLSearchParams(searchParams.toString())
     params.delete(key)
     window.location.replace(`/admin/bindings${params.size ? `?${params.toString()}` : ''}`)
+  }
+
+  async function exportFilteredBindings() {
+    const params = new URLSearchParams({
+      export: '1',
+      pageSize: '200',
+      search: debouncedSearch,
+      status
+    })
+    if (licenseId) params.set('licenseId', licenseId)
+    if (email) params.set('email', email)
+    if (userId) params.set('userId', userId)
+    try {
+      const payload = await adminJsonFetcher<BindingsResponse>(`/api/admin/bindings?${params.toString()}`)
+      const rows = payload.bindings || []
+      const csvRows = [
+        ['邮箱', '用户 ID', '激活码前缀', '套餐', '绑定状态', '激活时间', '账号到期时间', '最近使用时间'],
+        ...rows.map((binding) => [
+          binding.email,
+          binding.user_id,
+          binding.license_codes?.code_prefix || '',
+          binding.license_codes?.plan || '',
+          binding.binding_status,
+          binding.activated_at,
+          binding.expires_at,
+          binding.last_used_at || ''
+        ])
+      ]
+      const csv = csvRows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+      const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `email-bindings-${new Date().toISOString().slice(0, 10)}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+      pushToast({ kind: 'success', title: `已导出 ${rows.length} 条筛选结果` })
+    } catch (caught) {
+      pushToast({
+        kind: 'error',
+        title: '导出失败',
+        message: caught instanceof Error ? caught.message : '请稍后重试。'
+      })
+    }
   }
 
   async function patchBinding(id: string, action: 'extend' | 'revoke' | 'rebind', days?: number) {
@@ -186,16 +236,22 @@ export function AdminBindingsClient() {
         <div className="admin-filter-bar admin-binding-filter">
           <label className="admin-search-field">
             <Search size={17} aria-hidden="true" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索邮箱、激活码、激活码前缀或用户 ID" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="搜索邮箱、激活码、激活码前缀或用户 ID" />
           </label>
           <div className="admin-filter-tabs" role="tablist" aria-label="邮箱绑定筛选">
             {statusFilters.map(([value, label]) => (
-              <button key={value} className={status === value ? 'is-active' : ''} type="button" onClick={() => setStatus(value)}>{label}</button>
+              <button key={value} className={status === value ? 'is-active' : ''} type="button" onClick={() => { setStatus(value); setPage(1) }}>{label}</button>
             ))}
           </div>
           <button className="admin-icon-button" type="button" onClick={() => void mutate()} disabled={isValidating} aria-label="刷新">
             <RefreshCw className={isValidating ? 'admin-spin' : ''} size={17} />
           </button>
+          <button className="admin-secondary-button" type="button" onClick={() => void exportFilteredBindings()} disabled={!bindings.length}>
+            导出筛选结果
+          </button>
+          <span style={{ alignSelf: 'center', fontSize: 13, color: 'var(--admin-muted, #6b7280)' }}>
+            共 {data?.total ?? bindings.length} 条
+          </span>
         </div>
 
         {licenseId || email || userId ? (
@@ -276,6 +332,18 @@ export function AdminBindingsClient() {
             </table>
           </div>
         ) : <AdminEmpty title="没有符合条件的邮箱绑定" message="调整筛选条件，或等待用户使用激活码完成绑定。" />}
+
+        {(data?.total ?? 0) > pageSize ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 }}>
+            <button className="admin-secondary-button" type="button" disabled={page <= 1 || isValidating} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+              上一页
+            </button>
+            <span style={{ fontSize: 13 }}>第 {page} / {totalPages} 页，共 {data?.total ?? 0} 条</span>
+            <button className="admin-secondary-button" type="button" disabled={isValidating || page >= totalPages} onClick={() => setPage((current) => current + 1)}>
+              下一页
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <CenteredDialog

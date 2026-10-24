@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Inbox, RefreshCw } from 'lucide-react'
+import { formatAdminDateWithPreferences } from '@/lib/admin/admin-display-config'
 
 const labels: Record<string, string> = {
   unused: '未使用',
@@ -110,10 +111,7 @@ export function AdminMetricCard({
 }
 
 export function formatAdminDate(value?: string | null, fallback = '暂无') {
-  if (!value) return fallback
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return fallback
-  return date.toLocaleString('zh-CN', { hour12: false })
+  return formatAdminDateWithPreferences(value, fallback)
 }
 
 export { maskLicenseCode, maskLicenseCodeWithPrefix } from '@/lib/admin/mask-license'

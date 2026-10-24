@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
-import { getEffectiveBindingStatus } from '@/lib/web-license/admin-license-data'
+import { getEffectiveBindingStatus, loadExpiringReminderDays } from '@/lib/web-license/admin-license-data'
 import { extractAuditInfo, logAdminAudit } from '@/lib/admin/audit-log'
 
 const PatchSchema = z.object({
@@ -66,6 +66,8 @@ async function loadBinding(service: Awaited<ReturnType<typeof requireAdminServic
     .maybeSingle()
   if (profileError) throw profileError
 
+  const reminderDays = await loadExpiringReminderDays(service)
+
   return {
     ...binding,
     license_codes: Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes,
@@ -73,7 +75,7 @@ async function loadBinding(service: Awaited<ReturnType<typeof requireAdminServic
       ...binding,
       license_status: (Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes)?.status,
       license_expires_at: (Array.isArray(binding.license_codes) ? binding.license_codes[0] : binding.license_codes)?.expires_at
-    }),
+    }, Date.now(), reminderDays),
     user_role: profile?.role || 'user'
   }
 }

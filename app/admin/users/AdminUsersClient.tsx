@@ -22,6 +22,7 @@ import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
+import { useAdminSettings } from '@/lib/admin/admin-settings'
 
 type LicenseRef = {
   id: string
@@ -110,11 +111,12 @@ export function AdminUsersClient() {
   const searchParams = useSearchParams()
   const focusedUserId = searchParams.get('userId') || ''
   const { pushToast } = useToast()
+  const { settings: adminSettings } = useAdminSettings()
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(1)
-  const pageSize = 50
+  const pageSize = Math.min(Math.max(adminSettings.pageSize, 10), 200)
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<UserRow | null>(null)
   const [detail, setDetail] = useState<UserDetail | null>(null)
@@ -124,11 +126,18 @@ export function AdminUsersClient() {
   const [batchMode, setBatchMode] = useState<'existing' | 'new'>('existing')
   const [batchCode, setBatchCode] = useState('')
   const [batchPlan, setBatchPlan] = useState('standard')
-  const [batchDays, setBatchDays] = useState(365)
+  const [batchDays, setBatchDays] = useState(adminSettings.defaultDurationDays)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; results?: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> } | null>(null)
   const [batchResults, setBatchResults] = useState<Array<{ ok: boolean; email: string | null; message?: string; userId: string }> | null>(null)
   const focusedDetailRef = useRef('')
+
+  // 批量发放默认天数跟随系统设置（仅在用户未修改时覆盖）。
+  const batchDaysTouchedRef = useRef(false)
+  useEffect(() => {
+    if (batchDaysTouchedRef.current) return
+    setBatchDays(adminSettings.defaultDurationDays)
+  }, [adminSettings.defaultDurationDays])
 
   const openDetail = useCallback(async (user: UserRow) => {
     setSelected(user)
@@ -148,7 +157,7 @@ export function AdminUsersClient() {
     const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), search: debouncedSearch, filter })
     if (focusedUserId) params.set('userId', focusedUserId)
     return `/api/admin/users?${params.toString()}`
-  }, [debouncedSearch, filter, focusedUserId, page])
+  }, [debouncedSearch, filter, focusedUserId, page, pageSize])
 
   const {
     data: usersData,
@@ -726,7 +735,7 @@ export function AdminUsersClient() {
             ) : (
               <div className="admin-form-grid">
                 <label className="admin-field"><span>套餐</span><select value={batchPlan} onChange={(event) => setBatchPlan(event.target.value)}><option value="standard">Standard</option><option value="pro">Pro</option><option value="premium">Premium</option><option value="admin">Admin</option></select></label>
-                <label className="admin-field"><span>账号有效天数</span><input type="number" min={1} max={3650} value={batchDays} onChange={(event) => setBatchDays(Number(event.target.value))} /></label>
+                <label className="admin-field"><span>账号有效天数</span><input type="number" min={1} max={3650} value={batchDays} onChange={(event) => { batchDaysTouchedRef.current = true; setBatchDays(Number(event.target.value)) }} /></label>
               </div>
             )}
             <div className="admin-confirm-summary">

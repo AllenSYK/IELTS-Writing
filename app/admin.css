@@ -143,6 +143,14 @@
   background: rgba(255, 255, 255, 0.82);
 }
 
+button.admin-user-card {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
 .admin-user-card > span:nth-child(2) {
   min-width: 0;
 }
@@ -985,6 +993,36 @@
 
 .admin-table tbody tr:hover td {
   background: rgba(255, 255, 255, 0.56);
+}
+
+/* 宽表格：固定标题列与操作列，避免主要操作被横向滚动藏到屏幕外 */
+.admin-table th:first-child,
+.admin-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: rgba(246, 248, 255, 0.97);
+  box-shadow: 8px 0 12px -10px rgba(30, 41, 59, 0.22);
+}
+
+.admin-table th:last-child,
+.admin-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: rgba(246, 248, 255, 0.97);
+  box-shadow: -8px 0 12px -10px rgba(30, 41, 59, 0.22);
+}
+
+.admin-table th:first-child,
+.admin-table th:last-child {
+  z-index: 3;
+  background: rgba(241, 243, 254, 0.98);
+}
+
+.admin-table tbody tr:hover td:first-child,
+.admin-table tbody tr:hover td:last-child {
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .admin-table code,

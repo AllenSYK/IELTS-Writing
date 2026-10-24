@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createApiObservation, type ApiObservation } from '@/lib/api-observability'
-import { resolveAuthRedirect } from '@/lib/auth/route-access'
+import { AdminPreviewCookieName, resolveAuthRedirect } from '@/lib/auth/route-access'
 import {
   isActiveWebLicenseSnapshot,
   loadWebLicenseAccessSnapshot,
@@ -117,6 +117,7 @@ function unauthenticatedResponse(
 ) {
   const target = resolveAuthRedirect({
     pathname,
+    search: request.nextUrl.search,
     isAuthenticated: false
   })
   const response = target ? redirectTo(request, target, sourceResponse) : sourceResponse
@@ -270,9 +271,11 @@ export async function updateSupabaseSession(request: NextRequest) {
 
   const target = resolveAuthRedirect({
     pathname,
+    search: request.nextUrl.search,
     isAuthenticated: true,
     role: access.role,
-    licenseActive: access.licenseActive
+    licenseActive: access.licenseActive,
+    adminPreview: request.cookies.get(AdminPreviewCookieName)?.value === '1'
   })
   return observation.finish(target ? redirectTo(request, target, response) : response)
 }

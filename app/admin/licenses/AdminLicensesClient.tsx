@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
@@ -25,6 +25,7 @@ import { maskLicensePrefix } from '@/lib/admin/mask-license'
 import { CenteredDialog } from '@/components/ui/CenteredDialog'
 import { ConfirmDialog, useDebouncedValue, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
+import { useAdminSettings } from '@/lib/admin/admin-settings'
 
 type LicenseRow = {
   id: string
@@ -76,11 +77,13 @@ export function AdminLicensesClient() {
   const searchParams = useSearchParams()
   const focusedId = searchParams.get('licenseId') || searchParams.get('focus') || ''
   const { pushToast } = useToast()
+  const { settings: adminSettings, isLoading: adminSettingsLoading } = useAdminSettings()
   const [generated, setGenerated] = useState<GeneratedCode[]>([])
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [status, setStatus] = useState('all')
   const [plan, setPlan] = useState('all')
+  const [page, setPage] = useState(1)
   const [submitting, setSubmitting] = useState(false)
   const [createOpen, setCreateOpen] = useState(searchParams.get('create') === '1')
   const [resultOpen, setResultOpen] = useState(false)
@@ -103,16 +106,34 @@ export function AdminLicensesClient() {
     note: ''
   })
 
+  // 生成弹窗默认值与系统设置保持一致（默认套餐/有效期/激活次数）。
+  const formDefaultsAppliedRef = useRef(false)
+  useEffect(() => {
+    if (adminSettingsLoading || formDefaultsAppliedRef.current) return
+    formDefaultsAppliedRef.current = true
+    const presetDays = ['30', '90', '180', '365']
+    const days = String(adminSettings.defaultDurationDays)
+    const maxActs = String(adminSettings.defaultMaxActivations)
+    setForm((prev) => ({
+      ...prev,
+      plan: adminSettings.defaultPlan || 'standard',
+      durationPreset: presetDays.includes(days) ? days : 'custom',
+      customDuration: adminSettings.defaultDurationDays,
+      maxActivations: ['1', '2', '3', '5'].includes(maxActs) ? maxActs : '1'
+    }))
+  }, [adminSettings.defaultDurationDays, adminSettings.defaultMaxActivations, adminSettings.defaultPlan, adminSettingsLoading])
+
   const licensesKey = useMemo(() => {
     const params = new URLSearchParams({
-      pageSize: '200',
+      page: String(page),
+      pageSize: String(Math.min(Math.max(adminSettings.pageSize, 10), 200)),
       search: debouncedSearch,
       status,
       plan
     })
     if (focusedId) params.set('licenseId', focusedId)
     return `/api/admin/licenses/list?${params.toString()}`
-  }, [debouncedSearch, focusedId, plan, status])
+  }, [adminSettings.pageSize, debouncedSearch, focusedId, page, plan, status])
 
   const {
     data,
@@ -199,23 +220,42 @@ export function AdminLicensesClient() {
     pushToast({ kind: 'success', title })
   }
 
-  function exportAll() {
-    downloadCsv(`license-codes-${new Date().toISOString().slice(0, 10)}.csv`, [
-      ['激活码', '套餐', '状态', '已使用次数', '最大激活次数', '剩余次数', '用户有效天数', '激活码整体到期时间', '创建时间', '备注'],
-      ...licenses.map((license) => [
-        maskLicensePrefix(license.code_prefix),
-        license.plan,
-        license.status,
-        license.activation_count,
-        license.max_activations,
-        license.remaining_count,
-        license.duration_days,
-        license.expires_at || '',
-        license.created_at,
-        license.note || ''
+  async function exportAll() {
+    // 按完整筛选条件导出，不再局限于当前已加载的一页数据。
+    const params = new URLSearchParams({
+      export: '1',
+      pageSize: '200',
+      search: debouncedSearch,
+      status,
+      plan
+    })
+    if (focusedId) params.set('licenseId', focusedId)
+    try {
+      const payload = await adminJsonFetcher<LicensesResponse>(`/api/admin/licenses/list?${params.toString()}`)
+      const rows = payload.licenses || []
+      downloadCsv(`license-codes-${new Date().toISOString().slice(0, 10)}.csv`, [
+        ['激活码', '套餐', '状态', '已使用次数', '最大激活次数', '剩余次数', '用户有效天数', '激活码整体到期时间', '创建时间', '备注'],
+        ...rows.map((license) => [
+          maskLicensePrefix(license.code_prefix),
+          license.plan,
+          license.status,
+          license.activation_count,
+          license.max_activations,
+          license.remaining_count,
+          license.duration_days,
+          license.expires_at || '',
+          license.created_at,
+          license.note || ''
+        ])
       ])
-    ])
-    pushToast({ kind: 'success', title: '当前结果已脱敏导出' })
+      pushToast({ kind: 'success', title: `已脱敏导出 ${rows.length} 条筛选结果` })
+    } catch (caught) {
+      pushToast({
+        kind: 'error',
+        title: '导出失败',
+        message: caught instanceof Error ? caught.message : '请稍后重试。'
+      })
+    }
   }
 
   async function runConfirm() {
@@ -289,8 +329,8 @@ export function AdminLicensesClient() {
         description="生成、查看、禁用、撤销和管理所有激活码；撤销后保留历史记录"
         actions={(
           <>
-            <button className="admin-secondary-button" type="button" onClick={exportAll} disabled={!licenses.length}>
-              <Download size={16} />导出当前结果（已脱敏）
+            <button className="admin-secondary-button" type="button" onClick={() => void exportAll()} disabled={!licenses.length}>
+              <Download size={16} />导出全部筛选结果（已脱敏）
             </button>
             <button className="admin-primary-button" type="button" onClick={() => setCreateOpen(true)}>
               <Plus size={16} />生成激活码
@@ -303,11 +343,11 @@ export function AdminLicensesClient() {
         <div className="admin-filter-bar">
           <label className="admin-search-field">
             <Search size={17} aria-hidden="true" />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索完整激活码、前缀、套餐或备注" />
+            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="搜索完整激活码、前缀、套餐或备注" />
           </label>
           <label className="admin-select-field">
             <span>状态</span>
-            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}>
               <option value="all">全部状态</option>
               <option value="unused">未使用</option>
               <option value="partial">部分使用</option>
@@ -319,7 +359,7 @@ export function AdminLicensesClient() {
           </label>
           <label className="admin-select-field">
             <span>套餐</span>
-            <select value={plan} onChange={(event) => setPlan(event.target.value)}>
+            <select value={plan} onChange={(event) => { setPlan(event.target.value); setPage(1) }}>
               <option value="all">全部套餐</option>
               <option value="standard">Standard</option>
               <option value="pro">Pro</option>
@@ -330,6 +370,9 @@ export function AdminLicensesClient() {
           <button className="admin-icon-button" type="button" onClick={() => void mutate()} disabled={isValidating} aria-label="刷新">
             <RefreshCw className={isValidating ? 'admin-spin' : ''} size={17} />
           </button>
+          <span style={{ alignSelf: 'center', fontSize: 13, color: 'var(--admin-muted, #6b7280)' }}>
+            共 {data?.total ?? licenses.length} 条
+          </span>
         </div>
 
         {error ? <AdminError message={error.message || '无法加载激活码。'} onRetry={() => void mutate()} /> : null}
@@ -406,6 +449,25 @@ export function AdminLicensesClient() {
             action={<button className="admin-primary-button" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />生成激活码</button>}
           />
         )}
+
+        {(data?.total ?? 0) > Math.min(Math.max(adminSettings.pageSize, 10), 200) ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 }}>
+            <button className="admin-secondary-button" type="button" disabled={page <= 1 || isValidating} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+              上一页
+            </button>
+            <span style={{ fontSize: 13 }}>
+              第 {page} / {Math.max(1, Math.ceil((data?.total ?? 0) / Math.min(Math.max(adminSettings.pageSize, 10), 200)))} 页，共 {data?.total ?? 0} 条
+            </span>
+            <button
+              className="admin-secondary-button"
+              type="button"
+              disabled={isValidating || page >= Math.ceil((data?.total ?? 0) / Math.min(Math.max(adminSettings.pageSize, 10), 200))}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              下一页
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <CenteredDialog

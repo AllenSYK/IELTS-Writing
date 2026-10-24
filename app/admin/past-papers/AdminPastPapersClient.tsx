@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import useSWR from 'swr'
+import { useSearchParams } from 'next/navigation'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminTableSkeleton, AdminEmpty, AdminError, AdminBadge, formatAdminDate } from '@/components/admin/AdminUI'
 import { ConfirmDialog, useToast } from '@/components/interaction-system'
 import { adminJsonFetcher } from '@/lib/admin/fetch-json'
+import { useAdminSettings } from '@/lib/admin/admin-settings'
 import type {
   PastPaperStatus, PastPaperTaskType, PastPaperFrequencyLevel,
   RecalledExamImportResult, RecalledExamRecord, ExamMode, ExamSession,
@@ -42,8 +44,11 @@ type AdminPastPapersData = {
 
 export function AdminPastPapersClient() {
   const { pushToast } = useToast()
+  const searchParams = useSearchParams()
+  const { settings: adminSettings } = useAdminSettings()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
+  const [taskTypeFilter, setTaskTypeFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showAnalyze, setShowAnalyze] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
@@ -55,7 +60,16 @@ export function AdminPastPapersClient() {
     title: string
   } | null>(null)
 
-  const url = `/api/admin/past-papers?page=${page}&pageSize=20${statusFilter ? `&status=${statusFilter}` : ''}`
+  // 与顶部搜索框共享 URL 参数，保证搜索词真正参与列表请求。
+  const searchTerm = (searchParams.get('search') || '').trim()
+
+  const pageSize = Math.min(Math.max(adminSettings.pageSize, 10), 50)
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (statusFilter) query.set('status', statusFilter)
+  if (taskTypeFilter) query.set('taskType', taskTypeFilter)
+  if (searchTerm) query.set('search', searchTerm)
+  const url = `/api/admin/past-papers?${query.toString()}`
+
   const { data, error, isLoading, mutate } = useSWR<AdminPastPapersData>(url, adminJsonFetcher, { keepPreviousData: true })
   const loading = !data && isLoading
   const items = data?.items ?? []
@@ -142,19 +156,53 @@ export function AdminPastPapersClient() {
             {Object.entries(PastPaperStatusLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
-        {statusFilter && (
+        <label className="admin-select-field">
+          <span>Task 类型</span>
+          <select
+            value={taskTypeFilter}
+            onChange={(e) => { setTaskTypeFilter(e.target.value); setPage(1) }}
+            aria-label="按 Task 类型筛选"
+          >
+            <option value="">全部类型</option>
+            {Object.entries(PastPaperTaskTypeLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </label>
+        {(statusFilter || taskTypeFilter || searchTerm) && (
           <button 
             className="admin-text-button" 
             type="button" 
-            onClick={() => { setStatusFilter(''); setPage(1) }}
-            aria-label="清除状态筛选"
+            onClick={() => {
+              if (searchTerm) {
+                // 同时清掉顶部搜索框写入的 URL 搜索词
+                window.location.assign('/admin/past-papers')
+                return
+              }
+              setStatusFilter('')
+              setTaskTypeFilter('')
+              setPage(1)
+            }}
+            aria-label="清除筛选"
           >
-            清除筛选
+            清除筛选{searchTerm ? '（含搜索词）' : ''}
           </button>
         )}
+        {searchTerm ? (
+          <span style={{ alignSelf: 'center', fontSize: 13, color: 'var(--admin-muted, #6b7280)' }}>
+            搜索：“{searchTerm}”
+          </span>
+        ) : null}
       </div>
 
-      {error ? <AdminError message="加载失败" onRetry={() => void mutate()} /> : loading ? <AdminTableSkeleton columns={8} rows={8} /> : items.length === 0 ? <AdminEmpty title="暂无真题" message="请新增真题。" /> : (
+      {error ? <AdminError message="加载失败" onRetry={() => void mutate()} /> : loading ? <AdminTableSkeleton columns={8} rows={8} /> : items.length === 0 ? (
+        searchTerm ? (
+          <AdminEmpty
+            title="没有匹配的题目"
+            message={`没有找到与“${searchTerm}”匹配的题目。可更换关键词，或清除搜索查看全部。`}
+          />
+        ) : (
+          <AdminEmpty title="暂无真题" message="请新增真题。" />
+        )
+      ) : (
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
@@ -173,7 +221,7 @@ export function AdminPastPapersClient() {
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || '—'}</td>
+                  <td title={item.title || ''} style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || '—'}</td>
                   <td>{PastPaperTaskTypeLabels[item.taskType] ?? item.taskType}</td>
                   <td><AdminBadge value={PastPaperFrequencyLabels[item.frequencyLevel]} /></td>
                   <td><AdminBadge value={PastPaperStatusLabels[item.status]} /></td>
@@ -196,11 +244,11 @@ export function AdminPastPapersClient() {
         </div>
       )}
 
-      {total > 20 && (
+      {total > pageSize && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
           <button type="button" className="admin-secondary-button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>上一页</button>
-          <span style={{ alignSelf: 'center' }}>{page} / {Math.ceil(total / 20)}</span>
-          <button type="button" className="admin-secondary-button" disabled={items.length < 20} onClick={() => setPage((p) => p + 1)}>下一页</button>
+          <span style={{ alignSelf: 'center' }}>{page} / {Math.max(1, Math.ceil(total / pageSize))}</span>
+          <button type="button" className="admin-secondary-button" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage((p) => p + 1)}>下一页</button>
         </div>
       )}
 

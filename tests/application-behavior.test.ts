@@ -231,7 +231,8 @@ test('Admin login never sends ordinary users into the user activation flow', () 
 })
 
 test('Admin and ordinary login redirects remain separate', () => {
-  assert.equal(resolveAuthRedirect({ pathname: '/admin', isAuthenticated: true, role: 'admin' }), '/admin/licenses')
+  // /admin 直接展示总览，登录后的默认落点仍是 /admin/licenses（见 admin login 分支）。
+  assert.equal(resolveAuthRedirect({ pathname: '/admin', isAuthenticated: true, role: 'admin' }), null)
   assert.equal(resolveAuthRedirect({ pathname: '/dashboard', isAuthenticated: true, role: 'admin' }), '/admin/licenses')
   assert.equal(
     resolveAuthRedirect({ pathname: '/login', isAuthenticated: true, role: 'user', licenseActive: false }),
