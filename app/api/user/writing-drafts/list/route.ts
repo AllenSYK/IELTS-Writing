@@ -1,13 +1,20 @@
 import { json } from '@/lib/http'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
-import { managedDraftHasContent } from '@/lib/writing-drafts'
+import {
+  draftListItemDisplay,
+  managedDraftHasContent,
+  normalizeManagedDraftData
+} from '@/lib/writing-drafts'
 
 export type DraftListItem = {
   id: string
   taskType: string
   createdAt: string
   updatedAt: string
+  title?: string | null
+  wordCount?: number
+  preview?: string | null
 }
 
 export async function GET() {
@@ -28,14 +35,22 @@ export async function GET() {
     return json({ success: false, message: '草稿列表读取失败' }, { status: 500 })
   }
 
-  const drafts: DraftListItem[] = (data ?? [])
-    .filter((row) => managedDraftHasContent(row.draft_data, row.task_type as 'task1' | 'task2' | 'mock'))
-    .map((row) => ({
+  const drafts: DraftListItem[] = []
+  for (const row of data ?? []) {
+    const taskType = row.task_type as 'task1' | 'task2' | 'mock'
+    const draftData = normalizeManagedDraftData(row.draft_data, taskType)
+    if (!draftData || !managedDraftHasContent(draftData, taskType)) continue
+    const display = draftListItemDisplay(draftData, taskType)
+    drafts.push({
       id: row.id as string,
-      taskType: row.task_type as string,
+      taskType,
       createdAt: row.created_at as string,
-      updatedAt: row.updated_at as string
-    }))
+      updatedAt: row.updated_at as string,
+      title: display.title,
+      wordCount: display.wordCount,
+      preview: display.preview
+    })
+  }
 
   return json({ success: true, drafts })
 }

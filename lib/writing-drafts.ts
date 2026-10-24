@@ -318,17 +318,38 @@ export type DraftListItem = {
   taskType: WritingTaskType
   createdAt: string
   updatedAt: string
+  title?: string | null
+  wordCount?: number
+  preview?: string | null
+}
+
+export function draftListItemDisplay(draftData: ManagedDraftData, taskType: WritingTaskType): {
+  title: string
+  wordCount: number
+  preview: string
+} {
+  const extractPreview = (essay: string) => essay.trim().replace(/\s+/g, ' ').slice(0, 90)
+  if (draftData.kind === 'full_test') {
+    const title = draftData.task1.title || draftData.task2.title || '完整测试草稿'
+    const wordCount = draftData.task1.wordCount + draftData.task2.wordCount
+    const preview = extractPreview(draftData.task2.essay || draftData.task1.essay)
+    return { title, wordCount, preview }
+  }
+  const title = draftData.task.title || (taskType === 'task1' ? 'Task 1 草稿' : 'Task 2 草稿')
+  return {
+    title,
+    wordCount: draftData.task.wordCount,
+    preview: extractPreview(draftData.task.essay)
+  }
 }
 
 export async function listDraftsLightweight(): Promise<DraftListItem[]> {
-  try {
-    const response = await fetch('/api/user/writing-drafts/list', { cache: 'no-store' })
-    const data = await response.json().catch(() => ({})) as { success?: boolean; drafts?: DraftListItem[] }
-    if (!response.ok || !data.success) return []
-    return data.drafts ?? []
-  } catch {
-    return []
+  const response = await fetch('/api/user/writing-drafts/list', { cache: 'no-store' })
+  const data = await response.json().catch(() => ({})) as { success?: boolean; drafts?: DraftListItem[]; message?: string }
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || '草稿列表读取失败，请稍后重试。')
   }
+  return data.drafts ?? []
 }
 
 export async function fetchDraftDeleteQuota(): Promise<DraftDeleteQuota> {

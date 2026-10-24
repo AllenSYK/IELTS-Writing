@@ -103,8 +103,8 @@ const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { 
 
 export default function HistoryPage() {
   const { pushToast } = useToast()
-  const { userId } = useUserSession()
-  const { records, isLoading, refreshList } = useWritingRecordList(userId)
+  const { userId, status: sessionStatus, retryAuth } = useUserSession()
+  const { records, isLoading, error, refreshList } = useWritingRecordList(userId)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [preferencesLoaded, setPreferencesLoaded] = useState(false)
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
@@ -151,10 +151,16 @@ export default function HistoryPage() {
       await refreshList()
       localStorage.setItem('ielts-writing-analytics-invalidated-at', String(Date.now()))
       window.dispatchEvent(new CustomEvent('ielts-writing-analytics-invalidated'))
+    } catch (caught) {
+      pushToast({
+        kind: 'error',
+        title: '刷新失败',
+        message: caught instanceof Error ? caught.message : '请稍后重试。'
+      })
     } finally {
       setIsRefreshing(false)
     }
-  }, [isRefreshing, refreshList])
+  }, [isRefreshing, pushToast, refreshList])
 
   const visibleRecords = useMemo(
     () => {
@@ -223,7 +229,27 @@ export default function HistoryPage() {
     }, 220)
   }
 
-  if (!preferencesLoaded || isLoading) return <PageSkeleton />
+  if (!preferencesLoaded || sessionStatus === 'loading' || isLoading) return <PageSkeleton />
+
+  if (error) {
+    return (
+      <main className="ui-page" data-main-content tabIndex={-1}>
+        <section className="history-main">
+          <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
+            <MaterialIcon name="error" size={48} />
+            <h2 className="ui-title-headline" style={{ marginTop: 16 }}>历史记录加载失败</h2>
+            <p className="ui-body" style={{ marginTop: 8, color: 'var(--on-surface-variant, #5a5f6a)' }}>
+              {error.message || '网络异常或登录状态已过期，请重试。'}
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 16 }}>
+              <button className="ui-primary-button" type="button" onClick={handleRefresh}>重新加载</button>
+              <button className="ui-secondary-button" type="button" onClick={() => retryAuth()}>重新验证登录</button>
+            </div>
+          </GlassPanel>
+        </section>
+      </main>
+    )
+  }
 
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>

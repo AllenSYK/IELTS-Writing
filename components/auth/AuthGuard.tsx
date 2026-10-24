@@ -14,7 +14,8 @@ export function AuthGuard({ children, fallback }: AuthGuardProps) {
 
   useEffect(() => {
     if (status === 'unauthenticated') {
-      window.location.replace(`/login?next=${encodeURIComponent(window.location.pathname)}`)
+      const next = `${window.location.pathname}${window.location.search}`
+      window.location.replace(`/login?next=${encodeURIComponent(next)}`)
     }
   }, [status])
 

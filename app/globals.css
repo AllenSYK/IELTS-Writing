@@ -7222,6 +7222,21 @@ img {
   border-bottom: 0;
 }
 
+.practice-start-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid rgba(193, 198, 215, 0.28);
+}
+
+.practice-start-bar p {
+  margin: 0;
+}
+
 .practice-setting-copy {
   min-width: 0;
   display: grid;
@@ -9902,6 +9917,29 @@ body.is-resizing-editor * {
   margin: 8px 0 0;
   font-size: 15px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.draft-word-count {
+  display: block;
+  margin-top: 4px;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.draft-preview {
+  margin: 10px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .draft-updated,

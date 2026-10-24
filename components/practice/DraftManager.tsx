@@ -56,19 +56,31 @@ function DraftCard({
   deleteDisabled: boolean
 }) {
   const taskLabel = record.taskType === 'task1' ? 'Task 1' : record.taskType === 'task2' ? 'Task 2' : '完整测试'
+  const heading = record.title || `${taskLabel} 草稿`
+  const wordCount = typeof record.wordCount === 'number' ? record.wordCount : null
 
   return (
     <article className="draft-card">
       <div className="draft-card-heading">
         <div>
           <span className="task-badge">{taskLabel}</span>
-          <h3>{taskLabel} 草稿</h3>
+          <h3 title={heading}>{heading}</h3>
+          {wordCount !== null ? (
+            <small className="draft-word-count">{wordCount} 词</small>
+          ) : null}
         </div>
         <span className="draft-updated">
           <MaterialIcon name="schedule" size={15} />
           {formatUpdatedAt(record.updatedAt)}
         </span>
       </div>
+
+      {record.preview ? (
+        <p className="draft-preview" title={record.preview}>
+          {record.preview}
+          {record.preview.length >= 90 ? '…' : ''}
+        </p>
+      ) : null}
 
       <div className="draft-card-actions">
         <button className="ui-primary-button" type="button" onClick={() => onContinue(record)}>

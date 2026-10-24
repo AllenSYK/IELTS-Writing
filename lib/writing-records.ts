@@ -584,12 +584,8 @@ export type WritingRecordListItem = {
 
 export async function loadWritingRecordsLightweight(): Promise<WritingRecordListItem[]> {
   if (!canUseAccountApi()) return []
-  try {
-    const data = await requestAccountApi<{ records?: WritingRecordListItem[] }>('/api/user/writing-records/list')
-    return data.records ?? []
-  } catch {
-    return []
-  }
+  const data = await requestAccountApi<{ records?: WritingRecordListItem[] }>('/api/user/writing-records/list')
+  return data.records ?? []
 }
 
 export const LegacyWritingRecordsMigrationKey = 'ielts-writing-writing-records-migrated-v1'

@@ -68,13 +68,15 @@ export function useWritingRecordList(userId: string | null) {
 
   const refreshList = useCallback(async () => {
     if (!userId) return
+    pendingRecordLists.delete(userId)
     const records = await loadRecordListOnce(userId)
     await mutateList(records, { revalidate: false })
   }, [mutateList, userId])
 
   return {
     records: result.data ?? [],
-    isLoading: !userId || (!result.data && result.isLoading),
+    isLoading: Boolean(userId) && !result.data && result.isLoading,
+    error: (result.error instanceof Error ? result.error : result.error ? new Error('历史记录读取失败') : null),
     refreshList
   }
 }

@@ -4,8 +4,22 @@ import { AppInteractionProvider } from '@/components/interaction-system'
 import { AppRuntime } from '@/components/layout/AppRuntime'
 import { SWRProvider } from '@/components/providers/SWRProvider'
 import { BRAND_DESCRIPTION, BRAND_ICON_ALT, BRAND_NAME, BRAND_OG_IMAGE, BRAND_SHORT_NAME } from '@/lib/brand'
+import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import './globals.css'
 import './styles/web-audit-refactor.css'
+
+const SERVER_SESSION_TIMEOUT_MS = 3000
+
+async function loadInitialSessionUser() {
+  try {
+    return await Promise.race([
+      getCurrentSupabaseUser(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), SERVER_SESSION_TIMEOUT_MS))
+    ])
+  } catch {
+    return null
+  }
+}
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'https://www.ieltswriting.online'),
@@ -65,12 +79,13 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const initialUser = await loadInitialSessionUser()
   return (
     <html lang="zh-CN">
       <body>
         <SWRProvider>
-          <UserSessionProvider>
+          <UserSessionProvider initialUser={initialUser}>
             <AppInteractionProvider>
               <AppRuntime>{children}</AppRuntime>
             </AppInteractionProvider>
