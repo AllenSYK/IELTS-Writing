@@ -86,6 +86,7 @@ type MockQuestions = Record<MockTaskType, WritingQuestion>
 
 type SaveStatus = 'restoring' | 'idle' | 'saving' | 'saved' | 'offline' | 'error'
 type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'organizing' | 'success' | 'error'
+type DraftSaveOutcome = 'saved' | 'offline' | 'failed' | 'skipped'
 
 const mockTaskOrder: MockTaskType[] = ['task1', 'task2']
 const evaluationStages = [
@@ -375,13 +376,13 @@ export default function WritePage() {
   const splitKey = userId ? userScopedStorageKey(`writingEditorSplitRatio-${mode}`, userId) : ''
   const legacySplitKey = userId ? userScopedStorageKey(`ielts-writing-editor-split-${mode}`, userId) : ''
   const saveAllDrafts = useCallback(
-    async (showToast = false, options?: { keepalive?: boolean; activeTask?: MockTaskType }) => {
-      if (!userId || !draftId) return
+    async (showToast = false, options?: { keepalive?: boolean; activeTask?: MockTaskType }): Promise<DraftSaveOutcome> => {
+      if (!userId || !draftId) return 'skipped'
       try {
         setSaveStatus(online ? 'saving' : 'offline')
         let draft: ManagedDraftData
         if (mode === 'mock') {
-          if (!mockQuestions) return
+          if (!mockQuestions) return 'skipped'
           draft = {
             version: 2,
             kind: 'full_test',
@@ -392,7 +393,7 @@ export default function WritePage() {
             task2: draftTaskFromQuestion(mockEssays.task2, mockQuestions.task2, mockWordCounts.task2)
           } satisfies FullTestDraftData
         } else {
-          if (!singleQuestion) return
+          if (!singleQuestion) return 'skipped'
           draft = {
             version: 2,
             kind: 'single',
@@ -411,6 +412,7 @@ export default function WritePage() {
             message: result.offline ? '网络恢复后会继续同步。' : undefined
           })
         }
+        return result.offline ? 'offline' : 'saved'
       } catch (caught) {
         setSaveStatus('error')
         if (showToast) {
@@ -421,6 +423,7 @@ export default function WritePage() {
             message: DraftErrorMessages[code] || (caught instanceof Error ? caught.message : '请稍后重试。')
           })
         }
+        return 'failed'
       }
     },
     [activeMockTask, draftId, essay, mockEssays, mockQuestions, mockWordCounts.task1, mockWordCounts.task2, mode, online, promptSelection, pushToast, singleQuestion, userId]
@@ -441,21 +444,27 @@ export default function WritePage() {
     return JSON.stringify({ mode, qId: singleQuestionId ?? '', essay })
   }, [mode, essay, mockEssays.task1, mockEssays.task2, singleQuestionId, mockTask1Id, mockTask2Id])
 
-  const flushDraftSave = useCallback(async (options?: { keepalive?: boolean }) => {
-    if (!userId || !draftId || !hydrated) return
+  const flushDraftSave = useCallback(async (options?: { keepalive?: boolean }): Promise<DraftSaveOutcome> => {
+    if (!userId || !draftId || !hydrated) return 'skipped'
     const fingerprint = getDraftFingerprint()
-    if (fingerprint === lastSavedFingerprintRef.current && !options?.keepalive) return
+    if (fingerprint === lastSavedFingerprintRef.current && !options?.keepalive) return 'saved'
     if (isSavingRef.current) {
       pendingSaveRef.current = true
-      return
+      return 'skipped'
     }
     isSavingRef.current = true
     pendingSaveRef.current = false
     try {
-      await saveAllDrafts(false, options)
-      lastSavedFingerprintRef.current = fingerprint
+      const outcome = await saveAllDrafts(false, options)
+      // 只有真正写入成功（含离线本地暂存）才更新“已保存”指纹，
+      // 否则失败后内容不再变化时将永远无法自动重试。
+      if (outcome === 'saved' || outcome === 'offline') {
+        lastSavedFingerprintRef.current = fingerprint
+      }
+      return outcome
     } catch {
       // saveAllDrafts handles its own error state
+      return 'failed'
     } finally {
       isSavingRef.current = false
       if (pendingSaveRef.current && mountedRef.current) {
@@ -792,6 +801,13 @@ export default function WritePage() {
     }
   }, [debouncedEssay, debouncedMockEssays, hydrated, mode, scheduleDraftSave])
 
+  // 网络恢复后自动重试未成功的保存，兑现“恢复后自动同步”的提示。
+  useEffect(() => {
+    if (!online || !hydrated) return
+    if (saveStatus !== 'error' && saveStatus !== 'offline') return
+    void flushDraftSave()
+  }, [flushDraftSave, hydrated, online, saveStatus])
+
   useEffect(() => {
     if (!hydrated || !draftId || !activeQuestion || initialSnapshotSavedRef.current === draftId) return
     initialSnapshotSavedRef.current = draftId
@@ -826,12 +842,18 @@ export default function WritePage() {
     }
   }, [saveStatus])
 
-  const saveNow = useCallback(async (options?: { force?: boolean }) => {
+  const saveNow = useCallback(async (options?: { force?: boolean }): Promise<DraftSaveOutcome> => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    await flushDraftSave(options?.force ? { keepalive: true } : undefined)
-    if (mountedRef.current) {
+    const outcome = await flushDraftSave(options?.force ? { keepalive: true } : undefined)
+    if (!mountedRef.current) return outcome
+    if (outcome === 'saved') {
       pushToast({ kind: 'success', title: '草稿已保存' })
+    } else if (outcome === 'offline') {
+      pushToast({ kind: 'info', title: '已保存到本地', message: '网络恢复后会自动同步到云端。' })
+    } else if (outcome === 'failed') {
+      pushToast({ kind: 'error', title: '保存失败', message: '内容仍保留在编辑器中，请重试保存。' })
     }
+    return outcome
   }, [flushDraftSave, pushToast])
 
   async function handleConfirmedExit() {
@@ -839,10 +861,16 @@ export default function WritePage() {
     setIsSavingBeforeExit(true)
     setExitSaveError('')
     try {
-      await saveNow({ force: true })
-      window.location.assign('/practice')
-    } catch (error) {
-      setExitSaveError(error instanceof Error ? error.message : '草稿保存失败，请重试')
+      const outcome = await saveNow({ force: true })
+      if (outcome === 'saved' || outcome === 'offline') {
+        window.location.assign('/practice')
+        return
+      }
+      if (outcome === 'skipped') {
+        window.location.assign('/practice')
+        return
+      }
+      setExitSaveError('草稿保存失败，编辑内容仍保留在此页面。可以重试保存，或放弃本次保存并离开。')
     } finally {
       if (mountedRef.current) setIsSavingBeforeExit(false)
     }
