@@ -24,15 +24,17 @@ export async function POST(request: Request) {
   const service = createSupabaseServiceRoleClient()
   const userId = check.user.id
 
-  const { data: existingOccurrences } = await service
+  const { count: existingCount, error: existingError } = await service
     .from('writing_error_occurrences')
-    .select('id')
+    .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .eq('writing_record_id', body.writingRecordId)
-    .limit(1)
 
-  if (existingOccurrences && existingOccurrences.length > 0) {
-    return json({ success: true, message: 'Already extracted', extracted: 0 })
+  if (existingError) {
+    return json({ success: false, message: '无法检查错题收录状态，请稍后重试。' }, { status: 500 })
+  }
+  if (existingCount && existingCount > 0) {
+    return json({ success: true, alreadyExtracted: true, extracted: 0, total: existingCount })
   }
 
   const { data: recordRow, error: recordError } = await service

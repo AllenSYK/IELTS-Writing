@@ -249,6 +249,7 @@ export default function ResultPage() {
           message?: string
           extracted?: number
           total?: number
+          alreadyExtracted?: boolean
         }
         if (!res.ok || !data.success) {
           pushToast({
@@ -265,8 +266,10 @@ export default function ResultPage() {
         if (data.total && data.total > 0) {
           pushToast({
             kind: 'success',
-            title: '已保存到错题本',
-            message: `已提取 ${data.total} 条错误模式，可定位到本次作文的错误。`,
+            title: data.alreadyExtracted ? '该作文已收录' : '已保存到错题本',
+            message: data.alreadyExtracted
+              ? `已收录 ${data.total} 条错误记录，无需重复添加。`
+              : `已提取 ${data.total} 条错误模式，可定位到本次作文的错误。`,
             actionLabel: '查看错题本',
             onAction: navigateToNotebook,
             durationMs: 8000

@@ -287,6 +287,7 @@ function AnalyticsContent() {
     { id: '30', label: '近30天' },
     { id: 'all', label: '全部' }
   ]
+  const isEmptyRange = scopedRecords.length === 0 && records.length > 0 && range !== 'all'
 
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
@@ -320,6 +321,13 @@ function AnalyticsContent() {
             ))}
           </div>
         </header>
+
+        {isEmptyRange ? (
+          <GlassPanel className="settings-message">
+            <p role="status" className="ui-body-md">当前时间范围内暂无练习。你已有 {records.length} 条历史记录，可以切换到全部时间查看。</p>
+            <button className="ui-secondary-button" type="button" onClick={() => setRange('all')}>查看全部历史</button>
+          </GlassPanel>
+        ) : null}
 
         <section className="analytics-kpi-grid">
           <GlassPanel className="analytics-card ui-hover-glow">
@@ -355,13 +363,14 @@ function AnalyticsContent() {
             </header>
             <div className="analytics-value is-text">
               <strong>{weakest ? weakest.shortLabel : '暂无'}</strong>
-              <span className="ui-label">{weakest ? weakest.label : '完成批改后生成'}</span>
+              <span className="ui-label">{weakest ? weakest.label : isEmptyRange ? '当前时间范围内暂无数据' : '完成批改后生成'}</span>
             </div>
           </GlassPanel>
         </section>
 
         <GlassPanel className="target-analytics-card ui-hover-glow">
-          <GoalStatusPanel records={scopedRecords} profile={profile} currentAverageOverride={manualAverageScore} />
+          <GoalStatusPanel records={scopedRecords} profile={profile} currentAverageOverride={manualAverageScore}
+            emptyMessage={isEmptyRange ? '当前时间范围内暂无批改记录，可点击“查看全部历史”查看已有成绩。' : undefined} />
         </GlassPanel>
 
         <section className="charts-grid">
@@ -398,7 +407,7 @@ function AnalyticsContent() {
                 </svg>
               ) : (
                 <GlassPanel className="empty-state">
-                  <p className="ui-body-md">至少完成两次真实批改后显示趋势。</p>
+                  <p className="ui-body-md">{isEmptyRange ? '当前时间范围内暂无练习，切换到全部时间可查看历史趋势。' : '当前时间范围内至少需要两次真实批改才能显示趋势。'}</p>
                 </GlassPanel>
               )}
               <div className="chart-axis">

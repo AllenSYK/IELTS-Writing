@@ -79,6 +79,7 @@ import {
   type SingleDraftData
 } from '@/lib/writing-drafts'
 import { toUserFacingError, toUserFacingMessage } from '@/lib/error-utils'
+import { createDraftSaveQueue, type DraftSaveOutcome } from '@/lib/writing-draft-save'
 
 type MockTaskType = Exclude<WritingTaskType, 'mock'>
 type MockEssays = Record<MockTaskType, string>
@@ -86,7 +87,6 @@ type MockQuestions = Record<MockTaskType, WritingQuestion>
 
 type SaveStatus = 'restoring' | 'idle' | 'saving' | 'saved' | 'offline' | 'error'
 type SubmitStatus = 'idle' | 'saving' | 'submitting' | 'organizing' | 'success' | 'error'
-type DraftSaveOutcome = 'saved' | 'offline' | 'failed' | 'skipped'
 
 const mockTaskOrder: MockTaskType[] = ['task1', 'task2']
 const evaluationStages = [
@@ -291,9 +291,10 @@ export default function WritePage() {
   const loadedSplitKeyRef = useRef('')
   const initialSnapshotSavedRef = useRef('')
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isSavingRef = useRef(false)
-  const pendingSaveRef = useRef(false)
+  const draftSaveQueueRef = useRef(createDraftSaveQueue())
+  const confirmedExitRef = useRef(false)
   const lastSavedFingerprintRef = useRef('')
+  const lastSavedOutcomeRef = useRef<DraftSaveOutcome>('skipped')
   const mountedRef = useRef(true)
   const persistEditorPositionRef = useRef(0)
   const timeLeftRef = useRef(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
@@ -444,35 +445,27 @@ export default function WritePage() {
     return JSON.stringify({ mode, qId: singleQuestionId ?? '', essay })
   }, [mode, essay, mockEssays.task1, mockEssays.task2, singleQuestionId, mockTask1Id, mockTask2Id])
 
-  const flushDraftSave = useCallback(async (options?: { keepalive?: boolean }): Promise<DraftSaveOutcome> => {
+  const flushDraftSave = useCallback((options?: { keepalive?: boolean; force?: boolean }): Promise<DraftSaveOutcome> => draftSaveQueueRef.current.run(async () => {
     if (!userId || !draftId || !hydrated) return 'skipped'
     const fingerprint = getDraftFingerprint()
-    if (fingerprint === lastSavedFingerprintRef.current && !options?.keepalive) return 'saved'
-    if (isSavingRef.current) {
-      pendingSaveRef.current = true
-      return 'skipped'
+    if (fingerprint === lastSavedFingerprintRef.current && !options?.keepalive && !options?.force
+      && !(online && lastSavedOutcomeRef.current === 'offline')) {
+      return lastSavedOutcomeRef.current
     }
-    isSavingRef.current = true
-    pendingSaveRef.current = false
     try {
       const outcome = await saveAllDrafts(false, options)
       // 只有真正写入成功（含离线本地暂存）才更新“已保存”指纹，
       // 否则失败后内容不再变化时将永远无法自动重试。
       if (outcome === 'saved' || outcome === 'offline') {
         lastSavedFingerprintRef.current = fingerprint
+        lastSavedOutcomeRef.current = outcome
       }
       return outcome
     } catch {
       // saveAllDrafts handles its own error state
       return 'failed'
-    } finally {
-      isSavingRef.current = false
-      if (pendingSaveRef.current && mountedRef.current) {
-        pendingSaveRef.current = false
-        void flushDraftSave()
-      }
     }
-  }, [userId, draftId, hydrated, getDraftFingerprint, saveAllDrafts])
+  }), [userId, draftId, hydrated, getDraftFingerprint, online, saveAllDrafts])
 
   const scheduleDraftSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -803,10 +796,11 @@ export default function WritePage() {
 
   // 网络恢复后自动重试未成功的保存，兑现“恢复后自动同步”的提示。
   useEffect(() => {
-    if (!online || !hydrated) return
+    if (!online || !hydrated || showExitConfirm) return
     if (saveStatus !== 'error' && saveStatus !== 'offline') return
-    void flushDraftSave()
-  }, [flushDraftSave, hydrated, online, saveStatus])
+    const retryTimer = window.setTimeout(() => void flushDraftSave({ force: true }), 5000)
+    return () => window.clearTimeout(retryTimer)
+  }, [flushDraftSave, hydrated, online, saveStatus, showExitConfirm])
 
   useEffect(() => {
     if (!hydrated || !draftId || !activeQuestion || initialSnapshotSavedRef.current === draftId) return
@@ -820,15 +814,15 @@ export default function WritePage() {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (saveStatus === 'saving' || saveStatus === 'error') {
+      if (!confirmedExitRef.current && (saveStatus === 'saving' || saveStatus === 'error')) {
         event.preventDefault()
       }
     }
     const handlePageHide = () => {
-      saveCurrentDraft(true)
+      if (!confirmedExitRef.current) saveCurrentDraft(true)
     }
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
+      if (!confirmedExitRef.current && document.visibilityState === 'hidden') {
         saveCurrentDraft(true)
       }
     }
@@ -844,7 +838,7 @@ export default function WritePage() {
 
   const saveNow = useCallback(async (options?: { force?: boolean }): Promise<DraftSaveOutcome> => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    const outcome = await flushDraftSave(options?.force ? { keepalive: true } : undefined)
+    const outcome = await flushDraftSave(options?.force ? { force: true } : undefined)
     if (!mountedRef.current) return outcome
     if (outcome === 'saved') {
       pushToast({ kind: 'success', title: '草稿已保存' })
@@ -863,14 +857,17 @@ export default function WritePage() {
     try {
       const outcome = await saveNow({ force: true })
       if (outcome === 'saved' || outcome === 'offline') {
+        // React may not yet have committed the final save state. Release the
+        // unload guard synchronously after persistence, before navigating.
+        confirmedExitRef.current = true
         window.location.assign('/practice')
         return
       }
-      if (outcome === 'skipped') {
-        window.location.assign('/practice')
-        return
-      }
-      setExitSaveError('草稿保存失败，编辑内容仍保留在此页面。可以重试保存，或放弃本次保存并离开。')
+      setExitSaveError(outcome === 'skipped'
+        ? '草稿尚未准备完成，请稍后重试。编辑内容仍保留在此页面。'
+        : '草稿保存失败，编辑内容仍保留在此页面。可以重试保存，或放弃本次保存并离开。')
+    } catch {
+      setExitSaveError('草稿保存失败，编辑内容仍保留在此页面。请重试保存。')
     } finally {
       if (mountedRef.current) setIsSavingBeforeExit(false)
     }
@@ -1811,11 +1808,12 @@ export default function WritePage() {
       <ConfirmDialog
         open={showExitConfirm}
         title="退出当前写作？"
-        message={exitSaveError || (isSavingBeforeExit ? '正在保存草稿…' : '草稿将保存到本地。离开后可以从同一 Task 页面恢复。')}
+        message={exitSaveError || (isSavingBeforeExit ? '正在保存草稿…' : '先保存草稿，再返回练习页。之后可以从草稿记录继续写作。')}
         confirmLabel={isSavingBeforeExit ? '保存中…' : exitSaveError ? '重试保存' : '退出'}
         cancelLabel={exitSaveError ? '放弃保存并退出' : '留下'}
         onCancel={() => {
           if (exitSaveError) {
+            confirmedExitRef.current = true
             window.location.assign('/practice')
           } else {
             setShowExitConfirm(false)

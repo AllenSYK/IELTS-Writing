@@ -11,11 +11,13 @@ export function GoalStatusPanel({
   records,
   profile,
   currentAverageOverride,
+  emptyMessage,
   compact = false
 }: {
   records: WritingRecord[]
   profile: UserProfile
   currentAverageOverride?: number | null
+  emptyMessage?: string
   compact?: boolean
 }) {
   const status = buildGoalStatus(records, profile, { currentAverageOverride })
@@ -83,7 +85,7 @@ export function GoalStatusPanel({
       ) : (
         <div className="goal-empty-state">
           <MaterialIcon name="insights" size={22} />
-          <p>完成一次真实批改后，这里会显示当前平均分、距离目标和本周完成情况。</p>
+          <p>{emptyMessage || '完成一次真实批改后，这里会显示当前平均分、距离目标和本周完成情况。'}</p>
         </div>
       )}
     </section>

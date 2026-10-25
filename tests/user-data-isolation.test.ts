@@ -197,15 +197,10 @@ test('user activity API and dashboard derive identity on the server and do not r
   assert.match(heatmapSource, /\{ days: 30, label: '一个月' \}/)
 })
 
-test('history page keeps one title source and uses a non-stretching card grid', async () => {
-  const [historySource, css] = await Promise.all([
-    readFile(new URL('../app/history/page.tsx', import.meta.url), 'utf8'),
-    readFile(new URL('../app/globals.css', import.meta.url), 'utf8')
-  ])
+test('history page keeps one title source', async () => {
+  const historySource = await readFile(new URL('../app/history/page.tsx', import.meta.url), 'utf8')
 
   assert.doesNotMatch(historySource, /className="history-header"/)
-  assert.match(css, /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(280px,\s*340px\)\)/)
-  assert.match(css, /\.history-card\s*\{[\s\S]*?max-width:\s*340px;[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*312px;/)
 })
 
 test('account records use authenticated server storage with user-scoped RLS', async () => {

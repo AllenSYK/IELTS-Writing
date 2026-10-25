@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { recordRecentErrorCode } from '@/lib/recent-error-code'
 
 type FeedbackProgressItem = {
   id: string
@@ -55,6 +56,7 @@ export function MyFeedbackList({ refreshToken = 0 }: { refreshToken?: number }) 
       }
       setItems(data.items ?? [])
     } catch (caught) {
+      recordRecentErrorCode('读取我的反馈', caught instanceof Error ? caught.name : 'unknown')
       setError(caught instanceof Error ? caught.message : '反馈进度读取失败，请稍后重试。')
     } finally {
       setLoading(false)

@@ -107,55 +107,66 @@ function extractFromAnnotation(ann: EssayAnnotation): ExtractedError | null {
 }
 
 function extractFromSentenceError(err: SentenceError): ExtractedError | null {
-  const category = normalizeErrorCategory(err.category)
-  const title = err.errorType || err.category || '未知错误'
+  const specificCategory = normalizeErrorCategory(err.errorType || '')
+  let category = normalizeErrorCategory(err.category)
+  if (specificCategory !== 'other' && specificCategory !== 'sentence_structure' && specificCategory !== 'word_choice') {
+    category = specificCategory
+  } else if (category === 'sentence_structure') {
+    const explanation = `${err.chineseExplanation || ''} ${err.explanation}`
+    if (/主谓一致|subject[-\s]+verb agreement/i.test(explanation)) category = 'subject_verb_agreement'
+    else if (/单复数|noun number|singular[-/ ]plural/i.test(explanation)) category = 'singular_plural'
+    else if (/时态|tense|past participle/i.test(explanation)) category = 'tense'
+  }
+  const title = ErrorCategoryLabels[category]
   return {
     category,
     title,
-    description: err.explanation || '',
+    description: err.chineseExplanation || err.explanation || '',
     exampleWrong: err.original || null,
     exampleCorrect: err.correction || null,
     sentenceExcerpt: truncateExcerpt(err.original || ''),
-    explanation: err.explanation || null
+    explanation: err.chineseExplanation || err.explanation || null
   }
 }
 
 export function extractErrorsFromRecord(record: WritingRecord): ExtractedError[] {
   const errors: ExtractedError[] = []
-  const seen = new Set<string>()
+  const seen = new Map<string, number>()
+  const addError = (error: ExtractedError | null) => {
+    if (!error) return
+    // The same correction may appear in annotations and legacy sentence errors
+    // with different broad categories. It is still one occurrence in this essay.
+    const content = [normalizedText(error.exampleWrong), normalizedText(error.exampleCorrect)].join('=>')
+    const key = content === '=>' ? buildNormalizedKey(error.category, error.title) : content
+    const existingIndex = seen.get(key)
+    if (existingIndex !== undefined) {
+      const broadCategories: ErrorCategory[] = ['other', 'sentence_structure', 'word_choice']
+      if (broadCategories.includes(errors[existingIndex].category) && !broadCategories.includes(error.category)) {
+        errors[existingIndex] = error
+      }
+      return
+    }
+    seen.set(key, errors.length)
+    errors.push(error)
+  }
 
   const eval_ = record.evaluation
 
   if (eval_?.annotations && Array.isArray(eval_.annotations)) {
     for (const ann of eval_.annotations) {
-      const extracted = extractFromAnnotation(ann)
-      if (!extracted) continue
-      const key = buildNormalizedKey(extracted.category, extracted.title, extracted.exampleWrong, extracted.exampleCorrect)
-      if (seen.has(key)) continue
-      seen.add(key)
-      errors.push(extracted)
+      addError(extractFromAnnotation(ann))
     }
   }
 
   if (eval_?.sentenceErrors && Array.isArray(eval_.sentenceErrors)) {
     for (const err of eval_.sentenceErrors) {
-      const extracted = extractFromSentenceError(err)
-      if (!extracted) continue
-      const key = buildNormalizedKey(extracted.category, extracted.title, extracted.exampleWrong, extracted.exampleCorrect)
-      if (seen.has(key)) continue
-      seen.add(key)
-      errors.push(extracted)
+      addError(extractFromSentenceError(err))
     }
   }
 
   if (eval_?.sentenceAnnotations && Array.isArray(eval_.sentenceAnnotations)) {
     for (const err of eval_.sentenceAnnotations) {
-      const extracted = extractFromSentenceError(err)
-      if (!extracted) continue
-      const key = buildNormalizedKey(extracted.category, extracted.title, extracted.exampleWrong, extracted.exampleCorrect)
-      if (seen.has(key)) continue
-      seen.add(key)
-      errors.push(extracted)
+      addError(extractFromSentenceError(err))
     }
   }
 

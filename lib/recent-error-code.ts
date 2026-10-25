@@ -7,6 +7,7 @@ export type RecentErrorCodeEntry = {
 
 const StorageKey = 'ielts-writing-recent-error-codes-v1'
 const MaxEntries = 5
+export const RecentErrorCodesChangedEvent = 'ielts-writing-recent-error-codes-changed'
 
 function readEntries(): RecentErrorCodeEntry[] {
   if (typeof window === 'undefined') return []
@@ -37,6 +38,7 @@ export function recordRecentErrorCode(context: string, errorName = 'unknown') {
     }
     const next = [entry, ...readEntries()].slice(0, MaxEntries)
     window.localStorage.setItem(StorageKey, JSON.stringify(next))
+    window.dispatchEvent(new Event(RecentErrorCodesChangedEvent))
   } catch {
     // 存储不可用时静默跳过，不影响主流程。
   }

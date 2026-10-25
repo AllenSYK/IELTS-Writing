@@ -12,7 +12,7 @@ import {
   type SupportFaq,
   type SupportFeedbackCategory
 } from '@/lib/support-feedback'
-import { readRecentErrorCodes, type RecentErrorCodeEntry } from '@/lib/recent-error-code'
+import { readRecentErrorCodes, recordRecentErrorCode, RecentErrorCodesChangedEvent, type RecentErrorCodeEntry } from '@/lib/recent-error-code'
 
 type DeviceInfo = {
   platform: string
@@ -46,6 +46,8 @@ export default function SupportPage() {
   const [recentErrors, setRecentErrors] = useState<RecentErrorCodeEntry[]>([])
 
   useEffect(() => {
+    const refreshRecentErrors = () => setRecentErrors(readRecentErrorCodes())
+    window.addEventListener(RecentErrorCodesChangedEvent, refreshRecentErrors)
     window.queueMicrotask(() => {
       setDeviceInfo({
         platform: navigator.platform || '浏览器',
@@ -53,6 +55,7 @@ export default function SupportPage() {
       })
       setRecentErrors(readRecentErrorCodes())
     })
+    return () => window.removeEventListener(RecentErrorCodesChangedEvent, refreshRecentErrors)
   }, [])
 
   const recentErrorCodeLabel = recentErrors.length > 0
@@ -127,6 +130,7 @@ export default function SupportPage() {
       setFeedbackListToken((value) => value + 1)
       pushToast({ kind: 'success', title: '反馈已提交', message: `反馈编号 ${data.displayId}` })
     } catch (error) {
+      recordRecentErrorCode('提交用户反馈', error instanceof Error ? error.name : 'unknown')
       setSubmitError(error instanceof Error ? error.message : '反馈提交失败，请稍后重试。')
     } finally {
       setSubmitting(false)

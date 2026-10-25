@@ -570,7 +570,7 @@ img {
 
 .history-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 340px));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   justify-content: start;
   align-items: stretch;
   grid-auto-rows: 1fr;
@@ -3084,7 +3084,7 @@ img {
   margin: 0 auto;
   padding-top: 120px;
   display: grid;
-  grid-template-columns: 3fr 9fr;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
   gap: var(--gutter);
   align-items: start;
 }
@@ -3141,7 +3141,7 @@ img {
 
 .history-card {
   width: 100%;
-  max-width: 340px;
+  min-width: 0;
   height: 100%;
   min-height: 312px;
   display: flex;

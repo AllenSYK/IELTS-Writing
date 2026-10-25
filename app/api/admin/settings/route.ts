@@ -2,32 +2,7 @@ import { z } from 'zod'
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { logAdminAudit, extractAuditInfo } from '@/lib/admin/audit-log'
-
-/**
- * 验证 IANA 时区
- */
-function isValidTimezone(tz: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz })
-    return true
-  } catch {
-    return false
-  }
-}
-
-const SettingsSchema = z.object({
-  defaultPlan: z.string().min(1).max(80),
-  defaultDurationDays: z.number().int().min(1).max(3650),
-  defaultMaxActivations: z.number().int().min(1).max(100),
-  expiringReminderDays: z.number().int().min(1).max(365),
-  pageSize: z.number().int().min(10).max(200),
-  dateFormat: z.string().min(1).max(30),
-  timezone: z.string().min(1).max(80).refine(isValidTimezone, {
-    message: '无效的时区，请使用 IANA 时区格式（如 Asia/Shanghai）'
-  }),
-  // 乐观锁字段
-  expectedUpdatedAt: z.string().datetime().optional()
-})
+import { AdminSettingsSchema as SettingsSchema } from '@/lib/admin/settings-schema'
 
 // 安全的默认设置
 const DEFAULT_SETTINGS = {
@@ -170,7 +145,7 @@ export async function PATCH(request: Request) {
       return json({ 
         success: false, 
         code: 'INVALID_INPUT', 
-        message: '设置参数无效',
+        message: error.issues[0]?.message || '设置参数无效',
         requestId
       }, { status: 400 })
     }

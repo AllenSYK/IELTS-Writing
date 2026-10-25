@@ -610,8 +610,9 @@ export function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefre
   analysisRefreshProgress: number
 }) {
   const today = getDateKeyInTimeZone()
-  const [now] = useState(() => Date.now())
-  const examDays = profile?.examDate ? Math.max(0, Math.ceil((new Date(profile.examDate).getTime() - now) / 86400000)) : null
+  const examDatePassed = Boolean(profile?.examDate && profile.examDate < today)
+  const planEnded = Boolean(plan.periodEnd && plan.periodEnd < today)
+  const examDays = profile?.examDate ? Math.max(0, Math.round((Date.parse(profile.examDate) - Date.parse(today)) / 86400000)) : null
   const tasks = plan.tasks ?? []
   const weekTasks = tasks.filter((t) => {
     const weekEnd = new Date(today)
@@ -679,9 +680,9 @@ export function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefre
         <OverviewItem icon="flag" label="目标分数" value={String(plan.goalsSnapshot?.overallTarget ?? '—')} />
         <OverviewItem icon="trending_up" label="当前预测" value={snapshotScores?.overall?.toFixed(1) ?? plan.diagnosis?.currentAverage?.toFixed(1) ?? '—'} />
         <OverviewItem icon="event" label="考试日期" value={profile?.examDate ? new Date(profile.examDate).toLocaleDateString('zh-CN') : '未设置'} />
-        <OverviewItem icon="schedule" label="剩余天数" value={examDays !== null ? `${examDays} 天` : '—'} />
+        <OverviewItem icon="schedule" label="剩余天数" value={examDatePassed ? '考试日期已过期' : examDays !== null ? `${examDays} 天` : '—'} />
         {totalWeeks && <OverviewItem icon="date_range" label="计划周期" value={`${totalWeeks} 周`} />}
-        {phase && <OverviewItem icon="route" label="当前阶段" value={phase} />}
+        {phase && <OverviewItem icon="route" label="当前阶段" value={examDatePassed || planEnded ? '计划已结束' : phase} />}
         <OverviewItem icon="check_circle" label="本周完成" value={`${completedThisWeek}/${weekTasks.length} (${completionRate}%)`} />
         {(() => {
           const weakArr = snapshotDiag?.weakestCriteria
