@@ -840,10 +840,10 @@ export default function StudyPlanPage() {
         <StudyPlanHeader quota={quota} />
 
         {plan && !isGenerating && (examDatePassed || planEnded) ? (
-          <GlassPanel className="settings-message">
+          <GlassPanel className="study-plan-notice">
             <h2 role="status" className="ui-title-md">{examDatePassed ? '考试日期已过期，请更新目标' : '本轮学习计划已结束'}</h2>
             <p className="ui-body-md">当前日历保留了原计划；后续没有安排任务时会显示休息日。请更新考试日期和目标，再重新规划后续练习。</p>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="study-plan-notice-actions">
               <button className="ui-primary-button" type="button" onClick={() => setShowSettings(true)}>更新考试日期与目标</button>
               <button className="ui-secondary-button" type="button" disabled={quota?.remainingCount === 0 || isReplanning}
                 onClick={() => dispatch({ type: 'OPEN_REPLAN_SETUP' })}>重新规划</button>
@@ -991,7 +991,7 @@ export default function StudyPlanPage() {
 
 function StudyPlanHeader({ quota }: { quota?: StudyPlanGenerationQuota }) {
   return (
-    <header className="page-section-header">
+    <header className="page-section-header study-plan-header">
       <div>
         <h1 className="ui-title-display">雅思写作学习规划</h1>
         <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标、剩余时间和真实写作表现，动态安排整个备考周期。</p>

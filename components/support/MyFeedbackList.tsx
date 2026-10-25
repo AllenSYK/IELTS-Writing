@@ -12,7 +12,6 @@ type FeedbackProgressItem = {
   subject: string
   status: string
   priority: string
-  adminNote: string | null
   resolutionNote: string | null
   createdAt: string
   updatedAt: string

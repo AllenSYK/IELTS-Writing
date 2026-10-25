@@ -305,13 +305,16 @@ function AnalyticsContent() {
           </div>
         ) : null}
 
-        <header className="page-section-header">
-          <p className="ui-body-lg analytics-intro">根据当前账号的真实批改记录生成。</p>
-          <div className="filter-chip-row" role="toolbar" aria-label="分析时间范围">
+        <header className="page-section-header analytics-header">
+          <div>
+            <h1 className="ui-title-headline">学习表现</h1>
+            <p className="ui-body-md analytics-intro">根据当前账号的真实批改记录生成。</p>
+          </div>
+          <div className="analytics-range" role="group" aria-label="分析时间范围">
             {rangeOptions.map((option) => (
               <button
                 key={option.id}
-                className={`filter-chip ${range === option.id ? 'is-active' : ''}`}
+                className={range === option.id ? 'is-active' : ''}
                 type="button"
                 aria-pressed={range === option.id}
                 onClick={() => setRange(option.id)}
@@ -322,123 +325,139 @@ function AnalyticsContent() {
           </div>
         </header>
 
-        {isEmptyRange ? (
-          <GlassPanel className="settings-message">
-            <p role="status" className="ui-body-md">当前时间范围内暂无练习。你已有 {records.length} 条历史记录，可以切换到全部时间查看。</p>
-            <button className="ui-secondary-button" type="button" onClick={() => setRange('all')}>查看全部历史</button>
+        {fetchError && records.length === 0 ? (
+          <GlassPanel className="analytics-empty-state">
+            <MaterialIcon name="cloud_off" size={30} />
+            <h2 className="ui-title-md" role="alert">学习分析暂时无法加载</h2>
+            <p className="ui-body-md">{fetchError}</p>
+            <button className="ui-primary-button" type="button" onClick={() => { if (userId) void loadAnalytics(userId) }}>重新加载</button>
+          </GlassPanel>
+        ) : scopedRecords.length === 0 ? (
+          <GlassPanel className="analytics-empty-state">
+            <span className="analytics-empty-icon"><MaterialIcon name="calendar_month" size={30} /></span>
+            <h2 className="ui-title-md" role="status">{isEmptyRange ? `${range === '7' ? '近 7 天' : '近 30 天'}暂无练习记录` : '还没有批改记录'}</h2>
+            <p className="ui-body-md">{isEmptyRange ? `你已有 ${records.length} 条历史记录，可查看全部时间的成绩与趋势。` : '完成一篇作文批改后，这里会显示你的分数趋势、能力分析和练习建议。'}</p>
+            <div className="analytics-empty-actions">
+              {isEmptyRange ? <button className="ui-primary-button" type="button" onClick={() => setRange('all')}>查看全部历史</button> : null}
+              <a className={isEmptyRange ? 'ui-secondary-button' : 'ui-primary-button'} href="/practice">开始写作练习<MaterialIcon name="arrow_forward" size={18} /></a>
+            </div>
           </GlassPanel>
         ) : null}
 
-        <section className="analytics-kpi-grid">
-          <GlassPanel className="analytics-card ui-hover-glow">
-            <header>
-              <span className="ui-title-md">平均分数</span>
-              <MaterialIcon name="trending_up" className="text-primary" />
-            </header>
-            <div className="analytics-value">
-              <strong>{average === null ? '—' : average.toFixed(1)}</strong>
-              <span className="ui-label">
-                {scopedRecords.length > 0
-                  ? `${manualAverageScore !== null ? '已手动调整 · ' : ''}T1 ${task1Average === null ? '—' : task1Average.toFixed(1)} · T2 ${task2Average === null ? '—' : task2Average.toFixed(1)}`
-                  : manualAverageScore !== null ? '账号手动设置' : '暂无数据'}
-              </span>
-            </div>
-          </GlassPanel>
+        {scopedRecords.length > 0 ? (
+          <>
+            <section className="analytics-kpi-grid">
+              <GlassPanel className="analytics-card ui-hover-glow">
+                <header>
+                  <span className="ui-title-md">平均分数</span>
+                  <MaterialIcon name="trending_up" className="text-primary" />
+                </header>
+                <div className="analytics-value">
+                  <strong>{average === null ? '—' : average.toFixed(1)}</strong>
+                  <span className="ui-label">
+                    {scopedRecords.length > 0
+                      ? `${manualAverageScore !== null ? '已手动调整 · ' : ''}T1 ${task1Average === null ? '—' : task1Average.toFixed(1)} · T2 ${task2Average === null ? '—' : task2Average.toFixed(1)}`
+                      : manualAverageScore !== null ? '账号手动设置' : '暂无数据'}
+                  </span>
+                </div>
+              </GlassPanel>
 
-          <GlassPanel className="analytics-card ui-hover-glow">
-            <header>
-              <span className="ui-title-md">练习次数</span>
-              <MaterialIcon name="edit_document" className="text-primary" />
-            </header>
-            <div className="analytics-value">
-              <strong>{scopedRecords.length}</strong>
-              <span className="ui-label">{scopedRecords.length > 0 ? '真实记录' : '暂无数据'}</span>
-            </div>
-          </GlassPanel>
+              <GlassPanel className="analytics-card ui-hover-glow">
+                <header>
+                  <span className="ui-title-md">练习次数</span>
+                  <MaterialIcon name="edit_document" className="text-primary" />
+                </header>
+                <div className="analytics-value">
+                  <strong>{scopedRecords.length}</strong>
+                  <span className="ui-label">{scopedRecords.length > 0 ? '真实记录' : '暂无数据'}</span>
+                </div>
+              </GlassPanel>
 
-          <GlassPanel className="analytics-card ui-hover-glow">
-            <header>
-              <span className="ui-title-md">当前弱项</span>
-              <MaterialIcon name="warning" className="text-error" />
-            </header>
-            <div className="analytics-value is-text">
-              <strong>{weakest ? weakest.shortLabel : '暂无'}</strong>
-              <span className="ui-label">{weakest ? weakest.label : isEmptyRange ? '当前时间范围内暂无数据' : '完成批改后生成'}</span>
-            </div>
-          </GlassPanel>
-        </section>
+              <GlassPanel className="analytics-card ui-hover-glow">
+                <header>
+                  <span className="ui-title-md">当前弱项</span>
+                  <MaterialIcon name="warning" className="text-error" />
+                </header>
+                <div className="analytics-value is-text">
+                  <strong>{weakest ? weakest.shortLabel : '暂无'}</strong>
+                  <span className="ui-label">{weakest ? weakest.label : isEmptyRange ? '当前时间范围内暂无数据' : '完成批改后生成'}</span>
+                </div>
+              </GlassPanel>
+            </section>
 
-        <GlassPanel className="target-analytics-card ui-hover-glow">
-          <GoalStatusPanel records={scopedRecords} profile={profile} currentAverageOverride={manualAverageScore}
-            emptyMessage={isEmptyRange ? '当前时间范围内暂无批改记录，可点击“查看全部历史”查看已有成绩。' : undefined} />
-        </GlassPanel>
+            <GlassPanel className="target-analytics-card ui-hover-glow">
+              <GoalStatusPanel records={scopedRecords} profile={profile} currentAverageOverride={manualAverageScore}
+                emptyMessage={isEmptyRange ? '当前时间范围内暂无批改记录，可点击“查看全部历史”查看已有成绩。' : undefined} />
+            </GlassPanel>
 
-        <section className="charts-grid">
-          <GlassPanel className="chart-card ui-hover-glow">
-            <h2 className="ui-title-md">IELTS 平均分数 (最近7次)</h2>
-            <div className="line-chart">
-              {trend.line ? (
-                <svg preserveAspectRatio="none" viewBox="0 0 100 50">
-                  <defs>
-                    <linearGradient id="score-gradient" x1="0%" x2="0%" y1="0%" y2="100%">
-                      <stop offset="0%" stopColor="#0058bc" stopOpacity="0.22" />
-                      <stop offset="100%" stopColor="#0058bc" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path d={trend.fill} fill="url(#score-gradient)" />
-                  <path d={trend.line} fill="none" stroke="#0058bc" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-                  {trend.points.map((point, index) => (
-                    <circle
-                      key={`${point.x}-${point.y}`}
-                      className="chart-point"
-                      cx={point.x}
-                      cy={point.y}
-                      fill="#ffffff"
-                      r="1.8"
-                      stroke="#0058bc"
-                      strokeWidth="0.5"
-                      tabIndex={0}
-                      role="img"
-                      aria-label={`第 ${index + 1} 次记录，${point.score.toFixed(1)} 分`}
-                    >
-                      <title>{`第 ${index + 1} 次：${point.score.toFixed(1)} 分`}</title>
-                    </circle>
-                  ))}
-                </svg>
-              ) : (
-                <GlassPanel className="empty-state">
-                  <p className="ui-body-md">{isEmptyRange ? '当前时间范围内暂无练习，切换到全部时间可查看历史趋势。' : '当前时间范围内至少需要两次真实批改才能显示趋势。'}</p>
-                </GlassPanel>
-              )}
-              <div className="chart-axis">
-                <span>9.0</span>
-                <span>7.0</span>
-                <span>5.0</span>
-                <span>0</span>
-              </div>
-            </div>
-          </GlassPanel>
+            <section className="charts-grid">
+              <GlassPanel className="chart-card ui-hover-glow">
+                <h2 className="ui-title-md">IELTS 平均分数 (最近7次)</h2>
+                <div className="line-chart">
+                  {trend.line ? (
+                    <svg preserveAspectRatio="none" viewBox="0 0 100 50">
+                      <defs>
+                        <linearGradient id="score-gradient" x1="0%" x2="0%" y1="0%" y2="100%">
+                          <stop offset="0%" stopColor="#0058bc" stopOpacity="0.22" />
+                          <stop offset="100%" stopColor="#0058bc" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d={trend.fill} fill="url(#score-gradient)" />
+                      <path d={trend.line} fill="none" stroke="#0058bc" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+                      {trend.points.map((point, index) => (
+                        <circle
+                          key={`${point.x}-${point.y}`}
+                          className="chart-point"
+                          cx={point.x}
+                          cy={point.y}
+                          fill="#ffffff"
+                          r="1.8"
+                          stroke="#0058bc"
+                          strokeWidth="0.5"
+                          tabIndex={0}
+                          role="img"
+                          aria-label={`第 ${index + 1} 次记录，${point.score.toFixed(1)} 分`}
+                        >
+                          <title>{`第 ${index + 1} 次：${point.score.toFixed(1)} 分`}</title>
+                        </circle>
+                      ))}
+                    </svg>
+                  ) : (
+                    <GlassPanel className="empty-state">
+                      <p className="ui-body-md">{isEmptyRange ? '当前时间范围内暂无练习，切换到全部时间可查看历史趋势。' : '当前时间范围内至少需要两次真实批改才能显示趋势。'}</p>
+                    </GlassPanel>
+                  )}
+                  <div className="chart-axis">
+                    <span>9.0</span>
+                    <span>7.0</span>
+                    <span>5.0</span>
+                    <span>0</span>
+                  </div>
+                </div>
+              </GlassPanel>
 
-          <GlassPanel className="chart-card radar-card ui-hover-glow">
-            <h2 className="ui-title-md">标准表现</h2>
-            <IeltsRadarChart metrics={radarMetrics} />
-          </GlassPanel>
-        </section>
+              <GlassPanel className="chart-card radar-card ui-hover-glow">
+                <h2 className="ui-title-md">标准表现</h2>
+                <IeltsRadarChart metrics={radarMetrics} />
+              </GlassPanel>
+            </section>
 
-        <GlassPanel className="chart-card ui-hover-glow">
-          <h2 className="ui-title-md">错误分布</h2>
-          <ErrorDistributionBars items={errorDistribution} />
-        </GlassPanel>
+            <GlassPanel className="chart-card ui-hover-glow">
+              <h2 className="ui-title-md">错误分布</h2>
+              <ErrorDistributionBars items={errorDistribution} />
+            </GlassPanel>
 
-        <GlassPanel level={2} className="plan-card">
-          <PracticePlan recommendations={recommendations} />
-          {recommendations.length === 0 ? (
-            <a className="ui-secondary-button" href="/practice" style={{ marginTop: 18 }}>
-              先完成一篇练习
-              <MaterialIcon name="arrow_forward" size={16} />
-            </a>
-          ) : null}
-        </GlassPanel>
+            <GlassPanel level={2} className="plan-card">
+              <PracticePlan recommendations={recommendations} />
+              {recommendations.length === 0 ? (
+                <a className="ui-secondary-button" href="/practice" style={{ marginTop: 18 }}>
+                  先完成一篇练习
+                  <MaterialIcon name="arrow_forward" size={16} />
+                </a>
+              ) : null}
+            </GlassPanel>
+          </>
+        ) : null}
       </section>
     </main>
   )

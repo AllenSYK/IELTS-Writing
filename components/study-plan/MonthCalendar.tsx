@@ -71,14 +71,14 @@ export function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask 
   const weekDays = ['日', '一', '二', '三', '四', '五', '六']
 
   return (
-    <GlassPanel style={styles.calendarCard}>
-      <div style={styles.calendarHeader}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="ui-icon-button" type="button" onClick={prevMonth}>
+    <GlassPanel className="study-calendar">
+      <div className="study-calendar-header">
+        <div className="study-calendar-navigation">
+          <button className="ui-icon-button" type="button" aria-label="上个月" onClick={prevMonth}>
             <MaterialIcon name="chevron_left" size={20} />
           </button>
-          <h2 className="ui-title-md" style={{ minWidth: 120, textAlign: 'center' }}>{monthLabel}</h2>
-          <button className="ui-icon-button" type="button" onClick={nextMonth}>
+          <h2 className="ui-title-md" aria-live="polite">{monthLabel}</h2>
+          <button className="ui-icon-button" type="button" aria-label="下个月" onClick={nextMonth}>
             <MaterialIcon name="chevron_right" size={20} />
           </button>
         </div>
@@ -87,15 +87,16 @@ export function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask 
         </button>
       </div>
 
-      <div style={styles.calendarWeekDays}>
+      <p className="study-calendar-hint">点击有任务的日期查看当天安排。</p>
+      <div className="study-calendar-weekdays">
         {weekDays.map((d) => (
           <div key={d} style={styles.calendarWeekDay}>{d}</div>
         ))}
       </div>
 
-      <div style={styles.calendarGrid}>
+      <div className="study-calendar-grid">
         {Array.from({ length: startPad }).map((_, i) => (
-          <div key={`pad-${i}`} style={styles.calendarCellEmpty} />
+          <div key={`pad-${i}`} className="study-calendar-day is-empty" aria-hidden="true" />
         ))}
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const day = i + 1
@@ -148,17 +149,20 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
   return (
     <>
       <div
-        style={{ ...styles.calendarCell, borderColor, background: bg, opacity, cursor: totalCount > 0 ? 'pointer' : 'default' }}
+        className={`study-calendar-day ${totalCount > 0 ? 'has-tasks' : ''}`}
+        style={{ borderColor, background: bg, opacity }}
         onClick={() => { if (totalCount > 0) setShowDetail(true) }}
         role={totalCount > 0 ? 'button' : undefined}
+        aria-label={totalCount > 0 ? `${dateKey}，${totalCount} 个任务，已完成 ${completedCount} 个，预计 ${totalMinutes} 分钟` : undefined}
+        aria-current={isToday ? 'date' : undefined}
         tabIndex={totalCount > 0 ? 0 : undefined}
-        onKeyDown={(e) => { if (e.key === 'Enter' && totalCount > 0) setShowDetail(true) }}
+        onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && totalCount > 0) { e.preventDefault(); setShowDetail(true) } }}
       >
         <span style={{ ...styles.calendarDayNum, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--primary)' : undefined }}>
           {day}
         </span>
 
-        <div style={styles.calendarTaskList}>
+        <div className="study-calendar-task-list">
           {tasks.slice(0, 3).map((task) => {
             const typeLabel = StudyPlanTaskTypeLabels[task.taskType as StudyPlanTaskType] ?? task.taskType
             const shortTitle = task.title || typeLabel
@@ -195,8 +199,12 @@ function CalendarDay({ day, dateKey, tasks, isToday, isPast, completedCount, tot
           )}
         </div>
 
+        <span className="study-calendar-day-summary" aria-hidden="true">
+          {totalCount > 0 ? completedCount === totalCount ? '已完成' : `${totalCount} 项` : isRestDay ? '休息' : ''}
+        </span>
+
         {totalCount > 0 && (
-          <span style={styles.calendarMinutes}>{totalMinutes} 分钟</span>
+          <span className="study-calendar-minutes">{totalMinutes} 分钟</span>
         )}
         {completedCount === totalCount && totalCount > 0 && (
           <MaterialIcon name="check_circle" size={12} />
@@ -236,8 +244,8 @@ function TaskMiniCard({ task, onSelect }: { task: StudyPlanTask; onSelect: () =>
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter') onSelect() }}
     >
-      <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap', overflowWrap: 'anywhere' }}>
           <span style={{ ...styles.taskDot, background: getTaskColor(task.taskType, task.status === 'completed'), width: 8, height: 8 }} />
           <strong style={{ fontSize: 13 }}>{title}</strong>
           <span className="task-badge" style={{ fontSize: 10 }}>{typeLabel}</span>

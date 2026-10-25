@@ -646,8 +646,8 @@ export function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefre
   }
 
   return (
-    <GlassPanel style={styles.overviewCard}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+    <GlassPanel className="study-plan-overview">
+      <div className="study-plan-overview-header">
         <div>
           {sourceRecordCount > 0 && (
             <p className="ui-label" style={{ color: 'var(--text-secondary)' }}>
@@ -668,7 +668,7 @@ export function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefre
         </button>
       </div>
 
-      <div style={styles.overviewGrid}>
+      <div className="study-plan-overview-grid">
         {snapshotCounts && (
           <>
             <OverviewItem icon="edit_note" label="已完成" value={`${snapshotCounts.total ?? 0} 篇`} />
@@ -699,10 +699,10 @@ export function PlanOverview({ plan, profile, onRefreshAnalysis, isAnalysisRefre
 
 function OverviewItem({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
-    <div style={styles.overviewItem}>
+    <div className="study-plan-overview-item">
       <MaterialIcon name={icon} size={18} />
       <span className="ui-label">{label}</span>
-      <strong style={{ fontSize: 16 }}>{value}</strong>
+      <strong>{value}</strong>
     </div>
   )
 }
@@ -746,7 +746,7 @@ export function BottomActions({ quota, onReplan, onSettings }: {
   onSettings: () => void
 }) {
   return (
-    <div style={styles.bottomActions}>
+    <div className="study-plan-bottom-actions">
       <button className="ui-secondary-button" type="button" onClick={onSettings}>
         <MaterialIcon name="settings" size={16} />
         调整计划

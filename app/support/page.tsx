@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { AsyncButton, useToast } from '@/components/interaction-system'
 import { FaqDialog } from '@/components/support/FaqDialog'
 import { MyFeedbackList } from '@/components/support/MyFeedbackList'
+import { useUserSession } from '@/components/auth/UserSessionProvider'
+import { SupportFeedbackLimits, SupportFeedbackSchema, supportFeedbackFieldErrors, type SupportFeedbackFieldErrors } from '@/lib/support-feedback-schema'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import {
   SupportFaqs,
@@ -30,6 +32,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.ieltswriting.on
 
 export default function SupportPage() {
   const { pushToast } = useToast()
+  const { userId } = useUserSession()
   const feedbackRef = useRef<HTMLFormElement>(null)
   const version = process.env.NEXT_PUBLIC_APP_VERSION || '未标注'
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>({ platform: '浏览器', arch: '未知' })
@@ -40,6 +43,7 @@ export default function SupportPage() {
   const [includeDiagnostics, setIncludeDiagnostics] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<SupportFeedbackFieldErrors>({})
   const [result, setResult] = useState<FeedbackResult | null>(null)
   const [selectedFaq, setSelectedFaq] = useState<SupportFaq | null>(null)
   const [feedbackListToken, setFeedbackListToken] = useState(0)
@@ -85,9 +89,14 @@ export default function SupportPage() {
     [diagnostics, recentErrors]
   )
 
-  const canSubmit = subject.trim().length >= 2 && description.trim().length >= 10
+  function clearSubmitState() {
+    setFieldErrors({})
+    setSubmitError('')
+    setResult(null)
+  }
 
   function useFaqForFeedback(faq: SupportFaq) {
+    clearSubmitState()
     setIssueType(faq.category)
     setSubject(faq.title)
     setSelectedFaq(null)
@@ -105,7 +114,19 @@ export default function SupportPage() {
 
   async function submitFeedback(event: FormEvent) {
     event.preventDefault()
-    if (submitting || !canSubmit) return
+    if (submitting) return
+    const parsed = SupportFeedbackSchema.safeParse({
+      category: normalizeSupportFeedbackCategory(issueType), subject, message: description,
+      contactEmail, includeDiagnostics, diagnostics
+    })
+    if (!parsed.success) {
+      setFieldErrors(supportFeedbackFieldErrors(parsed.error))
+      setSubmitError('请修改下方标出的内容后重新提交。')
+      setResult(null)
+      window.requestAnimationFrame(() => feedbackRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus())
+      return
+    }
+    setFieldErrors({})
     setSubmitting(true)
     setSubmitError('')
     setResult(null)
@@ -113,25 +134,25 @@ export default function SupportPage() {
       const response = await fetch('/api/support/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category: normalizeSupportFeedbackCategory(issueType),
-          subject,
-          message: description,
-          contactEmail,
-          includeDiagnostics,
-          diagnostics
-        })
+        body: JSON.stringify(parsed.data),
+        signal: AbortSignal.timeout(20000)
       })
       const data = await response.json().catch(() => ({}))
-      if (!response.ok || data.error) {
+      if (!response.ok || data.ok !== true || !data.feedbackId || !data.displayId) {
+        if (data.fieldErrors) setFieldErrors(data.fieldErrors)
         throw new Error(data.message || (data.error === 'invalid_input' ? '请检查标题、描述和邮箱格式。' : '反馈提交失败，请稍后重试。'))
       }
       setResult(data as FeedbackResult)
+      setSubject('')
+      setDescription('')
       setFeedbackListToken((value) => value + 1)
       pushToast({ kind: 'success', title: '反馈已提交', message: `反馈编号 ${data.displayId}` })
     } catch (error) {
       recordRecentErrorCode('提交用户反馈', error instanceof Error ? error.name : 'unknown')
-      setSubmitError(error instanceof Error ? error.message : '反馈提交失败，请稍后重试。')
+      setSubmitError(error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+        ? '提交等待超时，内容已保留。请先刷新“我的反馈”确认是否已提交，再重试。'
+        : error instanceof TypeError ? '网络连接失败，内容已保留，请检查网络后重试。'
+        : error instanceof Error ? error.message : '反馈提交失败，请稍后重试。')
     } finally {
       setSubmitting(false)
     }
@@ -169,7 +190,7 @@ export default function SupportPage() {
         </GlassPanel>
 
         <GlassPanel className="settings-section">
-          <form ref={feedbackRef} className="feedback-form" onSubmit={submitFeedback}>
+          <form ref={feedbackRef} className="feedback-form" onSubmit={submitFeedback} noValidate>
             <div className="settings-section-header">
               <h2 className="ui-title-md">提交反馈</h2>
               {result ? <span className="feedback-ticket">反馈编号：{result.displayId}</span> : null}
@@ -177,38 +198,41 @@ export default function SupportPage() {
             <div className="profile-form-grid">
               <label className="field">
                 <span>问题类型</span>
-                <select value={issueType} onChange={(event) => setIssueType(normalizeSupportFeedbackCategory(event.target.value))}>
+                <select disabled={submitting} value={issueType} onChange={(event) => { setIssueType(normalizeSupportFeedbackCategory(event.target.value)); clearSubmitState() }}>
                   {SupportFeedbackCategories.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
               <label className="field">
                 <span>联系邮箱（可选）</span>
-                <input value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="name@example.com" inputMode="email" />
+                <input type="email" autoComplete="email" name="contactEmail" aria-label="联系邮箱（可选）" disabled={submitting} value={contactEmail} onChange={(event) => { setContactEmail(event.target.value); clearSubmitState() }} placeholder="name@example.com" inputMode="email" aria-invalid={Boolean(fieldErrors.contactEmail)} aria-describedby={fieldErrors.contactEmail ? 'feedback-email-error' : undefined} />
+                {fieldErrors.contactEmail ? <small id="feedback-email-error" className="field-error">{fieldErrors.contactEmail}</small> : null}
               </label>
               <label className="field profile-field-wide">
                 <span>问题标题</span>
-                <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="用一句话说明问题" maxLength={120} />
+                <input name="subject" aria-label="问题标题" disabled={submitting} required minLength={2} value={subject} onChange={(event) => { setSubject(event.target.value); clearSubmitState() }} placeholder="用一句话说明问题（至少 2 个字）" maxLength={SupportFeedbackLimits.subject} aria-invalid={Boolean(fieldErrors.subject)} aria-describedby={fieldErrors.subject ? 'feedback-subject-error' : 'feedback-subject-hint'} />
+                <small id="feedback-subject-hint" className="field-hint">至少 2 个字 · {subject.trim().length}/{SupportFeedbackLimits.subject}</small>
+                {fieldErrors.subject ? <small id="feedback-subject-error" className="field-error">{fieldErrors.subject}</small> : null}
               </label>
               <label className="field profile-field-wide">
                 <span>问题描述</span>
-                <textarea value={description} rows={5} onChange={(event) => setDescription(event.target.value)} placeholder="请描述发生了什么、你正在使用哪个页面、是否有错误提示。" />
+                <textarea name="message" aria-label="问题描述" disabled={submitting} required minLength={10} maxLength={SupportFeedbackLimits.message} value={description} rows={5} onChange={(event) => { setDescription(event.target.value); clearSubmitState() }} placeholder="请描述发生了什么、你正在使用哪个页面、是否有错误提示（至少 10 个字）。" aria-invalid={Boolean(fieldErrors.message)} aria-describedby={fieldErrors.message ? 'feedback-message-error' : 'feedback-message-hint'} />
+                <small id="feedback-message-hint" className="field-hint">至少 10 个字 · {description.trim().length}/{SupportFeedbackLimits.message}</small>
+                {fieldErrors.message ? <small id="feedback-message-error" className="field-error">{fieldErrors.message}</small> : null}
               </label>
               <label className="preference-option profile-field-wide">
-                <input type="checkbox" checked={includeDiagnostics} onChange={(event) => setIncludeDiagnostics(event.target.checked)} />
+                <input type="checkbox" disabled={submitting} checked={includeDiagnostics} onChange={(event) => setIncludeDiagnostics(event.target.checked)} />
                 <span>附带脱敏诊断信息</span>
               </label>
             </div>
             <div className="settings-save-bar">
-              <p className={`settings-message ${submitError ? 'is-error' : result ? 'is-success' : ''}`}>
-                {submitError || (result ? '反馈已进入后台处理队列，可在下方“我的反馈”查看处理进度。' : '诊断信息只包含应用版本、系统平台、系统版本和最近错误码。')}
+              <p className={`settings-message ${submitError ? 'is-error' : result ? 'is-success' : ''}`} role={submitError ? 'alert' : 'status'}>
+                {submitError || (result ? userId ? '反馈已进入后台处理队列，可在下方“我的反馈”查看处理进度。' : '反馈已提交，请保留反馈编号。登录后提交的反馈可在“我的反馈”查看进度。' : '诊断信息只包含应用版本、系统平台、系统版本和最近错误码。')}
               </p>
               <AsyncButton
                 icon="send"
                 type="submit"
                 loading={submitting}
                 success={Boolean(result)}
-                disabled={!canSubmit}
-                disabledReason={!canSubmit ? '请补充标题和至少 10 个字的问题描述' : undefined}
               >
                 提交反馈
               </AsyncButton>

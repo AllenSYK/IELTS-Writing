@@ -1,22 +1,9 @@
 import { z } from 'zod'
 import { apiError, json } from '@/lib/http'
 import { defaultSupportFeedbackPriority, normalizeSupportFeedbackCategory } from '@/lib/support-feedback'
+import { SupportFeedbackSchema, supportFeedbackFieldErrors } from '@/lib/support-feedback-schema'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-
-const FeedbackSchema = z.object({
-  category: z.string().min(1).max(60),
-  subject: z.string().min(2).max(120),
-  message: z.string().min(10).max(5000),
-  contactEmail: z.string().trim().email().or(z.literal('')).optional().default(''),
-  includeDiagnostics: z.boolean().default(true),
-  diagnostics: z.object({
-    appVersion: z.string().max(80).optional().default('未提供'),
-    platform: z.string().max(120).optional().default('未提供'),
-    osVersion: z.string().max(500).optional().default('未提供'),
-    recentErrorCode: z.string().max(160).optional().default('无')
-  }).optional().default({})
-})
 
 function clean(value: string | undefined | null) {
   const trimmed = (value || '').trim()
@@ -25,13 +12,17 @@ function clean(value: string | undefined | null) {
 
 export async function POST(request: Request) {
   try {
-    const body = FeedbackSchema.parse(await request.json())
+    const parsed = SupportFeedbackSchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return json({ ok: false, error: 'invalid_input', message: parsed.error.issues[0]?.message || '请检查反馈内容。', fieldErrors: supportFeedbackFieldErrors(parsed.error) }, { status: 400 })
+    }
+    const body = parsed.data
     const category = normalizeSupportFeedbackCategory(body.category)
     const diagnostics = {
-      appVersion: body.diagnostics.appVersion || '未提供',
-      platform: body.diagnostics.platform || '未提供',
-      osVersion: body.diagnostics.osVersion || '未提供',
-      recentErrorCode: body.diagnostics.recentErrorCode || '无'
+      appVersion: body.diagnostics?.appVersion || '未提供',
+      platform: body.diagnostics?.platform || '未提供',
+      osVersion: body.diagnostics?.osVersion || '未提供',
+      recentErrorCode: body.diagnostics?.recentErrorCode || '无'
     }
 
     // 关联当前登录用户，便于后台处理与用户查询进度（未登录时允许匿名提交）。
@@ -89,7 +80,7 @@ export async function GET(request: Request) {
     const client = createSupabaseServiceRoleClient()
     const { data, error } = await client
       .from('support_feedback')
-      .select('id, category, subject, status, priority, admin_note, resolution_note, created_at, updated_at, handled_at')
+      .select('id, category, subject, status, priority, resolution_note, created_at, updated_at, handled_at')
       .eq('user_id', currentUser.id)
       .order('created_at', { ascending: false })
       .limit(query.limit)
@@ -103,7 +94,6 @@ export async function GET(request: Request) {
       subject: row.subject as string,
       status: row.status as string,
       priority: row.priority as string,
-      adminNote: (row.admin_note as string | null) ?? null,
       resolutionNote: (row.resolution_note as string | null) ?? null,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
