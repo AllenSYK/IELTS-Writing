@@ -120,7 +120,6 @@ export function WritingActivityHeatmap({ userId }: { userId: string }) {
     <section className="dashboard-panel activity-panel" aria-labelledby="writing-activity-title">
       <header className="activity-panel-header">
         <div>
-          <p className="ui-label">写作活动</p>
           <h2 id="writing-activity-title">写作热力图</h2>
         </div>
         <div className="activity-header-actions">

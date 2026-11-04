@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       {
         success: false,
         code: check.code === 'NOT_AUTHENTICATED' ? 'NOT_AUTHENTICATED' : 'LICENSE_REQUIRED',
-        message: check.code === 'NOT_AUTHENTICATED' ? '请先登录后再生成题目' : '请先激活账号后再生成题目'
+        message: check.code === 'NOT_AUTHENTICATED' ? '请先登录后再生成题目' : '请先在会员中心开通会员后再生成题目'
       },
       { status: check.status === 401 ? 401 : 403 }
     )

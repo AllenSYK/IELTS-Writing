@@ -21,6 +21,7 @@ export type WebLicenseCheck =
       user: MinimalUser
       profile: WebProfile
       activation: {
+        source?: 'license' | 'stripe' | 'stripe_payment' | 'stripe_trial'
         id: string
         license_id: string
         user_id: string
@@ -112,7 +113,7 @@ function webLicenseCheckFromSnapshot(
       ok: false,
       status: 403,
       code: 'LICENSE_REQUIRED',
-      message: '请先激活账号后再使用批改功能',
+      message: '请先在会员中心开通会员后再使用批改功能',
       user
     }
   }
@@ -123,7 +124,7 @@ function webLicenseCheckFromSnapshot(
       ok: false,
       status: 403,
       code: 'LICENSE_REQUIRED',
-      message: '请先激活账号后再使用批改功能',
+      message: '请先在会员中心开通会员后再使用批改功能',
       user
     }
   }
@@ -133,6 +134,7 @@ function webLicenseCheckFromSnapshot(
     user,
     profile: profile as WebProfile,
     activation: {
+      source: activation.source,
       id: activation.id,
       license_id: activation.license_id,
       user_id: activation.user_id,

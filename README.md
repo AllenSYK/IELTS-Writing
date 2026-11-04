@@ -1,6 +1,6 @@
 # 空与梦的雅思写作 Web
 
-Next.js Web 应用，提供 IELTS 写作练习、作文批改、历史记录、学习分析、账号激活和管理后台。
+Next.js Web 应用，提供 IELTS 写作练习、作文批改、历史记录、学习分析、会员中心、订阅支付和管理后台。
 
 ## 技术栈
 
@@ -38,12 +38,13 @@ npm run migration:check
 ## 核心模块
 
 - 注册、登录和密码重置
-- 激活码生成、绑定、解绑和状态管理
+- 会员订阅及历史授权的状态管理（激活码开通、生码和新绑定已停用）
 - Task 1、Task 2 和完整模考
 - 作文保存、提交和批改
 - 历史记录、学习分析和写作热力图
 - 用户账号中心和支持反馈
 - Web 管理后台
+- Stripe 自动续费订阅（人民币 ¥19.99/月、账单查询和自助取消续费）
 - 管理端 API 密钥、接口地址和模型路由配置（密钥加密保存在服务端）
 
 ## 管理端配置模型
@@ -64,3 +65,7 @@ npm run migration:check
 Vercel 可直接识别 Next.js 项目。部署前配置 `.env.example` 中列出的环境变量，并确认 Supabase schema 已完成迁移。
 
 第三方依赖和本地字体的许可证信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+Stripe 的测试、正式环境配置及回调要求见 [支付接入说明](docs/stripe-billing.md)。
+
+正式收款配置与验收结果见 [Stripe 正式配置记录](docs/stripe-live-configuration-2026-11-03.md)。

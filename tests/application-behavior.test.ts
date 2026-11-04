@@ -227,16 +227,16 @@ test('Admin login never sends ordinary users into the user activation flow', () 
     resolveAuthRedirect({ pathname: '/admin/login', isAuthenticated: true, role: 'user', licenseActive: false }),
     null
   )
-  assert.equal(resolveAuthRedirect({ pathname: '/admin/login', isAuthenticated: true, role: 'admin' }), '/admin/licenses')
+  assert.equal(resolveAuthRedirect({ pathname: '/admin/login', isAuthenticated: true, role: 'admin' }), '/admin')
 })
 
 test('Admin and ordinary login redirects remain separate', () => {
-  // /admin 直接展示总览，登录后的默认落点仍是 /admin/licenses（见 admin login 分支）。
+  // /admin 直接展示总览，登录后的默认落点是 /admin（见 admin login 分支）。
   assert.equal(resolveAuthRedirect({ pathname: '/admin', isAuthenticated: true, role: 'admin' }), null)
-  assert.equal(resolveAuthRedirect({ pathname: '/dashboard', isAuthenticated: true, role: 'admin' }), '/admin/licenses')
+  assert.equal(resolveAuthRedirect({ pathname: '/dashboard', isAuthenticated: true, role: 'admin' }), '/admin')
   assert.equal(
     resolveAuthRedirect({ pathname: '/login', isAuthenticated: true, role: 'user', licenseActive: false }),
-    '/activate'
+    '/billing'
   )
   assert.equal(
     resolveAuthRedirect({ pathname: '/login', isAuthenticated: true, role: 'user', licenseActive: true }),
@@ -244,7 +244,7 @@ test('Admin and ordinary login redirects remain separate', () => {
   )
 })
 
-test('User Home navigation targets the account center without a client redirect page', async () => {
+test('User navigation has one member center in the workspace shell', async () => {
   const [nextConfig, sidebar, commandPalette, appShell] = await Promise.all([
     readFile(new URL('../next.config.mjs', import.meta.url), 'utf8'),
     readFile(new URL('../components/layout/Sidebar.tsx', import.meta.url), 'utf8'),
@@ -254,7 +254,9 @@ test('User Home navigation targets the account center without a client redirect 
 
   assert.match(nextConfig, /source:\s*['"]\/['"][\s\S]*?destination:\s*['"]\/practice['"][\s\S]*?permanent:\s*false/)
   assert.match(sidebar, /id:\s*['"]ielts['"],\s*href:\s*['"]\/practice['"]/)
-  assert.match(sidebar, /id:\s*['"]home['"],\s*href:\s*['"]\/dashboard['"]/)
+  assert.match(sidebar, /id:\s*['"]home['"],\s*href:\s*['"]\/billing['"]/)
+  assert.equal((sidebar.match(/label: '会员中心'/g) || []).length, 1)
+  assert.match(commandPalette, /title: '会员中心'/)
   assert.doesNotMatch(appShell, /写作概览/)
 })
 
@@ -441,7 +443,7 @@ test('settings profile exposes account identity and a confirmed cache-safe logou
   assert.doesNotMatch(logout, /router\.(?:replace|refresh)\(/)
   assert.match(logout, /loading \? '正在退出' : '退出登录'/)
   assert.doesNotMatch(dashboard, /dashboard-header|练习概览|<LogoutButton/)
-  assert.match(dashboard, /<section className="dashboard-main">\s*<section className="dashboard-grid">/)
+  assert.match(dashboard, /redirect\('\/billing'\)/)
   assert.doesNotMatch(css, /\.dashboard-header\s*\{/)
   assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*?\.app-header\s*\{[\s\S]*?flex:\s*0 0 auto;/)
 })
@@ -472,10 +474,12 @@ test('legal pages share the current contact email, AI notice, and final terms ef
   const legalSections = await readFile(new URL('../components/legal/LegalSections.tsx', import.meta.url), 'utf8')
 
   assert.equal(LegalContactEmail, 'qgyxzq@gmail.com')
-  assert.equal(TermsEffectiveDate, '2026年7月1日')
-  assert.equal(PrivacyEffectiveDate, '2026年8月5日')
+  assert.equal(TermsEffectiveDate, '2026年11月3日')
+  assert.equal(PrivacyEffectiveDate, '2026年11月3日')
   assert.equal(TermsSections.at(-1)?.[0], '生效日期')
-  assert.equal(TermsSections.at(-1)?.[1], '生效日期：2026年7月1日。最近更新日期：2026年7月1日')
+  assert.equal(TermsSections.at(-1)?.[1], '生效日期：2026年11月3日。最近更新日期：2026年11月3日')
+  assert.ok(TermsSections.some(([, body]) => body.includes('19.99 元/月') && body.includes('取消下一期续费')))
+  assert.ok(PrivacySections.some(([title, body]) => title === '付款与订阅信息' && body.includes('Stripe')))
   assert.ok(TermsSections.some(([title, body]) => title === '人工智能服务说明' && body.includes('阿里云通义千问')))
   assert.ok(TermsSections.some(([, body]) => body.includes(LegalContactEmail)))
   assert.ok(PrivacySections.some(([, body]) => body.includes(LegalContactEmail)))
@@ -563,7 +567,7 @@ test('result detail keeps scores and content intact while using responsive align
     readFile(new URL('../components/layout/AppShell.tsx', import.meta.url), 'utf8')
   ])
 
-  assert.match(resultPage, /<h1 className="ui-title-display result-title">\{record\.title\}<\/h1>/)
+  assert.match(resultPage, /<h2 className="ui-title-display result-title">\{record\.title\}<\/h2>/)
   assert.match(scoreSummary, /<div className="result-score-label">写作总分<\/div>/)
   assert.match(scoreSummary, /<ScoreLaurel score=\{displayOverall\} \/>/)
   assert.match(scoreSummary, /<div className="result-score-caption">雅思写作模拟评分<\/div>/)

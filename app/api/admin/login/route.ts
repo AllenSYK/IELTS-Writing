@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
     return json({
       success: true,
-      redirectTo: '/admin/licenses'
+      redirectTo: '/admin'
     })
   } catch (error) {
     if (error instanceof Response) {

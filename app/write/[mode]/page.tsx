@@ -1581,7 +1581,7 @@ export default function WritePage() {
               <h1 className="ui-title-headline">{activeQuestion.title}</h1>
               <p className="ui-body-md">
                 建议在 {activeQuestion.durationMinutes} 分钟内完成本题。
-                {mode === 'mock' ? ' 完整测试的总计时仍为 60 分钟。' : ''}
+                {mode === 'mock' ? ' 完整模考的总计时仍为 60 分钟。' : ''}
               </p>
             </div>
 

@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import {
   BrainCircuit,
+  CreditCard,
   BookOpen,
   FileText,
   KeyRound,
@@ -28,8 +29,9 @@ const navigation = [
   {
     label: '业务管理',
     items: [
-      { href: '/admin/licenses', label: '激活码管理', icon: KeyRound },
-      { href: '/admin/bindings', label: '邮箱绑定', icon: Link2 },
+      { href: '/admin/memberships', label: '会员管理', icon: CreditCard },
+      { href: '/admin/licenses', label: '历史权益', icon: KeyRound },
+      { href: '/admin/bindings', label: '历史邮箱绑定', icon: Link2 },
       { href: '/admin/users', label: '用户管理', icon: UsersRound },
       { href: '/admin/past-papers', label: '真题题库', icon: FileText },
       { href: '/admin/feedback', label: '用户反馈', icon: MessageSquareText }

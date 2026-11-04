@@ -1,6 +1,8 @@
+import { loadWebLicenseAccessSnapshot } from '@/lib/web-license/access'
+import { loadAdminBilling } from '@/lib/admin/membership-data'
+import { resolveAdminMembership } from '@/lib/admin/membership'
 import { z } from 'zod'
 import { json } from '@/lib/http'
-import { hashWebLicenseCode } from '@/lib/web-license/codes'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { extractAuditInfo, logAdminAudit } from '@/lib/admin/audit-log'
 
@@ -82,7 +84,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         .order('activated_at', { ascending: false })
     ])
     if (activationError) throw activationError
-    return json({ success: true, user: authUser, profile, activations: activations || [] })
+    const [snapshot, billing] = await Promise.all([loadWebLicenseAccessSnapshot(service, id), loadAdminBilling(service, [id])])
+    const membership = resolveAdminMembership(snapshot, billing.subscriptions, billing.payments, billing.trials[0])
+    return json({ success: true, user: authUser, profile, membership, activations: activations || [] })
   } catch (error) {
     const businessError = userBusinessError(error)
     if (businessError) return businessError
@@ -138,23 +142,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         throw accessError
       }
     } else if (body.action === 'bind') {
-      const { authUser, profile } = await loadTargetUser(service, id)
-      if (profile.role === 'admin') throw new Error('ADMIN_LICENSE_NOT_ALLOWED')
-      const account = authUser.email || authUser.phone || authUser.id
-      const { data, error } = await service.rpc('activate_license_code', {
-        p_code_hash: hashWebLicenseCode(body.licenseCode || ''),
-        p_user_id: id,
-        p_email: account
-      })
-      if (error) throw error
-      const result = Array.isArray(data) ? data[0] : data
-      if (!result?.success) {
-        return json({
-          success: false,
-          code: result?.error_code || 'ACTIVATION_FAILED',
-          message: result?.message || '绑定失败'
-        }, { status: 409 })
-      }
+      return json({ success: false, code: 'ACTIVATION_RETIRED', message: '激活码绑定功能已停用，请通过会员订阅开通。' }, { status: 410 })
     }
 
     await logAdminAudit(service, {

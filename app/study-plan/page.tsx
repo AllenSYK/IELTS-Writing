@@ -993,8 +993,7 @@ function StudyPlanHeader({ quota }: { quota?: StudyPlanGenerationQuota }) {
   return (
     <header className="page-section-header study-plan-header">
       <div>
-        <h1 className="ui-title-display">雅思写作学习规划</h1>
-        <p className="ui-body-md" style={{ marginTop: 4 }}>根据你的目标、剩余时间和真实写作表现，动态安排整个备考周期。</p>
+        <p className="ui-body-md">根据你的目标、剩余时间和真实写作表现，动态安排整个备考周期。</p>
       </div>
       {quota ? <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <span className="task-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>

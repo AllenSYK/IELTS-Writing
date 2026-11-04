@@ -1,31 +1,37 @@
 import { apiError } from '@/lib/http'
 import { createApiObservation } from '@/lib/api-observability'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
-import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 
 export async function GET(request: Request) {
   const observation = createApiObservation('/api/profile', request)
-  const check = await observation.time('license', () => requireActiveWebLicense(observation))
-  if (!check.ok) return observation.respond({ success: false, message: check.message }, { status: check.status })
+  const user = await observation.time('auth', () => getCurrentSupabaseUser())
+  if (!user) return observation.respond({ success: false, message: '请先登录' }, { status: 401 })
 
-  const profile = check.profile
+  const service = createSupabaseServiceRoleClient()
+  const { data: profile, error } = await observation.time('database', () => service
+    .from('profiles')
+    .select('display_name, email, manual_average_score')
+    .eq('id', user.id)
+    .maybeSingle())
+  if (error) return observation.finish(apiError(error, '读取个人资料失败'))
 
   return observation.respond({
     success: true,
     profile: {
-      displayName: profile.display_name ?? null,
-      email: profile.email ?? check.user.email ?? null,
-      manualAverageScore: profile.manual_average_score === null || profile.manual_average_score === undefined
+      displayName: profile?.display_name ?? null,
+      email: profile?.email ?? user.email ?? null,
+      manualAverageScore: profile?.manual_average_score === null || profile?.manual_average_score === undefined
         ? null
-        : Number(profile.manual_average_score)
+        : Number(profile?.manual_average_score)
     }
   })
 }
 
 export async function PATCH(request: Request) {
   const observation = createApiObservation('/api/profile', request)
-  const check = await observation.time('license', () => requireActiveWebLicense(observation))
-  if (!check.ok) return observation.respond({ success: false, message: check.message }, { status: check.status })
+  const user = await observation.time('auth', () => getCurrentSupabaseUser())
+  if (!user) return observation.respond({ success: false, message: '请先登录' }, { status: 401 })
 
   let body: unknown
   try {
@@ -87,7 +93,7 @@ export async function PATCH(request: Request) {
   const { data: existing, error: selectError } = await observation.time('database', () => service
       .from('profiles')
       .select('id')
-      .eq('id', check.user.id)
+      .eq('id', user.id)
       .maybeSingle())
 
   if (selectError) {
@@ -95,7 +101,7 @@ export async function PATCH(request: Request) {
   }
 
   if (!existing) {
-    const insertPayload: Record<string, unknown> = { id: check.user.id, email: check.user.email }
+    const insertPayload: Record<string, unknown> = { id: user.id, email: user.email }
     if (trimmed !== undefined) insertPayload.display_name = trimmed
     if (manualAverageScore !== undefined) insertPayload.manual_average_score = manualAverageScore
     const { error: insertError } = await observation.time('database', () => service
@@ -112,7 +118,7 @@ export async function PATCH(request: Request) {
     const { error: updateError } = await observation.time('database', () => service
         .from('profiles')
         .update(updates)
-        .eq('id', check.user.id))
+        .eq('id', user.id))
 
     if (updateError) {
       return observation.finish(apiError(updateError, '保存个人资料失败'))
@@ -122,7 +128,7 @@ export async function PATCH(request: Request) {
   const { data: savedProfile, error: savedProfileError } = await observation.time('database', () => service
       .from('profiles')
       .select('display_name, email, manual_average_score')
-      .eq('id', check.user.id)
+      .eq('id', user.id)
       .maybeSingle())
 
   if (savedProfileError) {
@@ -133,7 +139,7 @@ export async function PATCH(request: Request) {
     success: true,
     profile: {
       displayName: savedProfile?.display_name ?? null,
-      email: savedProfile?.email ?? check.user.email ?? null,
+      email: savedProfile?.email ?? user.email ?? null,
       manualAverageScore: savedProfile?.manual_average_score === null || savedProfile?.manual_average_score === undefined
         ? null
         : Number(savedProfile.manual_average_score)

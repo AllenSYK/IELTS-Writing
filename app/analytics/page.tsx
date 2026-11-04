@@ -307,7 +307,6 @@ function AnalyticsContent() {
 
         <header className="page-section-header analytics-header">
           <div>
-            <h1 className="ui-title-headline">学习表现</h1>
             <p className="ui-body-md analytics-intro">根据当前账号的真实批改记录生成。</p>
           </div>
           <div className="analytics-range" role="group" aria-label="分析时间范围">

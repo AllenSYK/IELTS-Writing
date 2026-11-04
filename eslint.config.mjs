@@ -5,7 +5,7 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
-    ignores: ['.next/**', 'supabase/.temp/**']
+    ignores: ['.next/**', '.logs/**', 'supabase/.temp/**']
   }
 ]
 

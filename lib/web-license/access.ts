@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApiObservation } from '@/lib/api-observability'
+import { billingScope, hasPaidSubscriptionAccess, hasTrialSubscriptionAccess } from '@/lib/billing/config'
 
 export type WebProfile = {
   id: string
@@ -13,6 +14,7 @@ export type WebProfile = {
 }
 
 export type WebLicenseActivation = {
+  source?: 'license' | 'stripe' | 'stripe_payment' | 'stripe_trial'
   id: string
   license_id: string
   user_id: string
@@ -134,6 +136,58 @@ export async function loadWebLicenseAccessSnapshot(
   observation?: ApiObservation,
   options: { tryRpc?: boolean } = {}
 ): Promise<WebLicenseAccessSnapshot> {
+  const snapshot = await loadManualLicenseAccessSnapshot(service, userId, observation, options)
+  const scope = billingScope()
+  if (!scope || isActiveWebLicenseSnapshot(snapshot) || !snapshot.profile
+    || snapshot.profile.role === 'admin' || snapshot.profile.license_status === 'suspended') return snapshot
+  const { data, error } = await service.from('stripe_billing_subscriptions')
+    .select('stripe_subscription_id, status, paid_through, risk_hold, created_at, last_used_at, trial_offer, trial_start, trial_end')
+    .eq('user_id', userId).eq('stripe_account_id', scope.account).eq('livemode', scope.livemode)
+    .in('status', ['active', 'past_due', 'trialing']).eq('risk_hold', false)
+    .or(`paid_through.gt.${new Date().toISOString()},trial_end.gt.${new Date().toISOString()}`)
+    .order('created_at', { ascending: false }).limit(10)
+  if (error) throw error
+  const subscription = data?.find((row) => hasPaidSubscriptionAccess(row))
+    || data?.find((row) => hasTrialSubscriptionAccess(row))
+  if (!subscription) {
+    const { data: payment, error: paymentError } = await service.from('stripe_billing_payments')
+      .select('checkout_session_id, paid_at, expires_at, last_used_at')
+      .eq('user_id', userId).eq('stripe_account_id', scope.account).eq('livemode', scope.livemode)
+      .eq('risk_hold', false).gt('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: false }).limit(1).maybeSingle()
+    if (paymentError) throw paymentError
+    if (!payment) return snapshot
+    const id = payment.checkout_session_id as string
+    return {
+      profile: { ...snapshot.profile, license_status: 'active', license_expires_at: payment.expires_at },
+      activation: {
+        source: 'stripe_payment', id, license_id: id, user_id: userId,
+        email: snapshot.profile.email || snapshot.profile.phone || userId,
+        activated_at: payment.paid_at, expires_at: payment.expires_at, status: 'active', last_used_at: payment.last_used_at
+      },
+      license: { id, plan: 'standard', status: 'active', expires_at: payment.expires_at }
+    }
+  }
+  const trial = hasTrialSubscriptionAccess(subscription)
+  const expiresAt = trial ? subscription.trial_end : subscription.paid_through
+  const id = subscription.stripe_subscription_id as string
+  return {
+    profile: { ...snapshot.profile, license_status: 'active', license_expires_at: expiresAt },
+    activation: {
+      source: trial ? 'stripe_trial' : 'stripe', id, license_id: id, user_id: userId,
+      email: snapshot.profile.email || snapshot.profile.phone || userId,
+      activated_at: trial ? subscription.trial_start : subscription.created_at, expires_at: expiresAt, status: 'active', last_used_at: subscription.last_used_at
+    },
+    license: { id, plan: 'standard', status: 'active', expires_at: expiresAt }
+  }
+}
+
+async function loadManualLicenseAccessSnapshot(
+  service: SupabaseClient,
+  userId: string,
+  observation?: ApiObservation,
+  options: { tryRpc?: boolean } = {}
+): Promise<WebLicenseAccessSnapshot> {
   if (options.tryRpc !== false && Date.now() >= accessRpcMissingUntil) {
     const rpcStartedAt = performance.now()
     const rpcResult = await service
@@ -209,5 +263,6 @@ export function isActiveWebLicenseSnapshot(snapshot: WebLicenseAccessSnapshot, n
     && snapshot.license !== null
     && snapshot.license.status !== 'disabled'
     && snapshot.license.status !== 'expired'
+    && snapshot.license.status !== 'revoked'
     && codeExpiresAt > now
 }

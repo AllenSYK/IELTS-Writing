@@ -12,6 +12,7 @@ export const config = {
     '/register/:path*',
     '/dashboard/:path*',
     '/activate/:path*',
+    '/billing/:path*',
     '/practice/:path*',
     '/history/:path*',
     '/write/:path*',

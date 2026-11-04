@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     if (profile?.role === 'admin') {
       return json({
         success: true,
-        redirectTo: '/admin/licenses',
+        redirectTo: '/admin',
         licenseActive: false,
         profile
       })
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     if (license.ok) {
       return json({
         success: true,
-        redirectTo: '/dashboard',
+        redirectTo: '/billing',
         licenseActive: true,
         profile: license.profile
       })
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
 
     return json({
       success: true,
-      redirectTo: '/activate',
+      redirectTo: '/billing',
       licenseActive: false,
       profile
     })

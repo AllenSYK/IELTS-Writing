@@ -37,11 +37,12 @@ test('user shell navigation uses Next links with intentional prefetching', async
   assert.match(sidebar, /prefetch=\{item\.prefetch\}/)
   assert.match(header, /<a[\s\S]*?href="https:\/\/xhslink\.com\//)
   assert.match(header, /import Link from ['"]next\/link['"]/)
-  assert.match(header, /<Link[^>]*href="\/dashboard"[^>]*prefetch/)
+  assert.match(header, /<Link[^>]*href="\/billing"[^>]*prefetch/)
   assert.doesNotMatch(sidebar, /onMouseEnter/)
   assert.doesNotMatch(sidebar, /router\.prefetch/)
   assert.doesNotMatch(sidebar, /pageDataPrefetchers/)
-  assert.doesNotMatch(sidebar, /preventDefault|stopPropagation|router\.push/)
+  assert.doesNotMatch(sidebar, /stopPropagation|router\.push/)
+  assert.doesNotMatch(sidebar, /onClick=\{[^}]*preventDefault/)
 })
 
 test('interactive buttons declare their form behavior explicitly', async () => {
@@ -223,7 +224,9 @@ test('Sidebar avoids imperative client-router navigation handlers', async () => 
 
   assert.doesNotMatch(sidebar, /navigationEvents/)
   assert.doesNotMatch(sidebar, /handleNavigationStart/)
-  assert.doesNotMatch(sidebar, /preventDefault|stopPropagation|router\.(?:push|replace)/)
+  // Keyboard focus trapping may prevent Tab/Escape defaults; links must still use native navigation.
+  assert.doesNotMatch(sidebar, /stopPropagation|router\.(?:push|replace)/)
+  assert.doesNotMatch(sidebar, /onClick=\{[^}]*preventDefault/)
   assert.match(sidebar, /prefetch=\{item\.prefetch\}/)
 })
 

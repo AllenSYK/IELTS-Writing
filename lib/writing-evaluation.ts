@@ -79,7 +79,7 @@ export function evaluationErrorMessage(error: unknown) {
     timeout: { title: '响应超时', message: '批改服务响应超时，请稍后重试。' },
     network: { title: '网络错误', message: '网络连接失败，作文已保存在本地，请检查网络后重试。' },
     authentication: { title: '请先登录', message: '请先登录后再使用批改功能。' },
-    license: { title: '需要激活', message: '请先激活账号后再使用批改功能。' },
+    license: { title: '需要会员权益', message: '请先在会员中心开通会员后再使用批改功能。' },
     configuration: { title: '服务未配置', message: '请联系管理员在管理端配置 API 密钥。' },
     'api-key': { title: '密钥无效', message: 'API 密钥无效，请联系管理员检查或更换密钥。' },
     model: { title: '模型配置错误', message: '模型名称或 API Base URL 不正确。' },

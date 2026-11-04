@@ -320,7 +320,7 @@ export function WritingModeSelector({
 
       <CenteredDialog
         open={pendingMode !== null}
-        title={`开始${pendingMode === 'mock' ? '完整测试' : pendingMode === 'task1' ? 'Task 1' : 'Task 2'}练习？`}
+        title={`开始${pendingMode === 'mock' ? '完整模考' : pendingMode === 'task1' ? 'Task 1' : 'Task 2'}练习？`}
         description="确认后将按当前练习设置准备题目。"
         className="practice-start-confirm-dialog"
         onClose={() => setPendingMode(null)}

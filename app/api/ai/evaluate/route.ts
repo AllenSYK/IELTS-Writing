@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       {
         success: false,
         code: check.code === 'NOT_AUTHENTICATED' ? 'NOT_AUTHENTICATED' : 'LICENSE_REQUIRED',
-        message: check.code === 'NOT_AUTHENTICATED' ? '请先登录后再使用批改功能' : '请先激活账号后再使用批改功能'
+        message: check.code === 'NOT_AUTHENTICATED' ? '请先登录后再使用批改功能' : '请先在会员中心开通会员后再使用批改功能'
       },
       { status: check.status === 401 ? 401 : 403 }
     )

@@ -391,7 +391,7 @@ function buildFallbackTasks(
       scheduledDate: date,
       taskType: 'full_test',
       source: 'built_in',
-      title: '周末完整测试',
+      title: '周末完整模考',
       description: '完整模考，检验本周学习效果。',
       focusCriteria: ['Task Achievement', 'Task Response'],
       focusErrorTags: [],

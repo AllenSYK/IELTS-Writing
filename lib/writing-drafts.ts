@@ -26,7 +26,7 @@ export const DraftLimitErrorCodes: Record<WritingTaskType, string> = {
 export const DraftErrorMessages: Record<string, string> = {
   DRAFT_LIMIT_REACHED_TASK1: 'Task 1 草稿已达到 5 份上限，请先继续或删除一份已有草稿。',
   DRAFT_LIMIT_REACHED_TASK2: 'Task 2 草稿已达到 5 份上限，请先继续或删除一份已有草稿。',
-  DRAFT_LIMIT_REACHED_FULL_TEST: '完整测试草稿已达到 3 份上限，请先继续或删除一份已有草稿。',
+  DRAFT_LIMIT_REACHED_FULL_TEST: '完整模考草稿已达到 3 份上限，请先继续或删除一份已有草稿。',
   DAILY_DRAFT_DELETE_LIMIT_REACHED: '今日草稿删除次数已用完，请明日再试。',
   DRAFT_NOT_FOUND: '这份草稿不存在或已处理。',
   DRAFT_ACCESS_DENIED: '你没有权限访问这份草稿。',
@@ -330,7 +330,7 @@ export function draftListItemDisplay(draftData: ManagedDraftData, taskType: Writ
 } {
   const extractPreview = (essay: string) => essay.trim().replace(/\s+/g, ' ').slice(0, 90)
   if (draftData.kind === 'full_test') {
-    const title = draftData.task1.title || draftData.task2.title || '完整测试草稿'
+    const title = draftData.task1.title || draftData.task2.title || '完整模考草稿'
     const wordCount = draftData.task1.wordCount + draftData.task2.wordCount
     const preview = extractPreview(draftData.task2.essay || draftData.task1.essay)
     return { title, wordCount, preview }
@@ -412,7 +412,7 @@ export async function deleteManagedDraft(userId: string, draftId: string) {
 
 export function draftDisplayTitle(record: DraftRecord) {
   if (record.draftData.kind === 'full_test') {
-    return record.draftData.task1.title || record.draftData.task2.title || '完整测试草稿'
+    return record.draftData.task1.title || record.draftData.task2.title || '完整模考草稿'
   }
   return record.draftData.task.title || (record.taskType === 'task1' ? 'Task 1 草稿' : 'Task 2 草稿')
 }

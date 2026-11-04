@@ -1,19 +1,7 @@
-import { z } from 'zod'
 import { json } from '@/lib/http'
-import { generateWebLicenseCode, getWebLicenseCodePrefix, hashWebLicenseCode } from '@/lib/web-license/codes'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { getEffectiveLicenseStatus } from '@/lib/web-license/admin-license-data'
 import { toQueryParamNumber } from '@/lib/admin/number-utils'
-import { logAdminAudit, extractAuditInfo } from '@/lib/admin/audit-log'
-
-const CreateSchema = z.object({
-  count: z.number().int().min(1).max(500).default(1),
-  plan: z.string().min(1).max(80).default('standard'),
-  durationDays: z.number().int().min(1).max(3650).default(365),
-  maxActivations: z.number().int().min(1).max(100).default(1),
-  expiresAt: z.string().datetime().optional().nullable(),
-  note: z.string().max(500).optional().nullable()
-})
 
 function sanitizeSearchInput(value: string): string {
   return value
@@ -132,85 +120,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const requestId = request.headers.get('X-Request-Id') || undefined
-  const auditInfo = extractAuditInfo(request)
-  
   try {
-    const { user, service } = await requireAdminService(request)
-    const body = CreateSchema.parse(await request.json())
-    const generated = Array.from({ length: body.count }, () => {
-      const code = generateWebLicenseCode()
-      return {
-        code,
-        row: {
-          code_hash: hashWebLicenseCode(code),
-          code_value: code,
-          code_prefix: getWebLicenseCodePrefix(code),
-          plan: body.plan,
-          duration_days: body.durationDays,
-          max_activations: body.maxActivations,
-          status: 'unused',
-          expires_at: body.expiresAt || null,
-          note: body.note?.trim() || null,
-          created_by: user.id
-        }
-      }
-    })
-
-    const { data, error } = await service
-      .from('license_codes')
-      .insert(generated.map((item) => item.row))
-      .select('id, code_prefix, plan, duration_days, max_activations, status, expires_at, note, created_at')
-
-    if (error) throw error
-
-    // 记录审计日志
-    await logAdminAudit(service, {
-      adminUserId: user.id,
-      action: 'create_license',
-      resourceType: 'license',
-      requestId,
-      result: 'success',
-      metadata: {
-        count: body.count,
-        plan: body.plan,
-        durationDays: body.durationDays,
-        maxActivations: body.maxActivations
-      },
-      ipHash: auditInfo.ip,
-      userAgentSummary: auditInfo.userAgent
-    })
-
-    return json({
-      success: true,
-      codes: generated.map((item, index) => ({
-        ...data?.[index],
-        code: item.code
-      })),
-      requestId
-    })
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return json({ success: false, code: 'INVALID_INPUT', message: '生成参数无效', requestId }, { status: 400 })
-    }
-    
-    // 记录失败审计日志
-    try {
-      const { user, service } = await requireAdminService()
-      await logAdminAudit(service, {
-        adminUserId: user.id,
-        action: 'create_license',
-        resourceType: 'license',
-        requestId,
-        result: 'failure',
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        ipHash: auditInfo.ip,
-        userAgentSummary: auditInfo.userAgent
-      })
-    } catch {
-      // 审计日志写入失败不影响错误响应
-    }
-    
-    return adminApiError(error, '无法生成激活码')
-  }
+    await requireAdminService(request)
+    return json({ success: false, code: 'ACTIVATION_RETIRED', message: '激活码生成功能已停用；现有权益记录继续保留。' }, { status: 410 })
+  } catch (error) { return adminApiError(error, '无法访问历史权益') }
 }

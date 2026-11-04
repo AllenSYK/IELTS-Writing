@@ -4,7 +4,7 @@ import { normalizeMainlandPhone } from '@/lib/phone-auth'
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { CurrentAgreementVersions, recordUserAgreements } from '@/lib/legal-agreements'
 import { toChineseAuthError } from '@/lib/auth/error-messages'
-import { checkActiveWebLicenseForUser, getWebProfile } from '@/lib/web-license/auth'
+import { getWebProfile } from '@/lib/web-license/auth'
 
 const VerifyPhoneCodeSchema = z.object({
   phone: z.string().min(6).max(32),
@@ -45,13 +45,12 @@ export async function POST(request: Request) {
     await recordUserAgreements(service, data.user.id, body.mode)
     const profile = await getWebProfile(data.user.id)
     if (profile?.role === 'admin') {
-      return json({ success: true, redirectTo: '/admin/licenses' })
+      return json({ success: true, redirectTo: '/admin' })
     }
 
-    const license = await checkActiveWebLicenseForUser(data.user)
     return json({
       success: true,
-      redirectTo: license.ok ? '/dashboard' : '/activate'
+      redirectTo: '/billing'
     })
   } catch (error) {
     if (error instanceof z.ZodError) {

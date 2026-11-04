@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { BrainCircuit, Menu, Plus, Search, X } from 'lucide-react'
+import { BrainCircuit, Menu, CreditCard, Search, X } from 'lucide-react'
 import { getAdminRouteMeta } from '@/lib/admin/admin-routes'
 
 export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMenu: () => void }) {
@@ -86,9 +86,9 @@ export function AdminHeader({ adminEmail, onMenu }: { adminEmail?: string; onMen
           <BrainCircuit size={17} aria-hidden="true" />
           <span>模型配置</span>
         </a>
-        <a className="admin-primary-button admin-header-create" href="/admin/licenses?create=1">
-          <Plus size={17} aria-hidden="true" />
-          <span>生成激活码</span>
+        <a className="admin-primary-button admin-header-create" href="/admin/memberships">
+          <CreditCard size={17} aria-hidden="true" />
+          <span>会员管理</span>
         </a>
         <span className="admin-header-avatar" title={adminEmail || '管理员'}>
           {(adminEmail || 'A').slice(0, 1).toUpperCase()}

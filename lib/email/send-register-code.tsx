@@ -51,6 +51,6 @@ export async function sendWelcomeEmail(to: string) {
     to,
     subject: `欢迎使用 ${emailBrand.productName}`,
     html,
-    text: `您的 ${emailBrand.productName} 账号已创建。请登录并输入软件激活码开通使用权限：${getSiteUrl()}/login`
+    text: `您的 ${emailBrand.productName} 账号已创建。请登录后前往会员中心查看会员方案：${getSiteUrl()}/login`
   })
 }

@@ -36,7 +36,7 @@ const modes = [
     mode: 'mock',
     icon: 'timer',
     minutes: '60 分钟',
-    title: '完整测试',
+    title: '完整模考',
     subtitle: 'Task 1 + Task 2',
     words: '至少 400 词',
     action: '开始测试',

@@ -1,0 +1,18 @@
+# Local credentials, verification evidence, and tool state never belong in a deployment.
+.env
+.env.*
+.logs/
+secrets/
+*.pem
+*.p12
+*.key
+*.log
+.agents/
+.git/
+.vercel/
+.next/
+node_modules/
+coverage/
+supabase/.temp/
+*.tsbuildinfo
+.DS_Store

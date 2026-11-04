@@ -193,7 +193,7 @@ export const WritingRecordsUpdatedEvent = 'ielts-writing:writing-records-updated
 export const TaskTypeLabels: Record<WritingTaskType, string> = {
   task1: 'IELTS Task 1',
   task2: 'IELTS Task 2',
-  mock: '完整测试'
+  mock: '完整模考'
 }
 
 export const CriterionLabels: Record<CriterionKey, string> = {

@@ -112,7 +112,7 @@ function EmptyResult() {
     <main className="ui-page" tabIndex={-1}>
       <section className="result-main">
         <GlassPanel level={2} className="empty-state">
-          <h1 className="ui-title-headline">暂无真实批改结果</h1>
+          <h2 className="ui-title-headline">暂无真实批改结果</h2>
           <p className="ui-body-md">提交作文并完成批改后，这里会展示总分、四项评分、逐句问题和改写建议。</p>
           <a className="ui-primary-button" href="/practice" style={{ marginTop: 24 }}>
             开始写作
@@ -458,7 +458,7 @@ export default function ResultPage() {
       <section className="result-main">
         <header className="result-header">
           <div className="result-header-copy">
-            <h1 className="ui-title-display result-title">{record.title}</h1>
+            <h2 className="ui-title-display result-title">{record.title}</h2>
             <p className="ui-body-md">
               提交于 {formatDate(record.submittedAt)} · {record.wordCount} 词 · {TaskTypeLabels[record.taskType]}
               {Boolean((record as Record<string, unknown>).studyPlanTaskId) && ' • 来源：学习计划'}

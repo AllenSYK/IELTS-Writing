@@ -6,16 +6,15 @@ import { AppHeader } from './AppHeader'
 import { Sidebar } from './Sidebar'
 
 const routeMeta: Array<{ match: (pathname: string) => boolean; title: string }> = [
-  { match: (pathname) => pathname === '/' || pathname === '/dashboard', title: '账号中心' },
-  { match: (pathname) => pathname.startsWith('/study-plan/errors'), title: '个人错误本' },
+  { match: (pathname) => pathname === '/' || ['/dashboard', '/billing', '/settings'].includes(pathname), title: '会员中心' },
+  { match: (pathname) => pathname.startsWith('/study-plan/errors'), title: '错题本' },
   { match: (pathname) => pathname.startsWith('/study-plan'), title: '学习规划' },
-  { match: (pathname) => pathname === '/practice', title: '雅思写作练习' },
-  { match: (pathname) => pathname.startsWith('/ielts'), title: '雅思真题练习' },
+  { match: (pathname) => pathname === '/practice', title: '写作练习' },
+  { match: (pathname) => pathname.startsWith('/ielts'), title: '真题题库' },
   { match: (pathname) => pathname.startsWith('/history'), title: '历史记录' },
   { match: (pathname) => pathname.startsWith('/analytics'), title: '学习分析' },
   { match: (pathname) => pathname.startsWith('/result'), title: '批改结果' },
-  { match: (pathname) => pathname.startsWith('/settings'), title: '账号中心' },
-  { match: (pathname) => pathname.startsWith('/support'), title: '支持中心' },
+  { match: (pathname) => pathname.startsWith('/support'), title: '帮助与反馈' },
   { match: (pathname) => pathname.startsWith('/terms'), title: '服务条款' },
   { match: (pathname) => pathname.startsWith('/privacy'), title: '隐私政策' }
 ]
@@ -35,6 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     pathname.startsWith('/forgot-password') ||
     pathname.startsWith('/reset-password') ||
     pathname.startsWith('/activate')
+    || pathname.startsWith('/pricing')
   const meta = pageMeta(pathname)
 
   useLayoutEffect(() => {
@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Sidebar />
         <div className="app-main">
           <AppHeader title={meta.title} />
-          <div ref={contentRef} className="app-content">{children}</div>
+          <div ref={contentRef} className={`app-content${pathname === '/billing' ? ' is-member-center' : ''}`}>{children}</div>
         </div>
       </div>
     </div>

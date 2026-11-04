@@ -1025,6 +1025,15 @@ button.admin-user-card {
   background: rgba(255, 255, 255, 0.95);
 }
 
+.admin-membership-table {
+  min-width: 960px;
+}
+
+.admin-membership-table :is(th, td):is(:first-child, :last-child) {
+  position: static;
+  box-shadow: none;
+}
+
 .admin-table code,
 .admin-code-cell code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

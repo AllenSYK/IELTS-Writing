@@ -56,7 +56,7 @@ export async function POST(
     return json({
       success: false,
       code: 'STUDY_PLAN_FULL_TEST_QUESTION_PAIR_INCOMPLETE',
-      message: '这个完整测试没有保存成对的 Task 1 和 Task 2 题目，请重新生成学习规划。'
+      message: '这个完整模考没有保存成对的 Task 1 和 Task 2 题目，请重新生成学习规划。'
     }, { status: 409 })
   }
 

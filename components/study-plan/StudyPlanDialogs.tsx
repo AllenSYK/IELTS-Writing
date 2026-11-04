@@ -485,7 +485,7 @@ export function TaskDetailDialog({ task, onClose, onMutate }: {
     && task.questionSource === 'question_bank'
     && !writingHref
   const missingBankQuestionMessage = task.taskType === 'full_test'
-    ? '这个完整测试没有保存成对的 Task 1 和 Task 2 后台题目，请重新生成学习规划后再开始。'
+    ? '这个完整模考没有保存成对的 Task 1 和 Task 2 后台题目，请重新生成学习规划后再开始。'
     : '这个题库任务没有绑定后台题目，请重新生成学习规划后再开始。'
 
   const handleSkip = async () => {

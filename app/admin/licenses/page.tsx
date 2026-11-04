@@ -4,7 +4,7 @@ import { requireWebAdmin } from '@/lib/web-license/auth'
 import { AdminLicensesClient } from './AdminLicensesClient'
 
 export const metadata: Metadata = {
-  title: '激活码管理',
+  title: '历史权益',
 }
 
 export default async function AdminLicensesPage() {
@@ -17,7 +17,7 @@ export default async function AdminLicensesPage() {
       <main className="auth-page" data-main-content tabIndex={-1}>
         <section className="auth-panel">
           <h1>无权访问</h1>
-          <p className="auth-error">只有管理员账号可以访问激活码管理。</p>
+          <p className="auth-error">只有管理员账号可以访问历史权益。</p>
         </section>
       </main>
     )

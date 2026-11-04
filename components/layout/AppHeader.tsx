@@ -19,7 +19,7 @@ export function AppHeader({ title }: { title: string }) {
           >
             <MaterialIcon name="share" />
           </a>
-          <Link className="ui-icon-button" href="/dashboard" prefetch aria-label="账号中心" title="账号中心">
+          <Link className="ui-icon-button" href="/billing" prefetch aria-label="会员中心" title="会员中心">
             <MaterialIcon name="manage_accounts" />
           </Link>
         </div>

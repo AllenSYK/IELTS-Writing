@@ -236,10 +236,10 @@ export default function PastPapersPage() {
         <section className="analytics-main" style={{ paddingTop: 40 }}>
           <header className="page-section-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <a href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
+              <a href="/practice" className="ui-secondary-button">
                 <MaterialIcon name="arrow_back" size={18} />
+                返回写作练习
               </a>
-              <h1 className="ui-title-display">雅思真题</h1>
             </div>
           </header>
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
@@ -270,10 +270,10 @@ export default function PastPapersPage() {
       <section className="analytics-main" style={{ paddingTop: 40 }}>
         <header className="page-section-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <a href="/practice" className="ui-secondary-button" style={{ padding: '6px 10px' }}>
+            <a href="/practice" className="ui-secondary-button">
               <MaterialIcon name="arrow_back" size={18} />
+              返回写作练习
             </a>
-            <h1 className="ui-title-display">雅思真题</h1>
           </div>
         </header>
 

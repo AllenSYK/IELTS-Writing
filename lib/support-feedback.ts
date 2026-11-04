@@ -1,5 +1,4 @@
 export const SupportFeedbackCategories = [
-  '激活码问题',
   '设备绑定问题',
   'AI批改失败',
   'AI批改速度慢',
@@ -49,15 +48,15 @@ export type SupportFaq = {
 
 export const SupportFaqs: SupportFaq[] = [
   {
-    title: '激活码无法使用怎么办？',
-    category: '激活码问题',
-    steps: ['检查激活码是否输入完整。', '确认横线、字母和数字没有混淆。', '确认网络连接正常。', '检查激活码是否过期、暂停或撤销。', '如果提示设备数量已满，请提交反馈并只提供激活码尾号。'],
-    actions: [{ label: '提交激活码反馈', kind: 'feedback' }]
+    title: '会员未开通或付款状态未更新怎么办？',
+    category: '其他问题',
+    steps: ['在会员中心查看当前权益和订阅状态。', '如已完成付款，点击刷新状态。', '需要更新付款方式或取消续费时，进入管理订阅。', '仍有问题时提交反馈，并提供订单信息。'],
+    actions: [{ label: '提交会员问题反馈', kind: 'feedback' }]
   },
   {
     title: '已经换电脑或设备数量已满怎么办？',
     category: '设备绑定问题',
-    steps: ['网页版账号与邮箱绑定，换电脑后用同一邮箱登录即可继续使用。', '若提示激活次数已满，提交反馈并只提供激活码尾号与当前绑定邮箱。', '管理员会核对邮箱绑定与激活记录。', '必要时管理员会解除旧绑定，你可重新激活当前邮箱。'],
+    steps: ['网页版权益与账号关联，换电脑后用同一邮箱登录即可继续使用。', '在会员中心核对账号和权益到期时间。', '如发现账号信息不一致，请提交反馈。'],
     actions: [{ label: '提交设备绑定反馈', kind: 'feedback' }]
   },
   {
@@ -105,7 +104,6 @@ export const SupportFaqs: SupportFaq[] = [
 ]
 
 export const SupportAdminRecommendations: Record<SupportFeedbackCategory, string[]> = {
-  激活码问题: ['检查激活码状态。', '检查到期时间。', '检查最大设备数量。', '检查是否暂停或撤销。', '必要时解绑旧设备。'],
   设备绑定问题: ['检查当前绑定设备列表。', '核对设备最近验证时间。', '确认是否允许用户自助解绑。', '必要时解绑旧设备并记录管理备注。'],
   AI批改失败: ['检查错误码。', '检查模型服务状态。', '检查是否发生超时。', '检查 429 或 5xx。', '查看是否触发重试。'],
   AI批改速度慢: ['查看总请求耗时。', '查看模型耗时。', '查看重试次数。', '查看是否命中缓存。', '查看正式版和开发版调用链。'],
@@ -139,7 +137,7 @@ export function isSupportFeedbackPriority(value: unknown): value is SupportFeedb
 }
 
 export function defaultSupportFeedbackPriority(category: SupportFeedbackCategory): SupportFeedbackPriority {
-  if (category === '激活码问题' || category === '设备绑定问题' || category === 'AI批改失败') return 'high'
+  if (category === '设备绑定问题' || category === 'AI批改失败') return 'high'
   if (category === 'AI批改速度慢' || category === '作文保存问题' || category === '历史记录重复' || category === '评分结果问题') return 'normal'
   return 'low'
 }

@@ -11,17 +11,17 @@
 // 管理员“用户端预览”开关 Cookie（仅影响路由放行，不授予额外数据权限）
 export const AdminPreviewCookieName = 'admin_user_preview'
 
-// 未登录入口：未登录可访问；已登录用户访问时跳转到 dashboard 或 activate
+// 未登录入口：未登录可访问；已登录用户访问时跳转到 练习页或会员中心
 const authEntryRoutes = ['/login', '/register', '/forgot-password', '/reset-password']
 
 // 公开路由：任何人可访问，不要求登录
-const publicRoutes = ['/terms', '/privacy']
+const publicRoutes = ['/terms', '/privacy', '/pricing']
 
 // 需要登录但不需要许可证的路由
-const loginRequiredRoutes = ['/activate', '/settings', '/support']
+const loginRequiredRoutes = ['/activate', '/billing', '/dashboard', '/settings', '/support']
 
 // 需要有效许可证的路由
-const activeLicenseRequiredRoutes = ['/dashboard', '/practice', '/history', '/write', '/result', '/analytics', '/study-plan', '/ielts']
+const activeLicenseRequiredRoutes = ['/practice', '/history', '/write', '/result', '/analytics', '/study-plan', '/ielts']
 
 // 需要登录的路由（不包括 authEntryRoutes）
 const loginProtectedRoutes = [...loginRequiredRoutes, ...activeLicenseRequiredRoutes]
@@ -111,13 +111,13 @@ export function resolveAuthRedirect({
   if (route.isAdminRoute) {
     if (!isAuthenticated) return '/admin/login'
     if (role !== 'admin') return '/admin/login?reason=not_admin'
-    // 允许直接访问 /admin 展示总览；登录后的默认落点仍是激活码管理。
+    // 允许直接访问 /admin 展示总览；登录后默认进入总览。
     return null
   }
 
   // 管理员登录页
   if (route.isAdminLoginRoute) {
-    return isAuthenticated && role === 'admin' ? '/admin/licenses' : null
+    return isAuthenticated && role === 'admin' ? '/admin' : null
   }
 
   // 公开路由：任何人可访问
@@ -133,9 +133,9 @@ export function resolveAuthRedirect({
     }
     // 已登录用户跳转到合理页面
     if (role === 'admin') {
-      return '/admin/licenses'
+      return '/admin'
     }
-    return licenseActive ? '/practice' : '/activate'
+    return licenseActive ? '/practice' : '/billing'
   }
 
   // 以下路由需要登录
@@ -149,17 +149,17 @@ export function resolveAuthRedirect({
   // 显式开启“用户端预览”时放行，便于管理员以自己的账号检查用户界面。
   if (role === 'admin') {
     if (adminPreview) return null
-    return route.isLoginProtectedRoute ? '/admin/licenses' : null
+    return route.isLoginProtectedRoute ? '/admin' : null
   }
 
-  // 激活页：已有许可证则跳转到仪表板
-  if (pathname === '/activate' && licenseActive) {
-    return '/practice'
+  // Historical account and activation URLs now converge on the member center.
+  if (['/activate', '/dashboard', '/settings'].includes(pathname)) {
+    return '/billing'
   }
 
-  // 需要许可证的路由：没有许可证则跳转到激活页
+  // 需要许可证的路由：没有有效权益则跳转到会员中心
   if (route.isActiveLicenseRoute && !licenseActive) {
-    return `/activate?next=${encodeURIComponent(`${pathname}${search}`)}`
+    return `/billing?next=${encodeURIComponent(`${pathname}${search}`)}`
   }
 
   return null

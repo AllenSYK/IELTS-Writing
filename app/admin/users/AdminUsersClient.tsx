@@ -1,6 +1,7 @@
 'use client'
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { MEMBERSHIP_SOURCE_LABELS, type AdminMembership } from '@/lib/admin/membership'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
@@ -8,14 +9,11 @@ import {
   CheckCircle2,
   Eye,
   KeyRound,
-  Loader2,
   RefreshCw,
   Search,
-  ShieldCheck,
   Trash2,
   UserCog,
   LockKeyhole,
-  X
 } from 'lucide-react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminBadge, AdminEmpty, AdminError, AdminTableSkeleton, formatAdminDate } from '@/components/admin/AdminUI'
@@ -52,6 +50,7 @@ type UserRow = {
   emailConfirmedAt: string | null
   bannedUntil: string | null
   role: string
+  membership: AdminMembership
   licenseStatus: string
   licenseExpiresAt: string | null
   plan: string | null
@@ -64,6 +63,7 @@ type UserRow = {
 }
 
 type UserDetail = {
+  membership: AdminMembership
   user: {
     id: string
     email?: string
@@ -120,29 +120,12 @@ export function AdminUsersClient() {
   const [submitting, setSubmitting] = useState(false)
   const [selected, setSelected] = useState<UserRow | null>(null)
   const [detail, setDetail] = useState<UserDetail | null>(null)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
-  const [bindCode, setBindCode] = useState('')
-  const [batchOpen, setBatchOpen] = useState(false)
-  const [batchMode, setBatchMode] = useState<'existing' | 'new'>('existing')
-  const [batchCode, setBatchCode] = useState('')
-  const [batchPlan, setBatchPlan] = useState('standard')
-  const [batchDays, setBatchDays] = useState(adminSettings.defaultDurationDays)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
-  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; results?: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> } | null>(null)
-  const [batchResults, setBatchResults] = useState<Array<{ ok: boolean; email: string | null; message?: string; userId: string }> | null>(null)
   const focusedDetailRef = useRef('')
-
-  // 批量发放默认天数跟随系统设置（仅在用户未修改时覆盖）。
-  const batchDaysTouchedRef = useRef(false)
-  useEffect(() => {
-    if (batchDaysTouchedRef.current) return
-    setBatchDays(adminSettings.defaultDurationDays)
-  }, [adminSettings.defaultDurationDays])
 
   const openDetail = useCallback(async (user: UserRow) => {
     setSelected(user)
     setDetail(null)
-    setBindCode('')
     try {
       const response = await fetch(`/api/admin/users/${user.id}`, { cache: 'no-store' })
       const data = await response.json().catch(() => ({}))
@@ -165,14 +148,9 @@ export function AdminUsersClient() {
     isLoading,
     isValidating,
     mutate
-  } = useSWR<UsersResponse>(usersKey, adminJsonFetcher, { keepPreviousData: true })
+  } = useSWR<UsersResponse>(usersKey, adminJsonFetcher, { keepPreviousData: true, revalidateOnFocus: true, refreshInterval: 30_000 })
   const users = usersData?.users || EMPTY_USERS
   const loading = !usersData && isLoading
-  const activeSelectedIds = useMemo(
-    () => new Set([...selectedIds].filter((id) => users.some((user) => user.id === id && user.role !== 'admin'))),
-    [selectedIds, users]
-  )
-
   useEffect(() => {
     if (!focusedUserId || !usersData || focusedDetailRef.current === focusedUserId) return
     const focused = usersData.users.find((user) => user.id === focusedUserId)
@@ -229,209 +207,6 @@ export function AdminUsersClient() {
     }
   }
 
-  async function bindUser(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!selected || !bindCode.trim()) return
-    await updateUser(selected.id, { action: 'bind', licenseCode: bindCode.trim() }, '激活码已绑定')
-  }
-
-  async function batchBind(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const targets = users.filter((user) => activeSelectedIds.has(user.id))
-    if (!targets.length) return
-    
-    // 防止重复提交
-    if (submitting) return
-    
-    setSubmitting(true)
-    setBatchProgress({ current: 0, total: targets.length })
-    
-    try {
-      let codes: string[] = []
-      if (batchMode === 'new') {
-        const createResponse = await fetch('/api/admin/licenses/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            count: targets.length,
-            plan: batchPlan,
-            durationDays: batchDays,
-            maxActivations: 1,
-            expiresAt: null,
-            note: `批量绑定 ${targets.length} 位用户`
-          })
-        })
-        const created = await createResponse.json().catch(() => ({}))
-        if (!createResponse.ok || !created.success) throw new Error(created.message || '批量生成激活码失败。')
-        codes = (created.codes || []).map((item: { code: string }) => item.code)
-      } else {
-        if (!batchCode.trim()) throw new Error('请输入现有完整激活码。')
-        codes = targets.map(() => batchCode.trim())
-      }
-
-      // 串行处理，逐个绑定并更新进度
-      const results: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> = []
-      
-      for (let i = 0; i < targets.length; i++) {
-        const user = targets[i]
-        setBatchProgress(prev => prev ? { ...prev, current: i + 1 } : null)
-        
-        try {
-          const response = await fetch(`/api/admin/users/${user.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'bind', licenseCode: codes[i] })
-          })
-          const data = await response.json().catch(() => ({}))
-          results.push({ 
-            ok: response.ok && data.success, 
-            email: user.email, 
-            message: data.message,
-            userId: user.id
-          })
-        } catch {
-          results.push({ 
-            ok: false, 
-            email: user.email, 
-            message: '请求失败',
-            userId: user.id
-          })
-        }
-      }
-      
-      const succeeded = results.filter((item) => item.ok).length
-      const failed = results.filter((item) => !item.ok).length
-      
-      // 保存结果以便重试失败项
-      setBatchResults(results)
-      
-      if (failed === 0) {
-        pushToast({
-          kind: 'success',
-          title: `批量绑定完成：成功 ${succeeded} 项`
-        })
-        setBatchOpen(false)
-        setSelectedIds(new Set())
-        setBatchResults(null)
-      } else {
-        pushToast({
-          kind: 'warning',
-          title: `批量绑定完成：成功 ${succeeded}，失败 ${failed}`,
-          message: '可点击"重试失败项"按钮重新处理失败的绑定。'
-        })
-      }
-      
-      await mutate().catch(() => undefined)
-    } catch (caught) {
-      pushToast({ kind: 'error', title: '批量绑定失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
-    } finally {
-      setSubmitting(false)
-      setBatchProgress(null)
-    }
-  }
-
-  // 重试失败项
-  async function retryFailedBindings() {
-    if (!batchResults || submitting) return
-    
-    const failedItems = batchResults.filter(r => !r.ok)
-    if (!failedItems.length) return
-    
-    setSubmitting(true)
-    setBatchProgress({ current: 0, total: failedItems.length })
-    
-    try {
-      // 如果是现有模式，使用同一个激活码
-      const code = batchMode === 'existing' ? batchCode.trim() : ''
-      
-      const newResults: Array<{ ok: boolean; email: string | null; message?: string; userId: string }> = []
-      
-      for (let i = 0; i < failedItems.length; i++) {
-        const item = failedItems[i]
-        setBatchProgress(prev => prev ? { ...prev, current: i + 1 } : null)
-        
-        // 如果是新建模式，需要为每个用户生成新的激活码
-        let activationCode = code
-        if (batchMode === 'new') {
-          try {
-            const createResponse = await fetch('/api/admin/licenses/create', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                count: 1,
-                plan: batchPlan,
-                durationDays: batchDays,
-                maxActivations: 1,
-                expiresAt: null,
-                note: `重试绑定 ${item.email}`
-              })
-            })
-            const created = await createResponse.json().catch(() => ({}))
-            if (createResponse.ok && created.success && created.codes?.[0]) {
-              activationCode = created.codes[0].code
-            }
-          } catch {
-            // 生成失败，跳过
-            newResults.push({ ...item, message: '生成激活码失败' })
-            continue
-          }
-        }
-        
-        if (!activationCode) {
-          newResults.push({ ...item, message: '无可用激活码' })
-          continue
-        }
-        
-        try {
-          const response = await fetch(`/api/admin/users/${item.userId}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'bind', licenseCode: activationCode })
-          })
-          const data = await response.json().catch(() => ({}))
-          newResults.push({ 
-            ok: response.ok && data.success, 
-            email: item.email, 
-            message: data.message,
-            userId: item.userId
-          })
-        } catch {
-          newResults.push({ ...item, message: '请求失败' })
-        }
-      }
-      
-      // 合并结果
-      const allResults = [
-        ...batchResults.filter(r => r.ok), // 之前成功的
-        ...newResults
-      ]
-      setBatchResults(allResults)
-      
-      const succeeded = newResults.filter(r => r.ok).length
-      const stillFailed = newResults.filter(r => !r.ok).length
-      
-      if (stillFailed === 0) {
-        pushToast({ kind: 'success', title: `重试完成：全部 ${succeeded} 项成功` })
-        setBatchOpen(false)
-        setSelectedIds(new Set())
-        setBatchResults(null)
-      } else {
-        pushToast({
-          kind: 'warning',
-          title: `重试完成：成功 ${succeeded}，仍失败 ${stillFailed}`,
-          message: '可继续重试剩余失败项。'
-        })
-      }
-      
-      await mutate().catch(() => undefined)
-    } catch (caught) {
-      pushToast({ kind: 'error', title: '重试失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
-    } finally {
-      setSubmitting(false)
-      setBatchProgress(null)
-    }
-  }
-
   async function runConfirm() {
     const action = confirm?.action
     setConfirm(null)
@@ -443,12 +218,8 @@ export function AdminUsersClient() {
       <AdminPageHeader
         eyebrow="USER MANAGEMENT"
         title="用户管理"
-        description="查看用户账号、角色、邮箱验证、激活状态、套餐与账号有效期。"
-        actions={(
-          <button className="admin-primary-button" type="button" onClick={() => setBatchOpen(true)} disabled={!activeSelectedIds.size}>
-            <KeyRound size={16} />批量绑定激活码{activeSelectedIds.size ? `（${activeSelectedIds.size}）` : ''}
-          </button>
-        )}
+        description="查看账号、会员来源、订阅、试用和实际权益到期时间。"
+
       />
 
       <section className="admin-panel admin-table-panel">
@@ -459,8 +230,8 @@ export function AdminUsersClient() {
           </label>
           <div className="admin-filter-tabs" role="tablist" aria-label="用户筛选">
             {[
-              ['all', '全部用户'], ['admin', '管理员'], ['active', '已激活'], ['inactive', '未激活'],
-              ['expired', '已过期'], ['disabled', '已禁用'], ['unbound', '未绑定激活码']
+              ['all', '全部用户'], ['admin', '管理员'], ['active', '有效会员'], ['inactive', '未开通'],
+              ['expired', '已过期'], ['disabled', '已禁用'], ['trial', '试用中'], ['subscription', '订阅会员'], ['prepaid', '单次付款'], ['unbound', '无历史绑定']
             ].map(([value, label]) => (
               <button key={value} className={filter === value ? 'is-active' : ''} type="button" onClick={() => { setFilter(value); setPage(1) }}>{label}</button>
             ))}
@@ -469,14 +240,6 @@ export function AdminUsersClient() {
             <RefreshCw className={isValidating ? 'admin-spin' : ''} size={17} />
           </button>
         </div>
-
-        {activeSelectedIds.size ? (
-          <div className="admin-selection-bar">
-            <span>已选择 <strong>{activeSelectedIds.size}</strong> 位用户</span>
-            <button className="admin-primary-button compact" type="button" onClick={() => setBatchOpen(true)}><KeyRound size={15} />批量绑定</button>
-            <button className="admin-text-button" type="button" onClick={() => setSelectedIds(new Set())}>取消选择</button>
-          </div>
-        ) : null}
 
         {usersData?.truncated ? (
           <div className="admin-selection-bar">
@@ -490,9 +253,8 @@ export function AdminUsersClient() {
             <table className="admin-table">
               <thead>
                 <tr>
-                  <th className="admin-checkbox-column"><span className="sr-only">选择</span></th>
-                  <th>邮箱</th><th>角色</th><th>注册时间</th><th>邮箱验证状态</th><th>激活状态</th>
-                  <th>当前套餐</th><th>账号到期时间</th><th>绑定情况</th><th>操作</th>
+                  <th>邮箱</th><th>角色</th><th>注册时间</th><th>邮箱验证状态</th><th>会员状态</th>
+                  <th>当前套餐</th><th>账号到期时间</th><th>会员来源</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -501,28 +263,14 @@ export function AdminUsersClient() {
                   const accountStatus = banned ? 'disabled' : user.role === 'admin' ? 'admin' : user.licenseStatus
                   return (
                     <tr key={user.id}>
-                      <td className="admin-checkbox-column" data-label="选择">
-                        <input
-                          type="checkbox"
-                          checked={activeSelectedIds.has(user.id)}
-                          disabled={user.role === 'admin'}
-                          onChange={(event) => setSelectedIds((current) => {
-                            const next = new Set(current)
-                            if (event.target.checked) next.add(user.id)
-                            else next.delete(user.id)
-                            return next
-                          })}
-                          aria-label={user.role === 'admin' ? `${user.accountLabel} 是管理员，不能绑定普通许可` : `选择 ${user.accountLabel}`}
-                        />
-                      </td>
                       <td data-label="账号"><strong>{user.accountLabel}</strong><small className="admin-id-cell">{user.id}</small></td>
                       <td data-label="角色"><AdminBadge value={user.role} /></td>
                       <td data-label="注册时间">{formatAdminDate(user.createdAt)}</td>
                       <td data-label="邮箱验证状态"><span className={`admin-status ${user.emailConfirmedAt ? 'good' : 'warning'}`}>{user.emailConfirmedAt ? '已验证' : '未验证'}</span></td>
-                      <td data-label="激活状态"><AdminBadge value={accountStatus} /></td>
+                      <td data-label="会员状态"><AdminBadge value={accountStatus} /></td>
                       <td data-label="当前套餐">{user.plan ? <span className="admin-plan-pill">{user.plan}</span> : '—'}</td>
                       <td data-label="账号到期时间">{formatAdminDate(user.licenseExpiresAt)}</td>
-                      <td data-label="绑定情况"><span className={`admin-status ${user.isBound ? 'good' : 'neutral'}`}>{user.isBound ? '已绑定激活码' : '未绑定激活码'}</span></td>
+                      <td data-label="会员来源"><strong>{MEMBERSHIP_SOURCE_LABELS[user.membership.source]}</strong><small className="admin-id-cell">{user.membership.source === 'trial' ? user.membership.trialOffer === 'card' ? '绑卡 3 天' : '免绑卡 1 天' : user.membership.autoRenew ? '自动续费中' : user.membership.source === 'subscription' ? '已取消续费' : '不自动续费'}</small></td>
                       <td data-label="操作">
                         <div className="admin-row-actions">
                           <button className="admin-icon-button" type="button" onClick={() => void openDetail(user)} aria-label="查看详情"><Eye size={15} /></button>
@@ -561,7 +309,7 @@ export function AdminUsersClient() {
         ) : null}
       </section>
 
-      <CenteredDialog open={Boolean(selected)} title="用户详情" description="查看用户账号本身；详细绑定历史在邮箱绑定页面管理。" className="admin-detail-dialog" onClose={() => { setSelected(null); setDetail(null) }}>
+      <CenteredDialog open={Boolean(selected)} title="用户详情" description="查看账号和当前会员权益；订阅、付款与试用记录可进入会员管理查看。" className="admin-detail-dialog" onClose={() => { setSelected(null); setDetail(null) }}>
         {selected ? (
           <div className="admin-detail-stack">
             <section className="admin-user-detail-hero">
@@ -576,9 +324,13 @@ export function AdminUsersClient() {
                   <div><dt>邮箱验证</dt><dd>{detail.user.email_confirmed_at ? '已验证' : '未验证'}</dd></div>
                   <div><dt>注册时间</dt><dd>{formatAdminDate(detail.user.created_at)}</dd></div>
                   <div><dt>最近登录</dt><dd>{formatAdminDate(detail.user.last_sign_in_at)}</dd></div>
-                  <div><dt>账号激活状态</dt><dd><AdminBadge value={detail.profile.license_status} /></dd></div>
-                  <div><dt>账号到期时间</dt><dd>{formatAdminDate(detail.profile.license_expires_at)}<small>由当前有效邮箱绑定决定</small></dd></div>
+                  <div><dt>会员状态</dt><dd><AdminBadge value={detail.membership.status} /></dd></div>
+                  <div><dt>账号到期时间</dt><dd>{formatAdminDate(detail.membership.expiresAt)}<small>{MEMBERSHIP_SOURCE_LABELS[detail.membership.source]}</small></dd></div>
                 </dl>
+                <section className="admin-binding-summary">
+                  <div><span className="admin-list-icon"><KeyRound size={18} /></span><div><strong>会员、付款与试用</strong><p>试用机会：{detail.membership.trialState === 'used' ? '已使用' : detail.membership.trialState === 'reserved' ? '已预留，尚未开通' : '未领取'}；{detail.membership.autoRenew ? '自动续费中' : '不自动续费'}。</p></div></div>
+                  <a className="admin-primary-button" href={`/admin/memberships?userId=${selected.id}`}>查看会员记录</a>
+                </section>
                 <section>
                   <div className="admin-panel-heading">
                     <div><p className="admin-eyebrow">EMAIL BINDINGS</p><h3>邮箱绑定记录</h3></div>
@@ -594,13 +346,6 @@ export function AdminUsersClient() {
                     </div>
                     <a className="admin-primary-button" href={`/admin/bindings?userId=${selected.id}`}>查看绑定历史</a>
                   </section>
-                  {!selected.isBound ? (
-                    <form className="admin-inline-bind" onSubmit={bindUser}>
-                      <div><strong>该用户尚未绑定激活码</strong><p>输入完整激活码后手动绑定。</p></div>
-                      <label className="admin-field"><span>完整激活码</span><input value={bindCode} onChange={(event) => setBindCode(event.target.value)} placeholder="IELTS-XXXX-XXXX-XXXX" required /></label>
-                      <button className="admin-primary-button" type="submit" disabled={submitting}>{submitting ? <Loader2 className="admin-spin" size={16} /> : <KeyRound size={16} />}绑定激活码</button>
-                    </form>
-                  ) : null}
                 </section>
                 <section>
                   <div className="admin-panel-heading"><div><p className="admin-eyebrow">ACCOUNT CONTROL</p><h3>账号控制</h3></div></div>
@@ -651,99 +396,6 @@ export function AdminUsersClient() {
             )}
           </div>
         ) : null}
-      </CenteredDialog>
-
-      <CenteredDialog 
-        open={batchOpen} 
-        title="批量绑定激活码" 
-        description={`为已选择的 ${activeSelectedIds.size} 位用户分配使用权限。`} 
-        className="admin-create-dialog" 
-        onClose={() => {
-          if (!submitting) {
-            setBatchOpen(false)
-            setBatchResults(null)
-            setBatchProgress(null)
-          }
-        }} 
-        footer={(
-          <>
-            <button className="admin-secondary-button" type="button" onClick={() => {
-              setBatchOpen(false)
-              setBatchResults(null)
-              setBatchProgress(null)
-            }} disabled={submitting}>取消</button>
-            {batchResults && batchResults.some(r => !r.ok) ? (
-              <button className="admin-primary-button" type="button" onClick={retryFailedBindings} disabled={submitting}>
-                {submitting ? <Loader2 className="admin-spin" size={16} /> : <RefreshCw size={16} />}
-                {submitting ? '正在重试' : `重试失败项（${batchResults.filter(r => !r.ok).length}）`}
-              </button>
-            ) : (
-              <button className="admin-primary-button" type="submit" form="batch-bind-form" disabled={submitting || !activeSelectedIds.size}>
-                {submitting ? <Loader2 className="admin-spin" size={16} /> : <ShieldCheck size={16} />}
-                {submitting ? '正在绑定' : '开始批量绑定'}
-              </button>
-            )}
-          </>
-        )}
-      >
-        {batchProgress ? (
-          <div className="admin-batch-progress">
-            <div className="admin-progress-bar">
-              <div 
-                className="admin-progress-fill" 
-                style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-              />
-            </div>
-            <p className="admin-progress-text">
-              正在处理 {batchProgress.current} / {batchProgress.total} ...
-            </p>
-          </div>
-        ) : batchResults ? (
-          <div className="admin-batch-results">
-            <div className="admin-batch-summary">
-              <div className="admin-batch-stat success">
-                <CheckCircle2 size={18} />
-                <span>成功 <strong>{batchResults.filter(r => r.ok).length}</strong></span>
-              </div>
-              <div className="admin-batch-stat failed">
-                <X size={18} />
-                <span>失败 <strong>{batchResults.filter(r => !r.ok).length}</strong></span>
-              </div>
-            </div>
-            {batchResults.some(r => !r.ok) && (
-              <div className="admin-batch-failed-list">
-                <h4>失败详情</h4>
-                <ul>
-                  {batchResults.filter(r => !r.ok).map((r, i) => (
-                    <li key={i}>
-                      <span>{r.email || r.userId}</span>
-                      <small>{r.message || '操作失败'}</small>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        ) : (
-          <form id="batch-bind-form" className="admin-generate-form" onSubmit={batchBind}>
-            <div className="admin-segmented">
-              <button className={batchMode === 'existing' ? 'is-active' : ''} type="button" onClick={() => setBatchMode('existing')}>使用现有激活码</button>
-              <button className={batchMode === 'new' ? 'is-active' : ''} type="button" onClick={() => setBatchMode('new')}>新生成激活码</button>
-            </div>
-            {batchMode === 'existing' ? (
-              <label className="admin-field"><span>完整激活码</span><input value={batchCode} onChange={(event) => setBatchCode(event.target.value)} placeholder="激活码需有足够的最大激活次数" required /></label>
-            ) : (
-              <div className="admin-form-grid">
-                <label className="admin-field"><span>套餐</span><select value={batchPlan} onChange={(event) => setBatchPlan(event.target.value)}><option value="standard">Standard</option><option value="pro">Pro</option><option value="premium">Premium</option><option value="admin">Admin</option></select></label>
-                <label className="admin-field"><span>账号有效天数</span><input type="number" min={1} max={3650} value={batchDays} onChange={(event) => { batchDaysTouchedRef.current = true; setBatchDays(Number(event.target.value)) }} /></label>
-              </div>
-            )}
-            <div className="admin-confirm-summary">
-              <strong>将处理 {activeSelectedIds.size} 位用户</strong>
-              <p>{batchMode === 'existing' ? '所有用户尝试绑定同一个现有激活码，受最大激活次数限制。' : '系统会为每位用户生成一个独立激活码并立即绑定。'}</p>
-            </div>
-          </form>
-        )}
       </CenteredDialog>
 
       <ConfirmDialog

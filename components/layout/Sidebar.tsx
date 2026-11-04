@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { BrandLogo } from '@/components/BrandLogo'
 import { MaterialIcon } from '@/components/app-ui'
 import { handleRovingNavKeyDown } from '@/components/interaction-system'
@@ -23,7 +24,7 @@ const mainItems: SidebarItem[] = [
   { id: 'error-notebook', href: '/study-plan/errors', label: '错题本', icon: 'bug_report', prefetch: true, match: (pathname) => pathname.startsWith('/study-plan/errors') },
   { id: 'history', href: '/history', label: '历史记录', icon: 'history', prefetch: true, match: (pathname) => pathname.startsWith('/history') },
   { id: 'analytics', href: '/analytics', label: '学习分析', icon: 'analytics', prefetch: true, match: (pathname) => pathname.startsWith('/analytics') },
-  { id: 'home', href: '/dashboard', label: '账号中心', icon: 'manage_accounts', prefetch: true, match: (pathname) => pathname === '/dashboard' || pathname.startsWith('/settings') }
+  { id: 'home', href: '/billing', label: '会员中心', icon: 'workspace_premium', prefetch: false, match: (pathname) => ['/billing', '/dashboard', '/settings'].some((route) => pathname.startsWith(route)) }
 ]
 
 const supportItems: SidebarItem[] = [
@@ -53,6 +54,9 @@ export function Sidebar() {
   const pathname = usePathname()
   const online = useOnlineLabel()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const menuRef = useRef<HTMLButtonElement>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
 
   const activeId = useMemo(() => {
     const allItems = [...mainItems, ...supportItems]
@@ -68,15 +72,47 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!mobileOpen) return
+    const menu = menuRef.current
+    const appRoot = document.querySelector<HTMLElement>('.app-route-root')
+    const wasInert = appRoot?.inert ?? false
     const previousOverflow = document.body.style.overflow
+    const viewport = window.matchMedia('(max-width: 900px)')
+    if (appRoot) appRoot.inert = true
     document.body.style.overflow = 'hidden'
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileOpen(false)
+    const frame = window.requestAnimationFrame(() => closeRef.current?.focus({ preventScroll: true }))
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMobileOpen(false)
+        return
+      }
+      if (event.key !== 'Tab' || !drawerRef.current) return
+      const drawer = drawerRef.current
+      const focusables = Array.from(drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'))
+      const first = focusables[0]
+      const last = focusables.at(-1)
+      if (!first || !last) return
+      const outside = !drawer.contains(document.activeElement)
+      if (event.shiftKey && (document.activeElement === first || outside)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (document.activeElement === last || outside)) {
+        event.preventDefault()
+        first.focus()
+      }
     }
-    window.addEventListener('keydown', closeOnEscape)
+    const closeOnDesktop = (event: MediaQueryListEvent) => {
+      if (!event.matches) setMobileOpen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    viewport.addEventListener('change', closeOnDesktop)
     return () => {
+      window.cancelAnimationFrame(frame)
+      if (appRoot) appRoot.inert = wasInert
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('keydown', handleKeyDown)
+      viewport.removeEventListener('change', closeOnDesktop)
+      if (menu?.isConnected && menu.getClientRects().length) menu.focus({ preventScroll: true })
     }
   }, [mobileOpen])
 
@@ -93,6 +129,7 @@ export function Sidebar() {
       </Link>
 
       <button
+        ref={menuRef}
         className="sidebar-mobile-menu"
         type="button"
         aria-label={mobileOpen ? '关闭主导航' : '打开主导航'}
@@ -110,6 +147,7 @@ export function Sidebar() {
             className={`sidebar-link ${activeId === item.id ? 'is-active' : ''}`}
             href={item.href}
             prefetch={item.prefetch}
+            aria-label={item.label}
             aria-current={activeId === item.id ? 'page' : undefined}
           >
             <MaterialIcon name={item.icon} filled={activeId === item.id} />
@@ -134,6 +172,7 @@ export function Sidebar() {
               className={`sidebar-link sidebar-link-small ${activeId === item.id ? 'is-active' : ''}`}
               href={item.href}
               prefetch={item.prefetch}
+              aria-label={item.label}
               aria-current={activeId === item.id ? 'page' : undefined}
             >
               <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
@@ -145,24 +184,26 @@ export function Sidebar() {
         <p className="sidebar-copyright">© 2026 {BRAND_NAME}</p>
       </div>
 
-      {mobileOpen ? (
+      {mobileOpen ? createPortal(
         <>
           <button
             className="sidebar-mobile-backdrop"
             type="button"
+            tabIndex={-1}
             aria-label="关闭主导航"
             onClick={() => setMobileOpen(false)}
           />
           <div
+            ref={drawerRef}
             id="mobile-main-navigation"
             className="sidebar-mobile-drawer"
             role="dialog"
             aria-modal="true"
-            aria-label="页面导航"
+            aria-labelledby="mobile-navigation-title"
           >
             <div className="sidebar-mobile-drawer-heading">
-              <strong>前往页面</strong>
-              <button type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)}>
+              <h2 id="mobile-navigation-title">前往页面</h2>
+              <button ref={closeRef} type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)}>
                 <MaterialIcon name="close" size={22} />
               </button>
             </div>
@@ -175,6 +216,7 @@ export function Sidebar() {
                   prefetch={item.prefetch}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
+                  onClick={() => setMobileOpen(false)}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} />
                   <span>{item.label}</span>
@@ -190,6 +232,7 @@ export function Sidebar() {
                   prefetch={item.prefetch}
                   aria-label={item.label}
                   aria-current={activeId === item.id ? 'page' : undefined}
+                  onClick={() => setMobileOpen(false)}
                 >
                   <MaterialIcon name={item.icon} filled={activeId === item.id} size={20} />
                   <span>{item.label}</span>
@@ -197,7 +240,8 @@ export function Sidebar() {
               ))}
             </nav>
           </div>
-        </>
+        </>,
+        document.body
       ) : null}
     </aside>
   )

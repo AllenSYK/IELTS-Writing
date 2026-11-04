@@ -193,7 +193,7 @@ export function AdminSettingsClient() {
       <AdminPageHeader
         eyebrow="ADMIN SETTINGS"
         title="系统设置"
-        description="配置激活码默认规则、提醒窗口和后台数据展示偏好；AI 服务请前往模型配置。"
+        description="配置历史权益提醒与后台数据展示偏好；订阅和试用记录请前往会员管理。"
       />
 
       {error && !isLoading ? (
@@ -228,51 +228,9 @@ export function AdminSettingsClient() {
           <section className="admin-panel">
             <div className="admin-settings-heading">
               <span><KeyRound size={20} /></span>
-              <div><h2>激活码默认值</h2><p>生成弹窗可使用这些默认规则，管理员仍可逐次修改。</p></div>
+              <div><h2>会员与历史权益</h2><p>新会员通过在线订阅、单次付款或免费试用开通。历史授权继续按原有效期保留；激活码生成和新绑定已停用。</p></div>
             </div>
-            <div className="admin-form-grid">
-              <label className="admin-field">
-                <span>默认套餐</span>
-                <select 
-                  value={settings.defaultPlan} 
-                  onChange={(event) => updateSetting('defaultPlan', event.target.value)}
-                >
-                  <option value="standard">Standard</option>
-                  <option value="pro">Pro</option>
-                  <option value="premium">Premium</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-              <label className="admin-field">
-                <span>默认账号有效天数</span>
-                <input 
-                  type="number" 
-                  min={1} 
-                  max={3650} 
-                  value={settings.defaultDurationDays} 
-                  onChange={(event) => updateSetting('defaultDurationDays', Number(event.target.value))}
-                  aria-invalid={!!validationErrors.defaultDurationDays}
-                />
-                {validationErrors.defaultDurationDays && (
-                  <small className="admin-field-error">{validationErrors.defaultDurationDays}</small>
-                )}
-                <small>从用户成功激活当天开始计算。</small>
-              </label>
-              <label className="admin-field">
-                <span>默认最大激活次数</span>
-                <input 
-                  type="number" 
-                  min={1} 
-                  max={100} 
-                  value={settings.defaultMaxActivations} 
-                  onChange={(event) => updateSetting('defaultMaxActivations', Number(event.target.value))}
-                  aria-invalid={!!validationErrors.defaultMaxActivations}
-                />
-                {validationErrors.defaultMaxActivations && (
-                  <small className="admin-field-error">{validationErrors.defaultMaxActivations}</small>
-                )}
-              </label>
-            </div>
+            <a className="admin-secondary-button" href="/admin/memberships">查看会员与试用记录</a>
           </section>
 
           <section className="admin-panel">

@@ -163,8 +163,7 @@ export default function ErrorNotebookPage() {
       <section className="analytics-main" style={{ paddingTop: 40 }}>
         <header className="page-section-header">
           <div>
-            <h1 className="ui-title-display">个人错误本</h1>
-            <p className="ui-body-md" style={{ marginTop: 4 }}>
+            <p className="ui-body-md">
               自动汇总你在雅思写作中反复出现的错误，针对性复习。
             </p>
           </div>
@@ -255,7 +254,7 @@ export default function ErrorNotebookPage() {
             <MaterialIcon name="check_circle" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>暂未发现重复错误</h2>
             <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
-              已分析 {backfillStatus?.extractedRecords ?? 0} 篇作文，暂未发现可归纳的重复错误。完成更多写作后，错误本会持续更新。
+              已分析 {backfillStatus?.extractedRecords ?? 0} 篇作文，暂未发现可归纳的重复错误。完成更多写作后，错题本会持续更新。
             </p>
           </GlassPanel>
         )}
@@ -265,7 +264,7 @@ export default function ErrorNotebookPage() {
             <MaterialIcon name="analytics" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>分析历史作文</h2>
             <p className="ui-body-md" style={{ maxWidth: 400, margin: '8px auto' }}>
-              你已有 {backfillStatus?.totalRecords ?? 0} 篇历史写作记录，但尚未生成个人错误本。系统可以分析过去的批改结果，整理你反复出现的问题。
+              你已有 {backfillStatus?.totalRecords ?? 0} 篇历史写作记录，但尚未生成错题本。系统可以分析过去的批改结果，整理你反复出现的问题。
             </p>
             <button
               className="ui-primary-button"
@@ -716,8 +715,10 @@ function ErrorReviewDialog({ pattern, onClose, onComplete }: {
 
         {!showResult ? (
           <div>
-            <span className="ui-label">你的改正：</span>
+            <label className="ui-label" htmlFor="error-review-answer">你的改正：</label>
             <textarea
+              id="error-review-answer"
+              className="error-review-answer"
               value={userAnswer}
               onChange={(e) => setUserAnswer(e.target.value)}
               placeholder="输入你的改正版本…"

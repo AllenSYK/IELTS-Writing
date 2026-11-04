@@ -178,10 +178,11 @@ test('writing heatmap aggregates successful evaluation timestamps in Asia/Shangh
   ])
 })
 
-test('user activity API and dashboard derive identity on the server and do not request recent records', async () => {
-  const [routeSource, dashboardSource, activitySource, heatmapSource] = await Promise.all([
+test('member center and activity API derive identity on the server and do not request recent records', async () => {
+  const [routeSource, dashboardSource, billingClient, activitySource, heatmapSource] = await Promise.all([
     readFile(new URL('../app/api/user/writing-activity/route.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../app/dashboard/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../app/billing/page.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../components/billing/BillingClient.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../lib/writing-activity.ts', import.meta.url), 'utf8'),
     readFile(new URL('../components/dashboard/WritingActivityHeatmap.tsx', import.meta.url), 'utf8')
   ])
@@ -190,7 +191,8 @@ test('user activity API and dashboard derive identity on the server and do not r
   assert.match(routeSource, /AllowedRanges/)
   assert.match(activitySource, /\.eq\('user_id', userId\)/)
   assert.doesNotMatch(dashboardSource, /最近批改记录|recentUsage|dashboard-usage-list/)
-  assert.match(dashboardSource, /WritingActivityHeatmap userId=\{user\.id\}/)
+  assert.match(dashboardSource, /BillingClient userId=\{user\.id\}/)
+  assert.match(billingClient, /WritingActivityHeatmap userId=\{userId\}/)
   assert.match(heatmapSource, /\['writing-activity', userId, range\]/)
   assert.match(heatmapSource, /\{ days: 365, label: '一年' \}/)
   assert.match(heatmapSource, /\{ days: 183, label: '半年' \}/)

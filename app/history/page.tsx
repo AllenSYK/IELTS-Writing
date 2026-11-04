@@ -186,7 +186,7 @@ export default function HistoryPage() {
     { id: 'all', label: 'IELTS Academic' },
     { id: 'task1', label: 'IELTS Task 1' },
     { id: 'task2', label: 'IELTS Task 2' },
-    { id: 'mock', label: '完整测试' }
+    { id: 'mock', label: '完整模考' }
   ]
 
   const scoreOptions: Array<{ id: ScoreFilter; label: string }> = [
@@ -209,7 +209,7 @@ export default function HistoryPage() {
           kind: 'warning',
           title: '记录已删除',
           message: '短时间内可以撤销。',
-          actionLabel: 'Undo',
+          actionLabel: '撤销',
           onAction: () => {
             void restoreWritingRecord(userId, deleted).then(() => {
               pushToast({ kind: 'success', title: '已恢复记录' })
@@ -350,7 +350,7 @@ export default function HistoryPage() {
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="删除这条练习记录？"
-        message="删除后会先从列表移除，短时间内可以通过 Undo 恢复。"
+        message="删除后会先从列表移除，短时间内可以点击“撤销”恢复。"
         confirmLabel="删除"
         cancelLabel="取消"
         tone="danger"

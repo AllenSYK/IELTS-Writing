@@ -1,3 +1,4 @@
+import { loadAdminBillingCounts } from '@/lib/admin/membership-data'
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 
@@ -8,20 +9,26 @@ export async function GET(request: Request) {
     const { service } = await requireAdminService()
     
     // 使用数据库 RPC 进行精确统计，而不是读取大量记录后在内存中统计
-    const [statsResult, recentResult] = await Promise.all([
+    const [statsResult, recentResult, billing, usersResult] = await Promise.all([
       service.rpc('get_admin_overview_stats'),
-      service.rpc('get_admin_recent_records')
+      service.rpc('get_admin_recent_records'),
+      loadAdminBillingCounts(service),
+      service.from('profiles').select('id', { count: 'exact', head: true })
     ])
 
     if (statsResult.error) throw statsResult.error
     if (recentResult.error) throw recentResult.error
+
+    if (usersResult.error) throw usersResult.error
 
     const stats = statsResult.data || {}
     const recent = recentResult.data || {}
 
     return json({
       success: true,
+      billing,
       stats: {
+        totalUsers: usersResult.count || 0,
         totalLicenses: stats.totalLicenses || 0,
         availableLicenses: stats.availableLicenses || 0,
         exhaustedLicenses: stats.exhaustedLicenses || 0,

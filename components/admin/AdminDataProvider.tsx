@@ -51,6 +51,7 @@ export const ADMIN_CACHE_KEYS = {
   // 激活码列表
   LICENSES: '/api/admin/licenses',
   LICENSES_LIST: '/api/admin/licenses/list',
+  MEMBERSHIPS: '/api/admin/memberships',
   // 用户列表
   USERS: '/api/admin/users',
   USERS_LIST: '/api/admin/users/list',

@@ -3,6 +3,15 @@ import { Inbox, RefreshCw } from 'lucide-react'
 import { formatAdminDateWithPreferences } from '@/lib/admin/admin-display-config'
 
 const labels: Record<string, string> = {
+  trialing: '试用中',
+  past_due: '续费逾期',
+  unpaid: '未付款',
+  incomplete: '待完成付款',
+  incomplete_expired: '付款已失效',
+  canceled: '已取消订阅',
+  paused: '已暂停',
+  claimed: '已领取',
+  reserved: '已预留',
   unused: '未使用',
   active: '有效',
   expiring: '即将到期',
@@ -21,11 +30,11 @@ const labels: Record<string, string> = {
 export function AdminBadge({ value }: { value: string }) {
   const normalized = value.toLowerCase()
   const tone =
-    ['active', 'admin'].includes(normalized)
+    ['active', 'admin', 'trialing', 'claimed'].includes(normalized)
       ? 'good'
-      : ['expired', 'revoked', 'disabled', 'suspended', 'unbound'].includes(normalized)
+      : ['expired', 'revoked', 'disabled', 'suspended', 'unbound', 'unpaid', 'canceled', 'paused', 'incomplete_expired'].includes(normalized)
         ? 'bad'
-        : ['partial', 'exhausted', 'expiring'].includes(normalized)
+        : ['partial', 'exhausted', 'expiring', 'past_due', 'incomplete', 'reserved'].includes(normalized)
           ? 'warning'
           : 'neutral'
   return <span className={`admin-status ${tone}`}>{labels[normalized] || value}</span>

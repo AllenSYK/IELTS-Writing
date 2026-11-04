@@ -21,7 +21,7 @@ type DraftTab = WritingTaskType
 const tabs: Array<{ id: DraftTab; label: string }> = [
   { id: 'task1', label: 'Task 1' },
   { id: 'task2', label: 'Task 2' },
-  { id: 'mock', label: '完整测试' }
+  { id: 'mock', label: '完整模考' }
 ]
 
 const emptyQuota: DraftDeleteQuota = {
@@ -55,7 +55,7 @@ function DraftCard({
   onDelete: (record: DraftListItem) => void
   deleteDisabled: boolean
 }) {
-  const taskLabel = record.taskType === 'task1' ? 'Task 1' : record.taskType === 'task2' ? 'Task 2' : '完整测试'
+  const taskLabel = record.taskType === 'task1' ? 'Task 1' : record.taskType === 'task2' ? 'Task 2' : '完整模考'
   const heading = record.title || `${taskLabel} 草稿`
   const wordCount = typeof record.wordCount === 'number' ? record.wordCount : null
 
@@ -217,7 +217,7 @@ export function DraftManager({
         </span>
         <span>
           <strong>草稿记录</strong>
-          <small>查看尚未完成的 Task 1、Task 2 和完整测试</small>
+          <small>查看尚未完成的 Task 1、Task 2 和完整模考</small>
         </span>
         <span className="draft-entry-count">{drafts.length}</span>
         <MaterialIcon name="arrow_forward" size={18} />
@@ -264,7 +264,7 @@ export function DraftManager({
         ) : visibleDrafts.length === 0 ? (
           <div className="draft-dialog-state">
             <MaterialIcon name="draft" size={28} />
-            <p>目前没有 {activeTab === 'task1' ? 'Task 1' : activeTab === 'task2' ? 'Task 2' : '完整测试'} 草稿</p>
+            <p>目前没有 {activeTab === 'task1' ? 'Task 1' : activeTab === 'task2' ? 'Task 2' : '完整模考'} 草稿</p>
           </div>
         ) : (
           <div className="draft-list">

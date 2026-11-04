@@ -209,13 +209,12 @@ function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
   const actions = useMemo<CommandAction[]>(
     () => [
-      { id: 'home', title: '前往首页', subtitle: '打开账号中心', icon: 'home', href: '/dashboard', keywords: 'home 首页 账号中心' },
+      { id: 'home', title: '会员中心', subtitle: '会员权益、订阅与账号设置', icon: 'workspace_premium', href: '/billing', keywords: 'home 首页 会员 设置 账号' },
       { id: 'task1', title: '开始 Task 1', subtitle: '20 分钟图表写作', icon: 'bar_chart', href: '/write/task1', keywords: 'task 1 academic graph' },
       { id: 'task2', title: '开始 Task 2', subtitle: '40 分钟议论文', icon: 'edit_document', href: '/write/task2', keywords: 'task 2 essay writing' },
       { id: 'mock', title: '开始完整模考', subtitle: '60 分钟 Task 1 + Task 2', icon: 'timer', href: '/write/mock', keywords: 'mock test 完整 模考' },
       { id: 'history', title: '查看历史', subtitle: '搜索和筛选真实批改记录', icon: 'history', href: '/history', keywords: 'history 历史 records' },
       { id: 'analytics', title: '查看分析', subtitle: '分数趋势与错误分布', icon: 'analytics', href: '/analytics', keywords: 'analytics stats analysis 分析' },
-      { id: 'settings', title: '账号中心', subtitle: '账号设置和激活信息', icon: 'manage_accounts', href: '/dashboard', keywords: 'settings preference 设置 账号' },
       {
         id: 'draft',
         title: '查看当前草稿',
@@ -364,7 +363,7 @@ function GlobalShortcuts({ onCommand }: { onCommand: () => void }) {
       }
       if (modifier && event.key === ',') {
         event.preventDefault()
-        window.location.assign('/dashboard')
+        window.location.assign('/billing')
         return
       }
       if (event.key === '/' && !modifier && !isTypingTarget(event.target)) {

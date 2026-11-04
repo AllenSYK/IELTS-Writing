@@ -163,8 +163,7 @@ export default function SupportPage() {
       <section className="support-main">
         <header className="page-section-header">
           <div>
-            <h1 className="ui-title-headline">支持中心</h1>
-            <p className="ui-body-lg">先查看常见问题，或提交反馈让管理员在后台处理。</p>
+            <p className="ui-body-md">先查看常见问题，或提交反馈让管理员在后台处理。</p>
           </div>
           <a className="ui-primary-button" href={`mailto:${supportEmail}?subject=${encodeURIComponent('空与梦的雅思写作 使用反馈')}`}>
             <MaterialIcon name="mail" size={18} />

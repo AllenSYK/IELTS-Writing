@@ -110,7 +110,7 @@ export function PhoneOtpForm({ mode }: { mode: 'login' | 'register' }) {
         })
         if (!response.ok || !data.success) throw new Error(data.message || '验证码错误')
         await refreshUser()
-        window.location.replace(data.redirectTo || '/activate')
+        window.location.replace(data.redirectTo || '/billing')
       } catch (caught) {
         setError(caught instanceof DOMException && caught.name === 'AbortError'
           ? '请求超时，请检查网络后重试。'

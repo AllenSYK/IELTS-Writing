@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import {
@@ -12,8 +12,6 @@ import {
   EyeOff,
   FileText,
   KeyRound,
-  Loader2,
-  Plus,
   RefreshCw,
   Search,
   ShieldX,
@@ -42,8 +40,6 @@ type LicenseRow = {
   created_at: string
   updated_at: string
 }
-
-type GeneratedCode = LicenseRow & { code: string }
 
 type LicensesResponse = {
   success: true
@@ -77,16 +73,13 @@ export function AdminLicensesClient() {
   const searchParams = useSearchParams()
   const focusedId = searchParams.get('licenseId') || searchParams.get('focus') || ''
   const { pushToast } = useToast()
-  const { settings: adminSettings, isLoading: adminSettingsLoading } = useAdminSettings()
-  const [generated, setGenerated] = useState<GeneratedCode[]>([])
+  const { settings: adminSettings } = useAdminSettings()
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const debouncedSearch = useDebouncedValue(search, 320)
   const [status, setStatus] = useState('all')
   const [plan, setPlan] = useState('all')
   const [page, setPage] = useState(1)
-  const [submitting, setSubmitting] = useState(false)
-  const [createOpen, setCreateOpen] = useState(searchParams.get('create') === '1')
-  const [resultOpen, setResultOpen] = useState(false)
+  const [, setSubmitting] = useState(false)
   const [selection, setSelection] = useState<{ routeFocus: string; id: string | null }>({
     routeFocus: focusedId,
     id: focusedId || null
@@ -94,35 +87,6 @@ export function AdminLicensesClient() {
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set())
   const [revealedCodes, setRevealedCodes] = useState<Record<string, string>>({})
   const [confirm, setConfirm] = useState<ConfirmState>(null)
-  const [form, setForm] = useState({
-    countPreset: '1',
-    customCount: 1,
-    plan: 'standard',
-    durationPreset: '365',
-    customDuration: 365,
-    maxActivations: '1',
-    expiryMode: 'never',
-    expiresAt: '',
-    note: ''
-  })
-
-  // 生成弹窗默认值与系统设置保持一致（默认套餐/有效期/激活次数）。
-  const formDefaultsAppliedRef = useRef(false)
-  useEffect(() => {
-    if (adminSettingsLoading || formDefaultsAppliedRef.current) return
-    formDefaultsAppliedRef.current = true
-    const presetDays = ['30', '90', '180', '365']
-    const days = String(adminSettings.defaultDurationDays)
-    const maxActs = String(adminSettings.defaultMaxActivations)
-    setForm((prev) => ({
-      ...prev,
-      plan: adminSettings.defaultPlan || 'standard',
-      durationPreset: presetDays.includes(days) ? days : 'custom',
-      customDuration: adminSettings.defaultDurationDays,
-      maxActivations: ['1', '2', '3', '5'].includes(maxActs) ? maxActs : '1'
-    }))
-  }, [adminSettings.defaultDurationDays, adminSettings.defaultMaxActivations, adminSettings.defaultPlan, adminSettingsLoading])
-
   const licensesKey = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
@@ -149,50 +113,6 @@ export function AdminLicensesClient() {
 
   function setSelected(license: LicenseRow | null) {
     setSelection({ routeFocus: focusedId, id: license?.id || null })
-  }
-
-  const resolvedForm = useMemo(() => {
-    const count = form.countPreset === 'custom' ? form.customCount : Number(form.countPreset)
-    const durationDays = form.durationPreset === 'custom' ? form.customDuration : Number(form.durationPreset)
-    const maxActivations = form.maxActivations === 'unlimited' ? 100 : Number(form.maxActivations)
-    const expiresAt = form.expiryMode === 'custom' ? form.expiresAt : ''
-    const expiryDays = ['7', '30', '90'].includes(form.expiryMode) ? Number(form.expiryMode) : 0
-    return { count, durationDays, maxActivations, expiresAt, expiryDays }
-  }, [form])
-
-  async function createCodes(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (submitting) return
-    setSubmitting(true)
-    try {
-      const response = await fetch('/api/admin/licenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          count: resolvedForm.count,
-          plan: form.plan,
-          durationDays: resolvedForm.durationDays,
-          maxActivations: resolvedForm.maxActivations,
-          expiresAt: resolvedForm.expiryDays
-            ? new Date(Date.now() + resolvedForm.expiryDays * 24 * 60 * 60 * 1000).toISOString()
-            : resolvedForm.expiresAt
-              ? new Date(resolvedForm.expiresAt).toISOString()
-              : null,
-          note: form.note
-        })
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.success) throw new Error(data.message || '生成失败。')
-      setGenerated(data.codes || [])
-      setCreateOpen(false)
-      setResultOpen(true)
-      pushToast({ kind: 'success', title: `已生成 ${data.codes?.length || 0} 个激活码`, message: '请妥善保存完整明文。' })
-      await mutate().catch(() => undefined)
-    } catch (caught) {
-      pushToast({ kind: 'error', title: '生成激活码失败', message: caught instanceof Error ? caught.message : '请稍后重试。' })
-    } finally {
-      setSubmitting(false)
-    }
   }
 
   async function updateLicense(id: string, patch: Record<string, unknown>, success: string) {
@@ -325,16 +245,14 @@ export function AdminLicensesClient() {
     <main className="admin-section" data-main-content tabIndex={-1}>
       <AdminPageHeader
         eyebrow="LICENSE ASSETS"
-        title="激活码管理"
-        description="生成、查看、禁用、撤销和管理所有激活码；撤销后保留历史记录"
+        title="历史权益"
+        description="查看和管理已有授权记录。激活码开通及生成功能已停用，现有有效权益继续保留。"
         actions={(
           <>
             <button className="admin-secondary-button" type="button" onClick={() => void exportAll()} disabled={!licenses.length}>
               <Download size={16} />导出全部筛选结果（已脱敏）
             </button>
-            <button className="admin-primary-button" type="button" onClick={() => setCreateOpen(true)}>
-              <Plus size={16} />生成激活码
-            </button>
+            <span className="admin-meta">仅管理历史权益</span>
           </>
         )}
       />
@@ -444,9 +362,8 @@ export function AdminLicensesClient() {
           </div>
         ) : (
           <AdminEmpty
-            title="没有符合条件的激活码"
-            message="调整筛选条件，或生成一批新的激活码。"
-            action={<button className="admin-primary-button" type="button" onClick={() => setCreateOpen(true)}><Plus size={16} />生成激活码</button>}
+            title="没有符合条件的历史权益"
+            message="可以调整筛选条件查看已有记录。"
           />
         )}
 
@@ -469,106 +386,6 @@ export function AdminLicensesClient() {
           </div>
         ) : null}
       </section>
-
-      <CenteredDialog
-        open={createOpen}
-        title="生成激活码"
-        description="分别设置账号有效天数与激活码本身的整体到期时间。"
-        className="admin-create-dialog"
-        onClose={() => !submitting && setCreateOpen(false)}
-        footer={(
-          <>
-            <button className="admin-secondary-button" type="button" onClick={() => setCreateOpen(false)} disabled={submitting}>取消</button>
-            <button className="admin-primary-button" type="submit" form="create-license-form" disabled={submitting}>
-              {submitting ? <Loader2 className="admin-spin" size={16} /> : <Plus size={16} />}
-              {submitting ? '正在生成' : '确认生成'}
-            </button>
-          </>
-        )}
-      >
-        <form id="create-license-form" className="admin-generate-form" onSubmit={createCodes}>
-          <div className="admin-form-grid">
-            <label className="admin-field">
-              <span>生成数量</span>
-              <select value={form.countPreset} onChange={(event) => setForm({ ...form, countPreset: event.target.value })}>
-                <option value="1">1 个</option><option value="5">5 个</option><option value="10">10 个</option>
-                <option value="20">20 个</option><option value="custom">自定义</option>
-              </select>
-            </label>
-            {form.countPreset === 'custom' ? (
-              <label className="admin-field"><span>自定义数量</span><input type="number" min={1} max={500} value={form.customCount} onChange={(event) => setForm({ ...form, customCount: Number(event.target.value) })} /></label>
-            ) : null}
-            <label className="admin-field">
-              <span>套餐类型</span>
-              <select value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })}>
-                <option value="standard">Standard</option><option value="pro">Pro</option>
-                <option value="premium">Premium</option><option value="admin">Admin</option>
-              </select>
-            </label>
-            <label className="admin-field">
-              <span>用户激活后的有效天数</span>
-              <select value={form.durationPreset} onChange={(event) => setForm({ ...form, durationPreset: event.target.value })}>
-                <option value="30">30 天</option><option value="90">90 天</option><option value="180">180 天</option>
-                <option value="365">365 天</option><option value="custom">自定义</option>
-              </select>
-              <small>从用户成功激活当天开始计算。</small>
-            </label>
-            {form.durationPreset === 'custom' ? (
-              <label className="admin-field"><span>自定义有效天数</span><input type="number" min={1} max={3650} value={form.customDuration} onChange={(event) => setForm({ ...form, customDuration: Number(event.target.value) })} /></label>
-            ) : null}
-            <label className="admin-field">
-              <span>最大激活次数</span>
-              <select value={form.maxActivations} onChange={(event) => setForm({ ...form, maxActivations: event.target.value })}>
-                <option value="1">1 个账号</option><option value="2">2 个账号</option><option value="3">3 个账号</option>
-                <option value="5">5 个账号</option><option value="unlimited">近似无限制（100）</option>
-              </select>
-            </label>
-            <label className="admin-field">
-              <span>激活码整体到期时间</span>
-              <select value={form.expiryMode} onChange={(event) => setForm({ ...form, expiryMode: event.target.value })}>
-                <option value="never">永不过期</option><option value="7">7 天后</option>
-                <option value="30">30 天后</option><option value="90">90 天后</option><option value="custom">指定日期和时间</option>
-              </select>
-              <small>超过该时间后，即使仍有次数，也不能继续激活。</small>
-            </label>
-            {form.expiryMode === 'custom' ? (
-              <label className="admin-field"><span>指定日期和时间</span><input type="datetime-local" required value={form.expiresAt} onChange={(event) => setForm({ ...form, expiresAt: event.target.value })} /></label>
-            ) : null}
-            <label className="admin-field full"><span>备注</span><textarea rows={3} value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="例如：2026 暑期活动、内部测试、渠道 A" /></label>
-          </div>
-          <div className="admin-confirm-summary">
-            <strong>生成确认</strong>
-            <p>将生成 {resolvedForm.count} 个 {form.plan} 激活码</p>
-            <p>每个用户激活后有效 {resolvedForm.durationDays} 天</p>
-            <p>每个码最多激活 {form.maxActivations === 'unlimited' ? '100' : form.maxActivations} 次</p>
-            <p>激活码本身{resolvedForm.expiryDays ? `将在 ${resolvedForm.expiryDays} 天后到期` : resolvedForm.expiresAt ? `于 ${formatAdminDate(resolvedForm.expiresAt)} 到期` : '永不过期'}</p>
-          </div>
-        </form>
-      </CenteredDialog>
-
-      <CenteredDialog
-        open={resultOpen}
-        title="激活码生成成功"
-        description={`已生成 ${generated.length} 个激活码，完整明文可在下方复制或导出。`}
-        className="admin-result-dialog"
-        onClose={() => setResultOpen(false)}
-        footer={(
-          <>
-            <button className="admin-secondary-button" type="button" onClick={() => void copyText(generated.map((item) => item.code).join('\n'), '全部激活码已复制')}><Copy size={16} />复制全部</button>
-            <button className="admin-secondary-button" type="button" onClick={() => downloadCsv('generated-license-codes.csv', [['激活码', '套餐', '有效天数', '最大激活次数', '整体到期'], ...generated.map((item) => [item.code, item.plan, item.duration_days, item.max_activations, item.expires_at || ''])])}><Download size={16} />导出 CSV</button>
-            <button className="admin-primary-button" type="button" onClick={() => setResultOpen(false)}>完成</button>
-          </>
-        )}
-      >
-        <div className="admin-generated-list">
-          {generated.map((item) => (
-            <div key={item.code}>
-              <span><code>{item.code}</code><small>{item.plan} · {item.duration_days} 天</small></span>
-              <button className="admin-icon-button" type="button" onClick={() => void copyText(item.code)} aria-label="复制"><Copy size={15} /></button>
-            </div>
-          ))}
-        </div>
-      </CenteredDialog>
 
       <CenteredDialog
         open={Boolean(selected)}

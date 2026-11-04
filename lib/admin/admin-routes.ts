@@ -47,10 +47,16 @@ export const adminRouteMeta: AdminRouteMeta[] = [
       paramName: 'search',
     },
   },
+  {
+    match: (path) => path.startsWith('/admin/memberships'),
+    title: '会员管理',
+    eyebrow: 'Memberships',
+    search: { placeholder: '搜索会员账号', targetPath: '/admin/users', paramName: 'search' },
+  },
   // 激活码管理
   {
     match: (path) => path.startsWith('/admin/licenses'),
-    title: '激活码管理',
+    title: '历史权益',
     eyebrow: 'Licenses',
     search: {
       placeholder: '搜索激活码、邮箱或用户 ID',
@@ -61,7 +67,7 @@ export const adminRouteMeta: AdminRouteMeta[] = [
   // 邮箱绑定
   {
     match: (path) => path.startsWith('/admin/bindings'),
-    title: '邮箱绑定',
+    title: '历史邮箱绑定',
     eyebrow: 'Bindings',
     search: {
       placeholder: '搜索邮箱或绑定关系',

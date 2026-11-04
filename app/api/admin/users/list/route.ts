@@ -1,3 +1,6 @@
+import { loadAdminBilling } from '@/lib/admin/membership-data'
+import { resolveAdminMembership } from '@/lib/admin/membership'
+import type { WebLicenseAccessSnapshot } from '@/lib/web-license/access'
 import { json } from '@/lib/http'
 import { adminApiError, requireAdminService } from '@/lib/web-license/admin-api'
 import { UNBOUND_BINDING_REASON } from '@/lib/web-license/admin-license-data'
@@ -67,18 +70,19 @@ export async function GET(request: Request) {
     }
 
     const userIds = listedUsers.map((user) => user.id)
-    const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, usage] = await Promise.all([
+    const [{ data: profiles, error: profilesError }, { data: activations, error: activationsError }, usage, billing] = await Promise.all([
       userIds.length
         ? service.from('profiles').select('id, email, phone, role, license_status, license_expires_at, created_at').in('id', userIds)
         : Promise.resolve({ data: [], error: null }),
       userIds.length
         ? service
             .from('license_activations')
-            .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_prefix, plan, status)')
+            .select('id, user_id, email, activated_at, expires_at, status, last_used_at, revoked_reason, license_codes(id, code_prefix, plan, status, expires_at)')
             .in('user_id', userIds)
             .order('expires_at', { ascending: false })
         : Promise.resolve({ data: [], error: null }),
-      loadUsageSummary(service, userIds)
+      loadUsageSummary(service, userIds),
+      loadAdminBilling(service, userIds)
     ])
 
     if (profilesError) throw profilesError
@@ -115,6 +119,12 @@ export async function GET(request: Request) {
         const license = Array.isArray(activation?.license_codes)
           ? activation?.license_codes[0]
           : activation?.license_codes
+        const membership = resolveAdminMembership({
+          profile: profile || null,
+          activation: activation || null,
+          license: license || null
+        } as WebLicenseAccessSnapshot, billing.subscriptions.filter((row) => row.user_id === user.id),
+          billing.payments.filter((row) => row.user_id === user.id), billing.trials.find((row) => row.user_id === user.id))
         const usageInfo = usageMap.get(user.id) || { count: 0, lastUsedAt: null }
         return {
           id: user.id,
@@ -126,9 +136,10 @@ export async function GET(request: Request) {
           emailConfirmedAt: user.email_confirmed_at,
           bannedUntil: user.banned_until,
           role: profile?.role || 'user',
-          licenseStatus: profile?.license_status || 'inactive',
-          licenseExpiresAt: profile?.license_expires_at || null,
-          plan: license?.plan || null,
+          licenseStatus: membership.status,
+          membership,
+          licenseExpiresAt: membership.expiresAt,
+          plan: membership.plan,
           activation,
           isBound: Boolean(activation),
           licenseId: license?.id || null,
@@ -145,6 +156,9 @@ export async function GET(request: Request) {
         if (filter === 'inactive') return user.licenseStatus === 'inactive' && !banned
         if (filter === 'expired') return user.licenseStatus === 'expired' && !banned
         if (filter === 'disabled') return banned || user.licenseStatus === 'suspended'
+        if (filter === 'trial') return user.membership.source === 'trial' && !banned
+        if (filter === 'subscription') return user.membership.source === 'subscription' && !banned
+        if (filter === 'prepaid') return user.membership.source === 'prepaid' && !banned
         if (filter === 'unbound') return !user.isBound
         return true
       })

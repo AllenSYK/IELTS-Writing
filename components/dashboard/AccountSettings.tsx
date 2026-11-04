@@ -6,7 +6,6 @@ import { getAvatarInitial } from '@/lib/user-profile'
 import { useUserProfile } from '@/stores/user-profile-store'
 import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { LogoutButton } from '@/app/dashboard/LogoutButton'
-import { migrateLegacyWritingRecordsToServer } from '@/lib/writing-records'
 
 const NICKNAME_MAX = 20
 const DEFAULT_NICKNAME = '雅思追梦人'
@@ -40,8 +39,6 @@ export function AccountSettings() {
   const [averageInput, setAverageInput] = useState('auto')
   const [averageSaving, setAverageSaving] = useState(false)
   const [averageError, setAverageError] = useState<string | null>(null)
-  const [migrationMessage, setMigrationMessage] = useState<string | null>(null)
-  const [migrationRunning, setMigrationRunning] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const display = displayName || DEFAULT_NICKNAME
@@ -125,29 +122,11 @@ export function AccountSettings() {
     }
   }, [averageInput, averageSaving, updateManualAverageScore])
 
-  const migrateLegacyRecords = useCallback(async () => {
-    if (!userId || migrationRunning) return
-    setMigrationRunning(true)
-    setMigrationMessage(null)
-    try {
-      const result = await migrateLegacyWritingRecordsToServer(userId)
-      setMigrationMessage(
-        result.skipped
-          ? '旧版记录已迁移，无需重复执行。'
-          : `已同步 ${result.migratedCount} 条旧版记录。`
-      )
-    } catch (migrationError) {
-      setMigrationMessage(migrationError instanceof Error ? migrationError.message : '旧版记录迁移失败，请重试。')
-    } finally {
-      setMigrationRunning(false)
-    }
-  }, [migrationRunning, userId])
-
   if (!userId) return null
 
   return (
-    <section className="dashboard-panel dashboard-license-panel">
-      <h2>账号设置</h2>
+    <section className="dashboard-panel membership-account-settings">
+      <header className="membership-account-header"><h2>账号设置</h2><LogoutButton /></header>
       <div className="settings-account-row" style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <span className="settings-avatar" aria-label={`头像：${avatarInitial}`} style={{
           width: 48, height: 48, borderRadius: '50%', background: 'var(--surface-container-low)',
@@ -262,24 +241,6 @@ export function AccountSettings() {
         手动分数会同步到当前账号的学习分析；恢复“自动”后，将重新使用批改记录计算。
       </p>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button
-          className="ui-secondary-button"
-          type="button"
-          disabled={migrationRunning}
-          onClick={() => void migrateLegacyRecords()}
-        >
-          <MaterialIcon name="cloud_upload" size={16} />
-          {migrationRunning ? '同步中…' : '同步本机旧记录'}
-        </button>
-        {migrationMessage ? <span className="ui-label" role="status">{migrationMessage}</span> : null}
-      </div>
-
-      <div style={{ borderTop: '1px solid var(--glass-border-1)', margin: '16px 0' }} />
-
-      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-        <LogoutButton />
-      </div>
     </section>
   )
 }

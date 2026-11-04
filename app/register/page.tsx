@@ -248,7 +248,7 @@ export default function RegisterPage() {
             <span className="auth-success-orb"><CheckCircle2 size={34} /></span>
             <p className="auth-kicker">邮箱验证成功</p>
             <h1>您的账号已创建</h1>
-            <p>{message || '现在可以登录，并使用软件激活码开通网站使用权限。'}</p>
+            <p>{message || '现在可以登录，并在会员中心查看权益和选择订阅。'}</p>
             <a className="ui-primary-button auth-main-button" href="/login">前往登录</a>
           </div>
         ) : null}
@@ -258,7 +258,7 @@ export default function RegisterPage() {
             <header className="auth-copy">
               <p className="auth-kicker">邮箱注册</p>
               <h1>注册账号</h1>
-              <p>先验证邮箱，再创建账号；注册后需要输入软件激活码开通使用权限。</p>
+              <p>先验证邮箱，再创建账号；注册后可在会员中心选择适合自己的订阅。</p>
             </header>
 
             <form className="auth-form auth-form-modern" onSubmit={handleAccountSubmit}>
@@ -394,7 +394,7 @@ export default function RegisterPage() {
             </form>
 
             <p className="auth-switch">
-              邮箱验证码只用于注册验证，软件激活码会在登录后单独输入。
+              邮箱验证码只用于注册验证，会员权益可在登录后的会员中心查看。
             </p>
           </>
         ) : null}

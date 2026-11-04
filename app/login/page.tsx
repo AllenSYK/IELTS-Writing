@@ -6,7 +6,7 @@ import { useUserSession } from '@/components/auth/UserSessionProvider'
 import { AgreementConsent } from '@/components/auth/AgreementConsent'
 import { AuthBrandHeader } from '@/components/auth/AuthBrandHeader'
 import { AuthSubmitButton } from '@/components/auth/AuthSubmitButton'
-import { sanitizeAuthNext } from '@/lib/auth/route-access'
+import { getAuthRouteInfo, sanitizeAuthNext } from '@/lib/auth/route-access'
 import {
   CurrentAgreementVersions,
   hasRememberedAgreementConsent,
@@ -91,8 +91,8 @@ export default function LoginPage() {
       await refreshUser()
       rememberAgreementConsent()
       const nextPath = sanitizeAuthNext(new URLSearchParams(window.location.search).get('next'))
-      if (nextPath && data.redirectTo === '/activate') {
-        window.location.replace(`/activate?next=${encodeURIComponent(nextPath)}`)
+      if (nextPath && data.redirectTo === '/billing' && !getAuthRouteInfo(new URL(nextPath, window.location.origin).pathname).isLoginRequiredRoute) {
+        window.location.replace(`/billing?next=${encodeURIComponent(nextPath)}`)
       } else {
         window.location.replace(nextPath || data.redirectTo || '/practice')
       }
@@ -179,6 +179,7 @@ export default function LoginPage() {
         <p className="auth-switch">
           没有账号？<a href="/register">立即注册</a>
         </p>
+        <p className="auth-switch"><a href="/pricing">查看会员方案与支付说明</a></p>
       </section>
     </main>
   )

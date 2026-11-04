@@ -205,7 +205,7 @@ export type AICoachingSuggestion = {
 export const StudyPlanTaskTypeLabels: Record<StudyPlanTaskType, string> = {
   task1: 'Task 1',
   task2: 'Task 2',
-  full_test: '完整测试',
+  full_test: '完整模考',
   grammar_drill: '语法专项',
   vocabulary_drill: '词汇专项',
   review: '复习回顾',

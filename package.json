@@ -14,6 +14,7 @@
     "test": "node --test --experimental-strip-types --loader ./tests/alias-loader.mjs tests/*.test.ts",
     "test:license-e2e": "node scripts/verify-license-activation.mjs",
     "test:ai-live": "node --experimental-strip-types --loader ./tests/alias-loader.mjs scripts/verify-ai-models.mjs",
+    "stripe:listen": "node --experimental-strip-types scripts/listen-stripe.mjs",
     "migration:check": "node scripts/check-admin-schema-migration.mjs",
     "check:legacy-map": "node scripts/check-no-legacy-map.mjs",
     "ci": "npm run check:legacy-map && npm run typecheck && npm run lint && npm test",
@@ -31,6 +32,7 @@
     "react-dom": "^19.2.4",
     "recharts": "^3.8.1",
     "resend": "^6.14.0",
+    "stripe": "23.0.1",
     "swr": "^2.4.1",
     "zod": "^3.25.76"
   },
