@@ -146,7 +146,6 @@ export default function ResultPage() {
   const [revisedSubTab, setRevisedSubTab] = useState<RevisedSubTab>('annotation')
   const [mistakeSaved, setMistakeSaved] = useState(false)
   const [mistakeSaving, setMistakeSaving] = useState(false)
-  const [rewriting, setRewriting] = useState(false)
   const [mockAnnotationTask, setMockAnnotationTask] = useState<'task1' | 'task2'>('task2')
 
   useEffect(() => {
@@ -290,25 +289,6 @@ export default function ResultPage() {
         setMistakeSaving(false)
       }
     })()
-  }
-
-  async function handleRewrite() {
-    if (!record || !userId || rewriting) return
-    setRewriting(true)
-    try {
-      const res = await fetch(`/api/writing-records/${record.id}/rewrite`, { method: 'POST' })
-      const data = await res.json() as { success?: boolean; message?: string; record?: WritingRecord; revisionNumber?: number }
-      if (!res.ok || !data.success || !data.record) {
-        pushToast({ kind: 'error', title: '创建重写失败', message: data.message || '请稍后重试' })
-        return
-      }
-      pushToast({ kind: 'success', title: `已创建第${data.revisionNumber ?? 2}版` })
-      window.location.href = `/write/${record.taskType}?revision=${data.record.id}&original=${record.id}`
-    } catch {
-      pushToast({ kind: 'error', title: '创建重写失败', message: '请稍后重试' })
-    } finally {
-      setRewriting(false)
-    }
   }
 
   function persistAcceptedChanges(nextChanges: AcceptedAnnotationChange[]) {
@@ -473,14 +453,10 @@ export default function ResultPage() {
               返回学习计划
             </a>
           )}
-          <a className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="基于原题重写一篇新作文">
+          <a className="ui-secondary-button" href={`/write/${record.taskType}?record=${record.id}`} title="在新草稿中载入原题和原文">
             <MaterialIcon name="edit_note" size={18} />
-            基于原题重写
+            根据反馈重写
           </a>
-          <button className="ui-secondary-button" type="button" onClick={handleRewrite} disabled={rewriting} title="保留原稿，基于反馈创建新版本">
-            <MaterialIcon name="auto_fix_high" size={18} />
-            {rewriting ? '创建中…' : '根据反馈重写'}
-          </button>
           <a className="ui-secondary-button" href={`/write/${record.taskType}`}>
             <MaterialIcon name="replay" size={18} />
             重新练习
@@ -581,7 +557,7 @@ export default function ResultPage() {
                     {evaluation.annotationWarnings?.length ? (
                       <div className="annotation-generating-status" role="alert">
                         <MaterialIcon name="warning" size={18} />
-                        <strong>部分批注生成失败；分数和现有反馈仍可查看，可点击“基于原题重写”重新批改。</strong>
+                        <strong>部分批注生成失败。分数和现有反馈仍可查看，也可以点击「根据反馈重写」后重新提交批改。</strong>
                       </div>
                     ) : null}
                     {allAnnotations.length > 0 && visibleAnnotations.length === 0 ? (

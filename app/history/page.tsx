@@ -77,7 +77,7 @@ const HistoryCard = memo(function HistoryCard({ record, removing, onDelete }: { 
         </div>
         <h2 className="ui-title-md">{record.title}</h2>
         <p className="history-summary">
-          {record.summary || '本次批改已完成，可查看详情。'}
+          {record.summary || (record.overallBand ? '本次批改已完成，可查看详情。' : '暂无总分。')}
         </p>
       </div>
 

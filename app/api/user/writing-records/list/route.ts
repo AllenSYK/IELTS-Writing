@@ -107,6 +107,8 @@ export async function GET(request: Request) {
         "record_data->>'studyPlanTaskId'"
       ].join(', '))
       .eq('user_id', user.id)
+      // Legacy feedback rewrites inserted placeholders before an essay was submitted.
+      .or('revision_reason.isdistinct.feedback_rewrite,original_essay.isdistinct."",evaluation.isdistinct."{}"')
       .order('submitted_at', { ascending: false })
       .limit(50))
 

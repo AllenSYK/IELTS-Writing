@@ -6998,6 +6998,24 @@ img {
   line-height: 1.5;
 }
 
+.error-pattern-card {
+  --error-card-radius: 32px;
+  --error-card-padding: 16px;
+  --error-card-border: 1px;
+  padding: var(--error-card-padding);
+  border-width: var(--error-card-border);
+  border-radius: var(--error-card-radius);
+  overflow-wrap: anywhere;
+}
+
+.error-pattern-example {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: max(0px, calc(var(--error-card-radius) - var(--error-card-padding) - var(--error-card-border)));
+  background: var(--surface-container-low);
+  font-size: 15px;
+}
+
 .study-calendar-header,
 .study-calendar-navigation {
   display: flex;

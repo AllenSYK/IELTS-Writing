@@ -495,10 +495,10 @@ function ErrorPatternCard({ pattern, onView, onReview }: {
   const statusColor = pattern.status === 'mastered' ? 'var(--success)' : pattern.status === 'improving' ? 'var(--warning)' : 'var(--error)'
 
   return (
-    <GlassPanel className="ui-hover-glow" style={{ padding: 16 }}>
+    <GlassPanel className="ui-hover-glow error-pattern-card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
             <strong>{pattern.title}</strong>
             <span className="task-badge" style={{ fontSize: 12 }}>{categoryLabel}</span>
             <span style={{ fontSize: 12, color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
@@ -506,25 +506,11 @@ function ErrorPatternCard({ pattern, onView, onReview }: {
           {pattern.description && (
             <p className="ui-body-md" style={{ marginBottom: 8, fontSize: 15 }}>{pattern.description}</p>
           )}
-          <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 13, color: 'var(--text-secondary)' }}>
             <span>出现 {pattern.occurrenceCount} 次</span>
             <span>最近：{new Date(pattern.lastSeenAt).toLocaleDateString('zh-CN')}</span>
             <span>掌握度：{Math.round(pattern.masteryLevel * 100)}%</span>
           </div>
-          {pattern.exampleWrong && (
-            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--surface-container-low)', fontSize: 15 }}>
-              <div style={{ color: 'var(--error)', marginBottom: 4 }}>
-                <span style={{ verticalAlign: 'middle', marginRight: 4 }}><MaterialIcon name="close" size={14} /></span>
-                {pattern.exampleWrong}
-              </div>
-              {pattern.exampleCorrect && (
-                <div style={{ color: 'var(--success)' }}>
-                  <span style={{ verticalAlign: 'middle', marginRight: 4 }}><MaterialIcon name="check" size={14} /></span>
-                  {pattern.exampleCorrect}
-                </div>
-              )}
-            </div>
-          )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="ui-secondary-button" type="button" onClick={onView} style={{ fontSize: 14, padding: '6px 12px' }}>
@@ -537,6 +523,20 @@ function ErrorPatternCard({ pattern, onView, onReview }: {
           )}
         </div>
       </div>
+      {pattern.exampleWrong && (
+        <div className="error-pattern-example">
+          <div style={{ color: 'var(--error)', marginBottom: pattern.exampleCorrect ? 4 : 0 }}>
+            <span style={{ verticalAlign: 'middle', marginRight: 4 }}><MaterialIcon name="close" size={14} /></span>
+            {pattern.exampleWrong}
+          </div>
+          {pattern.exampleCorrect && (
+            <div style={{ color: 'var(--success)' }}>
+              <span style={{ verticalAlign: 'middle', marginRight: 4 }}><MaterialIcon name="check" size={14} /></span>
+              {pattern.exampleCorrect}
+            </div>
+          )}
+        </div>
+      )}
     </GlassPanel>
   )
 }

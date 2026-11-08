@@ -522,7 +522,7 @@ export default function WritePage() {
         if (cancelled) return
         setDraftId(currentDraftId)
         const selection = managedDraft?.selection || requestedSelection
-        const [sourceRecord, assignedQuestionResult] = await Promise.all([
+        const [originalRecord, assignedQuestionResult] = await Promise.all([
           sourceRecordPromise,
           assignedQuestionPromise
         ])
@@ -537,6 +537,12 @@ export default function WritePage() {
           return
         }
         setPromptSelection(selection)
+
+        // A rewrite's source only seeds the draft before its first save.
+        const hasDraftSnapshot = managedDraft?.kind === 'full_test'
+          ? Boolean(managedDraft.task1.questionId && managedDraft.task2.questionId)
+          : Boolean(managedDraft?.task.questionId)
+        const sourceRecord = hasDraftSnapshot ? null : originalRecord
 
         if (mode === 'mock') {
           const fullDraft = managedDraft?.kind === 'full_test'

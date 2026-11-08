@@ -608,7 +608,9 @@ test('result detail keeps scores and content intact while using responsive align
     assert.match(primaryTabs, new RegExp(`onClick=\\{\\(\\) => setTab\\('${tab}'\\)\\}`))
   }
 
-  for (const action of ['基于原题重写', '根据反馈重写', '重新练习', '保存到错题本', '复制高分范文']) {
+  assert.match(resultPage, /href=\{`\/write\/\$\{record\.taskType\}\?record=\$\{record\.id\}`\}[^>]*>[\s\S]*?根据反馈重写\s*<\/a>/)
+  assert.doesNotMatch(resultPage, /\/api\/writing-records\/[^\n]+\/rewrite/)
+  for (const action of ['重新练习', '保存到错题本', '复制高分范文']) {
     assert.match(resultPage, new RegExp(action))
   }
 
