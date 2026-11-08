@@ -12,7 +12,6 @@ import {
   buildMockQuestionSetForSelection,
   buildPrompt,
   getQuestionById,
-  questionLabel,
   randomQuestionForSelection,
   type WritingQuestion
 } from '@/lib/ielts-questions'
@@ -43,13 +42,6 @@ import { markGeneratedPromptCompleted } from '@/lib/generated-prompt-history'
 import { generateQuestionForSelection } from '@/lib/writing-question-generation'
 import {
   DefaultPromptSelection,
-  Task1ChartLabels,
-  Task1SubtypeLabels,
-  Task2EssayLabels,
-  Task2TopicLabels,
-  normalizeTask1ChartType,
-  normalizeTask2EssayType,
-  normalizeTask2Topic,
   selectionFromSearchParams,
   type PromptSelection
 } from '@/lib/writing-options'
@@ -312,7 +304,6 @@ export default function WritePage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('restoring')
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle')
   const [stageIndex, setStageIndex] = useState(0)
-  const [draftRestored, setDraftRestored] = useState(false)
   const [showShortfallConfirm, setShowShortfallConfirm] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
   const [showExitConfirm, setShowExitConfirm] = useState(false)
@@ -330,7 +321,6 @@ export default function WritePage() {
   const [promptGenerationNotice, setPromptGenerationNotice] = useState('')
   const [evaluationStartTime, setEvaluationStartTime] = useState<number | null>(null)
   const [elapsedTime, setElapsedTime] = useState(0)
-  const [customTaskId, setCustomTaskId] = useState<string | null>(null)
   const [studyPlanTaskId, setStudyPlanTaskId] = useState<string | null>(null)
   const [draftId, setDraftId] = useState('')
 
@@ -351,27 +341,6 @@ export default function WritePage() {
   )
   const totalMockWords = mockWordCounts.task1 + mockWordCounts.task2
   const loading = submitStatus !== 'idle' && submitStatus !== 'error' && submitStatus !== 'success'
-  const fixedBankChoiceSummary = activeQuestion?.generatedSource === 'static-bank'
-    ? activeQuestion.taskType === 'task1'
-      ? `题库 · ${Task1ChartLabels[normalizeTask1ChartType(activeQuestion.questionType)]}`
-      : `题库 · ${Task2EssayLabels[normalizeTask2EssayType(activeQuestion.questionType)]}`
-    : null
-  const promptChoiceSummary =
-    customTaskId
-      ? '自定义题目'
-      : fixedBankChoiceSummary
-        ? fixedBankChoiceSummary
-      : mode === 'task1'
-      ? Task1ChartLabels[promptSelection.task1ChartType]
-      : mode === 'task2'
-        ? `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
-        : `${Task1ChartLabels[promptSelection.task1ChartType]} + ${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
-  const mockTask1Label = mockQuestions
-    ? Task1ChartLabels[normalizeTask1ChartType(mockQuestions.task1.questionType)]
-    : Task1ChartLabels[promptSelection.task1ChartType]
-  const mockTask2Label = mockQuestions
-    ? `${Task2EssayLabels[normalizeTask2EssayType(mockQuestions.task2.questionType)]} · ${Task2TopicLabels[normalizeTask2Topic(mockQuestions.task2.topic || promptSelection.task2Topic)]}`
-    : `${Task2EssayLabels[promptSelection.task2EssayType]} · ${Task2TopicLabels[promptSelection.task2Topic]}`
   const timerKey = userId && draftId ? timerKeyFor(userId, mode, draftId) : ''
   const positionKey = userId ? userScopedStorageKey(`ielts-writing-editor-position-${mode}-${activeTaskType}`, userId) : ''
   const splitKey = userId ? userScopedStorageKey(`writingEditorSplitRatio-${mode}`, userId) : ''
@@ -504,7 +473,6 @@ export default function WritePage() {
         const uploadedTaskId = mode === 'mock' ? null : searchParams.get('customTask')
         const pastPaperId = mode === 'mock' ? null : searchParams.get('pastPaper')
         const studyPlanTaskId = searchParams.get('studyPlanTaskId')
-        setCustomTaskId(uploadedTaskId)
         setStudyPlanTaskId(studyPlanTaskId)
         const assignedQuestionPromise = loadAssignedPracticeQuestion({
           studyPlanTaskId,
@@ -648,7 +616,6 @@ export default function WritePage() {
           setMockEssays({ task1: restoredTask1, task2: restoredTask2 })
           setActiveMockTask(fullDraft.activeTask)
           if (restoredTask1 || restoredTask2) {
-            setDraftRestored(true)
             setSaveStatus('saved')
             notifyInitialRestore({ kind: 'success', title: sourceRecord ? '已带回模考作文' : '已恢复模考草稿' })
           } else {
@@ -702,12 +669,10 @@ export default function WritePage() {
           setSingleQuestion(question)
           if (sourceRecord?.essay) {
             setEssay(sourceRecord.essay)
-            setDraftRestored(true)
             setSaveStatus('saved')
             notifyInitialRestore({ kind: 'info', title: '已带回原文', message: '你可以继续修改，原批改结果仍保留在历史记录中。' })
           } else if (singleDraft.task.essay) {
             setEssay(singleDraft.task.essay)
-            setDraftRestored(true)
             setSaveStatus('saved')
             notifyInitialRestore({ kind: 'success', title: '已恢复草稿', message: `上次保存于 ${new Date(singleDraft.task.updatedAt).toLocaleTimeString()}` })
           } else {
@@ -1507,44 +1472,6 @@ export default function WritePage() {
         </div>
       </header>
 
-      <div className="exam-status-bar" role="status" aria-live="polite">
-        {mode === 'mock' ? (
-          <>
-            <span>
-              <MaterialIcon name="bar_chart" size={15} />
-              Task 1：{mockTask1Label}
-            </span>
-            <span>
-              <MaterialIcon name="edit_document" size={15} />
-              Task 2：{mockTask2Label}
-            </span>
-            <span>
-              <MaterialIcon name="notes" size={15} />
-              当前：{activeMockTask === 'task1' ? 'Task 1' : 'Task 2'} {wordCount}/{wordTarget}
-            </span>
-          </>
-        ) : (
-          <>
-            <span>
-              <MaterialIcon name="assignment" size={15} />
-              {questionLabel(activeQuestion)}
-            </span>
-            <span title={mode === 'task1' ? Task1SubtypeLabels[promptSelection.task1Subtype] : undefined}>
-              <MaterialIcon name="tune" size={15} />
-              {promptChoiceSummary}
-            </span>
-          </>
-        )}
-        <span>
-          <MaterialIcon name={online ? 'wifi' : 'wifi_off'} size={15} />
-          {online ? '在线' : '离线'}
-        </span>
-        <span>
-          <MaterialIcon name={draftRestored ? 'restore' : 'draft'} size={15} />
-          {draftRestored ? '已恢复草稿' : '新草稿'}
-        </span>
-      </div>
-
       <section
         ref={layoutRef}
         className="exam-layout"
@@ -1577,18 +1504,9 @@ export default function WritePage() {
               </div>
             ) : null}
 
-            <div className="exam-section-header">
-              <h1 className="ui-title-headline">{activeQuestion.title}</h1>
-              <p className="ui-body-md">
-                建议在 {activeQuestion.durationMinutes} 分钟内完成本题。
-                {mode === 'mock' ? ' 完整模考的总计时仍为 60 分钟。' : ''}
-              </p>
-            </div>
-
             <div className="exam-prompt-box">
-              <p className="ui-body-lg" style={{ color: 'var(--on-surface)', fontWeight: 500 }}>
-                {activeQuestion.promptLead}
-              </p>
+              <h1 className="ui-title-headline">{activeQuestion.title}</h1>
+              <p className="ui-body-lg">{activeQuestion.promptLead}</p>
               <p className="ui-body-md">{activeQuestion.promptDetail}</p>
             </div>
 

@@ -904,42 +904,27 @@ img {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--stack-md);
+  gap: var(--stack-sm);
   min-height: 0;
   padding-bottom: var(--stack-lg);
 }
 
-.exam-section-header {
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(193, 198, 215, 0.2);
-}
-
 .exam-prompt-box {
-  position: relative;
-  overflow: hidden;
-  padding: var(--stack-md);
-  border: 1px solid rgba(193, 198, 215, 0.2);
-  border-radius: 32px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  padding: clamp(16px, 2vw, 24px);
 }
 
-.exam-prompt-box::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 4px;
-  background: var(--primary);
+.exam-prompt-box h1 {
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
 
-.exam-prompt-box p {
-  margin: 0;
+.exam-prompt-box .ui-body-lg {
+  color: var(--on-surface);
+  font-weight: 500;
 }
 
 .exam-prompt-box p + p {
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .exam-graph-frame {
@@ -950,6 +935,18 @@ img {
   background: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   overflow: visible;
+}
+
+.exam-prompt-box,
+.exam-left-inner .exam-graph-frame {
+  border: 1px solid rgba(113, 119, 134, 0.22);
+  border-radius: 16px;
+  background: var(--surface-container-lowest);
+  box-shadow: none;
+}
+
+.exam-prompt-box + .exam-graph-frame {
+  margin-top: 0;
 }
 
 .exam-graph-frame img {
@@ -1126,6 +1123,11 @@ img {
   border: 1px solid rgba(193, 198, 215, 0.36);
   border-radius: 20px;
   background: var(--surface, #fff);
+}
+
+.exam-left-inner .task1-visual-content > .task1-chart-wrapper > .task1-chart-heading,
+.exam-left-inner .task1-mixed-panel {
+  background: var(--surface-container-lowest);
 }
 
 .task1-mixed-panel[data-chart-type="pie"] {
@@ -9270,26 +9272,6 @@ img {
   color: var(--tertiary-container);
 }
 
-.exam-status-bar {
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 7px 12px;
-  border-bottom: 1px solid rgba(193, 198, 215, 0.14);
-  background: rgba(249, 249, 255, 0.86);
-  color: var(--on-surface-variant);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.exam-status-bar span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
 .exam-timer {
   min-width: 62px;
   text-align: right;
@@ -9307,37 +9289,6 @@ img {
 .editor-textarea:focus-visible {
   outline-color: rgba(0, 88, 188, 0.26);
   box-shadow: none;
-}
-
-.editor-canvas:focus-within::after {
-  content: "✎ 正在写作";
-  position: absolute;
-  top: 18px;
-  right: 22px;
-  z-index: 4;
-  pointer-events: none;
-  border: 1px solid rgba(0, 88, 188, 0.14);
-  border-radius: 999px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.78);
-  color: var(--primary);
-  box-shadow: 0 8px 18px rgba(0, 88, 188, 0.08);
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-  animation: writing-focus-breathe 1800ms var(--ease-standard) infinite;
-}
-
-@keyframes writing-focus-breathe {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: translateY(0);
-  }
-  50% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
 }
 
 .editor-error.is-info {
@@ -9581,12 +9532,6 @@ body.is-resizing-editor * {
     display: none;
   }
 
-  .exam-status-bar {
-    max-width: 100vw;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-  }
-
   .editor-canvas {
     min-height: 560px;
   }
@@ -9710,10 +9655,6 @@ body.is-resizing-editor * {
   animation-iteration-count: infinite !important;
 }
 
-.reduce-motion .editor-canvas:focus-within::after {
-  animation: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -9732,10 +9673,6 @@ body.is-resizing-editor * {
   .history-refresh-btn .is-spinning {
     animation-duration: 1.5s !important;
     animation-iteration-count: infinite !important;
-  }
-
-  .editor-canvas:focus-within::after {
-    animation: none;
   }
 }
 
@@ -9990,6 +9927,7 @@ body.is-resizing-editor * {
   .exam-topbar {
     height: auto;
     min-height: 64px;
+    flex-basis: auto;
     flex-wrap: wrap;
     padding: 12px 16px;
   }
@@ -10013,12 +9951,6 @@ body.is-resizing-editor * {
 
   .resizer-handle {
     display: none;
-  }
-
-  .exam-status-bar {
-    max-width: 100vw;
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
   }
 
   .editor-canvas {
@@ -10841,7 +10773,7 @@ body.is-resizing-editor * {
   }
 }
 
-/* Full-test editor alignment and compact status layout */
+/* Full-test editor tab alignment */
 .full-test-tabs {
   width: min(280px, 100%);
   display: grid;
@@ -10867,27 +10799,6 @@ body.is-resizing-editor * {
   border-radius: 999px;
 }
 
-.exam-status-bar {
-  flex-wrap: wrap;
-  align-content: center;
-  gap: 7px 10px;
-  padding: 7px var(--gutter);
-}
-
-.exam-status-bar span {
-  min-height: 24px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.5);
-  padding: 3px 8px;
-}
-
-@media (max-width: 920px) {
-  .exam-status-bar {
-    max-width: none;
-    overflow-x: visible;
-  }
-}
-
 @media (max-width: 720px) {
   .exam-info-pill {
     overflow-x: auto;
@@ -10897,15 +10808,6 @@ body.is-resizing-editor * {
 
   .exam-info-item {
     flex: 0 0 auto;
-  }
-
-  .exam-status-bar {
-    align-items: stretch;
-  }
-
-  .exam-status-bar span {
-    max-width: 100%;
-    white-space: normal;
   }
 
   .full-test-tabs {
