@@ -2,7 +2,7 @@ import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { extractErrorsFromRecord, buildNormalizedKey } from '@/lib/error-extraction'
-import { writingRecordFromRow } from '@/lib/writing-record-persistence'
+import { SubmittedWritingRecordFilter, writingRecordFromRow } from '@/lib/writing-record-persistence'
 
 const BATCH_SIZE = 3
 
@@ -17,6 +17,7 @@ export async function POST() {
     .from('writing_records')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .or(SubmittedWritingRecordFilter)
 
   const { data: processedRecords } = await service
     .from('writing_error_occurrences')
@@ -31,6 +32,7 @@ export async function POST() {
       .from('writing_records')
       .select('id')
       .eq('user_id', userId)
+      .or(SubmittedWritingRecordFilter)
       .is('error_extracted_at', null)
       .order('submitted_at', { ascending: false })
       .limit(BATCH_SIZE)
@@ -40,6 +42,7 @@ export async function POST() {
       .from('writing_records')
       .select('id')
       .eq('user_id', userId)
+      .or(SubmittedWritingRecordFilter)
       .order('submitted_at', { ascending: false })
       .limit(50)
     

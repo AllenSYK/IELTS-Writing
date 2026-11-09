@@ -1,6 +1,7 @@
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+import { SubmittedWritingRecordFilter } from '@/lib/writing-record-persistence'
 
 export async function GET() {
   const check = await requireActiveWebLicense()
@@ -13,6 +14,7 @@ export async function GET() {
     .from('writing_records')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId)
+    .or(SubmittedWritingRecordFilter)
 
   const { count: errorPatterns } = await service
     .from('writing_error_patterns')
@@ -30,6 +32,7 @@ export async function GET() {
       .from('writing_records')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
+      .or(SubmittedWritingRecordFilter)
       .not('error_extracted_at', 'is', null)
     extractedRecords = count ?? 0
   } catch {

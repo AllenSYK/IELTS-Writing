@@ -2,6 +2,7 @@ import { createApiObservation } from '@/lib/api-observability'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getCurrentSupabaseUser } from '@/lib/web-license/auth'
 import { parseBand } from '@/lib/ielts-scoring'
+import { SubmittedWritingRecordFilter } from '@/lib/writing-record-persistence'
 import type { WritingRecordListItem } from '@/lib/writing-records'
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -107,8 +108,7 @@ export async function GET(request: Request) {
         "record_data->>'studyPlanTaskId'"
       ].join(', '))
       .eq('user_id', user.id)
-      // Legacy feedback rewrites inserted placeholders before an essay was submitted.
-      .or('revision_reason.isdistinct.feedback_rewrite,original_essay.isdistinct."",evaluation.isdistinct."{}"')
+      .or(SubmittedWritingRecordFilter)
       .order('submitted_at', { ascending: false })
       .limit(50))
 

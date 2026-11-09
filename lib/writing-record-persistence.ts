@@ -5,6 +5,10 @@ import {
   type WritingRecord
 } from '@/lib/writing-records'
 
+// Older versions created empty records when a user started a feedback rewrite.
+export const SubmittedWritingRecordFilter =
+  'revision_reason.isdistinct.feedback_rewrite,original_essay.isdistinct."",evaluation.isdistinct."{}"'
+
 type WritingRecordRow = {
   id: string
   user_id: string
