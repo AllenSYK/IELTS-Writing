@@ -1,3 +1,4 @@
+import { refreshRollingPlan } from '@/lib/study-plan/rolling'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
@@ -17,13 +18,22 @@ export async function POST() {
 
   const { data: activePlan } = await service
     .from('study_plans')
-    .select('id, preferences_snapshot, goals_snapshot')
+    .select('id, preferences_snapshot, goals_snapshot, adaptive_through')
     .eq('user_id', userId)
     .eq('status', 'active')
     .maybeSingle()
 
   if (!activePlan) {
     return json({ success: false, message: 'No active plan found' }, { status: 404 })
+  }
+
+  if (activePlan.adaptive_through) {
+    try {
+      const updated = await refreshRollingPlan(service, userId, 'calendar')
+      return json({ success: true, updated, rolling: true })
+    } catch {
+      return json({ success: false, message: '暂时无法补排学习任务。' }, { status: 503 })
+    }
   }
 
   const today = getDateKeyInTimeZone()

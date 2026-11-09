@@ -4,6 +4,7 @@ import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { processGenerationJob } from '@/lib/study-plan-generation'
+import { validDateKey } from '@/lib/study-plan/config'
 import { studyPlanAdjustmentMonthRange } from '@/lib/study-plan-adjustments'
 
 export const maxDuration = 300
@@ -12,7 +13,7 @@ const CreateJobSchema = z.object({
   overallTarget: z.number().min(5.5).max(9).optional(),
   task1Target: z.number().min(5.5).max(9).optional(),
   task2Target: z.number().min(5.5).max(9).optional(),
-  examDate: z.string().nullable().optional(),
+  examDate: z.string().refine(validDateKey).nullable().optional(),
   sessionsPerWeek: z.number().int().min(1).max(7).optional(),
   minutesPerSession: z.number().int().min(10).max(120).optional(),
   intensity: z.enum(['relaxed', 'standard', 'intensive']).optional(),
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
   try {
     body = CreateJobSchema.parse(await request.json())
   } catch {
-    body = {}
+    return json({ success: false, message: '请检查学习计划设置。' }, { status: 400 })
   }
 
   // Validate ratio sum
@@ -52,7 +53,12 @@ export async function POST(request: Request) {
 
   const service = createSupabaseServiceRoleClient()
   const userId = check.user.id
-  const jobType = body.sourcePlanId ? 'replan' : 'initial_generation'
+  const activePlan = await service.from('study_plans').select('id').eq('user_id', userId).eq('status', 'active').maybeSingle()
+  if (activePlan.error) return json({ success: false, message: '无法读取当前学习计划。' }, { status: 500 })
+  if (body.sourcePlanId && body.sourcePlanId !== activePlan.data?.id) {
+    return json({ success: false, message: '当前计划已更新，请刷新页面。' }, { status: 409 })
+  }
+  const jobType = activePlan.data ? 'replan' : 'initial_generation'
 
   // Check for existing active job (deduplication)
   const { data: activeJob } = await service
@@ -120,12 +126,16 @@ export async function POST(request: Request) {
   }
 
   // Update profile if needed
-  if (body.overallTarget !== undefined || body.sessionsPerWeek !== undefined || body.examDate !== undefined) {
+  if (Object.keys(body).length > 0) {
+    const plannerOptions = Object.fromEntries(
+      Object.entries(body).filter(([key]) => ['weaknesses', 'rewriteFrequency', 'mockFrequency', 'useErrorNotebook', 'adjustmentSensitivity'].includes(key))
+    )
     const profileUpdates: Record<string, unknown> = { user_id: userId }
     if (body.overallTarget !== undefined) profileUpdates.overall_target = body.overallTarget
     if (body.task1Target !== undefined) profileUpdates.task1_target = body.task1Target
     if (body.task2Target !== undefined) profileUpdates.task2_target = body.task2Target
     if (body.examDate !== undefined) profileUpdates.exam_date = body.examDate
+    if (body.preferredDays !== undefined) profileUpdates.preferred_days = body.preferredDays
     if (body.sessionsPerWeek !== undefined) profileUpdates.sessions_per_week = body.sessionsPerWeek
     if (body.minutesPerSession !== undefined) profileUpdates.minutes_per_session = body.minutesPerSession
     if (body.intensity !== undefined) profileUpdates.intensity = body.intensity
@@ -135,9 +145,15 @@ export async function POST(request: Request) {
     if (body.questionBankRatio !== undefined) profileUpdates.question_bank_ratio = body.questionBankRatio
     if (body.aiGeneratedRatio !== undefined) profileUpdates.ai_generated_ratio = body.aiGeneratedRatio
 
-    await service
+    if (Object.keys(plannerOptions).length > 0) {
+      const existing = await service.from('study_plan_profiles').select('planner_options').eq('user_id', userId).maybeSingle()
+      if (existing.error) return json({ success: false, message: '学习设置读取失败。' }, { status: 500 })
+      profileUpdates.planner_options = { ...(existing.data?.planner_options ?? {}), ...plannerOptions }
+    }
+    const { error } = await service
       .from('study_plan_profiles')
       .upsert(profileUpdates, { onConflict: 'user_id' })
+    if (error) return json({ success: false, message: '学习设置保存失败。' }, { status: 500 })
   }
 
   // Create new job
@@ -149,7 +165,7 @@ export async function POST(request: Request) {
       status: 'queued',
       progress: 0,
       job_type: jobType,
-      source_plan_id: body.sourcePlanId ?? null,
+      source_plan_id: activePlan.data?.id ?? null,
       input_data: body,
       heartbeat_at: now,
       stage: 'queued',
@@ -159,6 +175,9 @@ export async function POST(request: Request) {
     .single()
 
   if (jobError || !job) {
+    if (jobError?.message?.includes('STUDY_PLAN_JOB_ALREADY_ACTIVE')) {
+      return json({ success: false, message: '已有学习计划正在生成，请稍后刷新。' }, { status: 409 })
+    }
     if (jobError?.message?.includes('STUDY_PLAN_MONTHLY_ADJUSTMENT_LIMIT')) {
       return json({
         success: false,

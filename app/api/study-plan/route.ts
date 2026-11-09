@@ -1,7 +1,13 @@
+import type { QuestionAssignments } from '@/lib/study-plan/question-allocation'
+import { plannerConfig } from '@/lib/study-plan/config'
+import { refreshRollingPlan } from '@/lib/study-plan/rolling'
+import { getDateKeyInTimeZone, addDaysToDateKey } from '@/lib/date-utils'
 import { createApiObservation } from '@/lib/api-observability'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { studyPlanAdjustmentMonthRange, studyPlanAdjustmentQuota } from '@/lib/study-plan-adjustments'
+
+export const maxDuration = 300
 
 export async function GET(request: Request) {
   const observation = createApiObservation('/api/study-plan', request)
@@ -17,13 +23,13 @@ export async function GET(request: Request) {
   const [planResult, profileResult, quotaResult] = await Promise.all([
     observation.time('plan', () => service
       .from('study_plans')
-      .select('id, user_id, version, status, current_phase, period_start, period_end, diagnosis, preferences_snapshot, goals_snapshot, ai_model, generated_at, created_at')
+      .select('id, user_id, version, status, current_phase, period_start, period_end, diagnosis, preferences_snapshot, goals_snapshot, ai_model, generated_at, created_at, adaptive_through, adaptation_reason, adaptation_applied_at')
       .eq('user_id', userId)
       .eq('status', 'active')
       .maybeSingle()),
     observation.time('profile', () => service
       .from('study_plan_profiles')
-      .select('user_id, overall_target, task1_target, task2_target, exam_date, sessions_per_week, minutes_per_session, preferred_days, include_full_tests, include_past_papers, task1_ratio, task2_ratio, prefer_weakness, weekend_extended, timezone, intensity, allow_timed_practice, current_level, question_bank_ratio, ai_generated_ratio, analysis_snapshot, analysis_updated_at, analysis_source_record_count, analysis_latest_record_at')
+      .select('user_id, overall_target, task1_target, task2_target, exam_date, sessions_per_week, minutes_per_session, preferred_days, include_full_tests, include_past_papers, task1_ratio, task2_ratio, prefer_weakness, weekend_extended, timezone, intensity, allow_timed_practice, current_level, question_bank_ratio, ai_generated_ratio, analysis_snapshot, analysis_updated_at, analysis_source_record_count, analysis_latest_record_at, planner_options')
       .eq('user_id', userId)
       .maybeSingle()),
     observation.time('quota', () => service
@@ -36,12 +42,34 @@ export async function GET(request: Request) {
       .lt('created_at', adjustmentMonth.endsAt))
   ])
 
+  // Most calendar reads only load the saved plan. Fill the horizon when a local date advances.
+  if (planResult.data?.adaptive_through) {
+    const saved = planResult.data.preferences_snapshot as Record<string, unknown>
+    const current = plannerConfig(profileResult.data, { ...saved, ...(planResult.data.goals_snapshot as Record<string, unknown>) })
+    const previous = plannerConfig(null, { ...saved, ...(planResult.data.goals_snapshot as Record<string, unknown>) }, true)
+    const horizon = addDaysToDateKey(getDateKeyInTimeZone(new Date(), current.preferences.timezone), 6)
+    const through = planResult.data.period_end < horizon ? planResult.data.period_end : horizon
+    const dirty = await service.from('study_plan_tasks').select('id')
+      .eq('plan_id', planResult.data.id).in('status', ['completed', 'skipped'])
+      .gt('updated_at', planResult.data.adaptation_applied_at ?? planResult.data.created_at).limit(1)
+    if (planResult.data.adaptive_through < through || dirty.data?.length
+      || JSON.stringify(current) !== JSON.stringify(previous)) {
+      const changed = await refreshRollingPlan(service, userId, 'calendar').catch(() => false)
+      if (changed) {
+        const updated = await service.from('study_plans')
+          .select('id, user_id, version, status, current_phase, period_start, period_end, diagnosis, preferences_snapshot, goals_snapshot, ai_model, generated_at, created_at, adaptive_through, adaptation_reason, adaptation_applied_at')
+          .eq('id', planResult.data.id).eq('user_id', userId).maybeSingle()
+        if (updated.data) planResult.data = updated.data
+      }
+    }
+  }
+
   let tasks: unknown[] = []
   if (planResult.data) {
     const planId = planResult.data.id
     const { data: taskData } = await observation.time('tasks', () => service
         .from('study_plan_tasks')
-        .select('id, plan_id, user_id, scheduled_date, task_type, source, question_id, title, description, difficulty, priority, focus_criteria, focus_error_tags, estimated_minutes, status, writing_record_id, draft_id, started_at, completed_at, skip_reason, generated_reason, writing_mode, question_source, original_question_source, fallback_reason, created_at, updated_at')
+        .select('id, plan_id, user_id, scheduled_date, task_type, source, question_id, title, description, difficulty, priority, focus_criteria, focus_error_tags, estimated_minutes, status, writing_record_id, draft_id, started_at, completed_at, skip_reason, generated_reason, writing_mode, question_source, original_question_source, fallback_reason, training_reason, assigned_questions, is_locked, created_at, updated_at')
         .eq('plan_id', planId)
         .order('scheduled_date', { ascending: true }))
     tasks = (taskData ?? []).map((t) => mapTask(t as Record<string, unknown>))
@@ -66,6 +94,8 @@ function mapPlan(row: Record<string, unknown>, tasks: unknown[]) {
     currentPhase: row.current_phase ?? 'foundation',
     periodStart: row.period_start,
     periodEnd: row.period_end,
+    adaptationReason: row.adaptation_reason,
+    adaptiveThrough: row.adaptive_through,
     diagnosis: row.diagnosis,
     preferencesSnapshot: row.preferences_snapshot,
     goalsSnapshot: row.goals_snapshot,
@@ -77,6 +107,7 @@ function mapPlan(row: Record<string, unknown>, tasks: unknown[]) {
 }
 
 function mapTask(row: Record<string, unknown>) {
+  const assigned = Object.values((row.assigned_questions ?? {}) as QuestionAssignments)
   return {
     id: row.id,
     planId: row.plan_id,
@@ -104,6 +135,15 @@ function mapTask(row: Record<string, unknown>) {
     originalQuestionSource: row.original_question_source ?? null,
     fallbackReason: row.fallback_reason ?? null,
     createdAt: row.created_at,
+    trainingReason: row.training_reason ?? undefined,
+    assignedSourceCounts: {
+      bank: assigned.filter(item => item?.actual === 'question_bank').length,
+      ai: assigned.filter(item => item?.actual === 'ai_generated').length,
+      unavailable: assigned.filter(item => item?.actual === null).length
+    },
+    hasAssignedMock: Boolean(row.task_type === 'full_test'
+      && (row.assigned_questions as { task1?: { question?: unknown } })?.task1?.question
+      && (row.assigned_questions as { task2?: { question?: unknown } })?.task2?.question),
     updatedAt: row.updated_at
   }
 }
@@ -136,6 +176,7 @@ function mapProfile(
     currentLevel: row.current_level,
     questionBankRatio: row.question_bank_ratio ?? 80,
     aiGeneratedRatio: row.ai_generated_ratio ?? 20,
+    plannerOptions: row.planner_options ?? {},
     analysisSnapshot: storedSnapshot,
     analysisUpdatedAt: row.analysis_updated_at ?? null,
     analysisSourceRecordCount: row.analysis_source_record_count ?? null,

@@ -1,3 +1,17 @@
+import type { TrainingReason } from '@/lib/study-plan/allocator'
+import { normalizeCriterion, type Criterion } from '@/lib/study-plan/criteria'
+
+export type StudyPlanTaskAbility = {
+  samples: number
+  confidence: 'low' | 'medium' | 'high'
+  criteria: Partial<Record<Criterion, number>>
+  criterionTrends?: Partial<Record<Criterion, number>>
+  lastPracticedAt: string | null
+  trend7: number | null
+  trend30: number | null
+  errors: Array<{ tag: string; frequency: number; recentRate: number | null; earlierRate: number | null }>
+}
+
 export type StudyPlanStatus = 'active' | 'replaced' | 'completed' | 'paused'
 
 export type StudyPlanTaskType =
@@ -80,6 +94,12 @@ export type StudyPlanProfile = {
   currentLevel: number | null
   questionBankRatio: number
   aiGeneratedRatio: number
+  plannerOptions?: {
+    rewriteFrequency?: string
+    mockFrequency?: string
+    useErrorNotebook?: boolean
+    adjustmentSensitivity?: string
+  }
   analysisSnapshot?: Record<string, unknown> | null
   analysisUpdatedAt?: string | null
   analysisSourceRecordCount?: number
@@ -87,6 +107,7 @@ export type StudyPlanProfile = {
 }
 
 export type StudyPlanDiagnosis = {
+  taskAbilities?: Record<'task1' | 'task2', StudyPlanTaskAbility>
   currentAverage: number | null
   task1Average: number | null
   task2Average: number | null
@@ -150,6 +171,9 @@ export type StudyPlanTask = {
   questionSource: QuestionSource
   originalQuestionSource?: QuestionSource
   fallbackReason?: string
+  trainingReason?: TrainingReason
+  hasAssignedMock?: boolean
+  assignedSourceCounts?: { bank: number; ai: number; unavailable: number }
   createdAt: string
   updatedAt: string
 }
@@ -161,6 +185,8 @@ export type StudyPlan = {
   status: StudyPlanStatus
   periodStart: string
   periodEnd: string
+  adaptiveThrough?: string | null
+  adaptationReason?: string | null
   currentPhase: PlanPhase
   diagnosis: StudyPlanDiagnosis
   preferencesSnapshot: StudyPlanPreferences
@@ -241,6 +267,13 @@ export const PlanPhaseLabels: Record<PlanPhase, string> = {
 
 export const ErrorTagLabels: Record<string, string> = {
   missing_overview: '缺少概述',
+  grammar: '语法',
+  sentence_structure: '句子结构',
+  overview: '总体概述',
+  key_features: '关键数据选择',
+  comparison: '数据比较',
+  trend_description: '趋势描述',
+  weak_support: '论据支撑',
   incomplete_task_response: '任务回应不完整',
   unsupported_ideas: '观点缺乏支撑',
   unclear_position: '立场不明确',
@@ -295,6 +328,10 @@ export const ShortCriterionLabels: Record<string, string> = {
   coherenceCohesion: 'CC',
   lexicalResource: 'LR',
   grammaticalRangeAccuracy: 'GRA'
+}
+
+export function studyPlanCriterionLabel(value: string) {
+  return ShortCriterionLabels[normalizeCriterion(value) ?? value] ?? value
 }
 
 export function isWritableTaskType(taskType: StudyPlanTaskType): boolean {

@@ -133,8 +133,8 @@ async function loadAssignedPracticeQuestion({
   studyPlanTaskId: string | null
   pastPaperId: string | null
   mode: WritingTaskType
-}): Promise<WritingQuestion | null> {
-  if (!studyPlanTaskId && !pastPaperId) return null
+}): Promise<{ question: WritingQuestion | null; mock?: { task1: WritingQuestion; task2: WritingQuestion }; timed: boolean }> {
+  if (!studyPlanTaskId && !pastPaperId) return { question: null, timed: true }
 
   const endpoint = studyPlanTaskId
     ? `/api/study-plan/tasks/${encodeURIComponent(studyPlanTaskId)}/question`
@@ -147,14 +147,28 @@ async function loadAssignedPracticeQuestion({
     success?: boolean
     task?: { questionSource?: string }
     question?: unknown
+    assignedQuestion?: unknown
+    mockQuestions?: { task1?: unknown; task2?: unknown }
+    timed?: boolean
     message?: string
   } | null
 
   if (!response.ok || !data?.success) {
     throw new Error(data?.message || '后台题库中的指定题目读取失败。')
   }
+  if (data.mockQuestions && mode === 'mock') {
+    const task1 = normalizeGeneratedQuestion(data.mockQuestions.task1)
+    const task2 = normalizeGeneratedQuestion(data.mockQuestions.task2)
+    if (task1.taskType !== 'task1' || task2.taskType !== 'task2') throw new Error('模考题目类型不正确。')
+    return { question: null, mock: { task1, task2 }, timed: true }
+  }
+  if (data.assignedQuestion && mode !== 'mock') {
+    const question = normalizeGeneratedQuestion(data.assignedQuestion)
+    if (question.taskType !== mode) throw new Error('题目类型与学习任务不一致。')
+    return { question, timed: data.timed !== false }
+  }
   if (!data.question) {
-    if (studyPlanTaskId && data.task?.questionSource !== 'question_bank') return null
+    if (studyPlanTaskId && data.task?.questionSource !== 'question_bank') return { question: null, timed: true }
     throw new Error('学习规划没有返回已绑定的后台题目。')
   }
 
@@ -162,7 +176,7 @@ async function loadAssignedPracticeQuestion({
   if (mode !== 'mock' && question.taskType !== mode) {
     throw new Error('后台题目类型与当前写作任务不一致。')
   }
-  return question
+  return { question, timed: true }
 }
 
 function formatTime(seconds: number) {
@@ -289,6 +303,8 @@ export default function WritePage() {
   const lastSavedOutcomeRef = useRef<DraftSaveOutcome>('skipped')
   const mountedRef = useRef(true)
   const persistEditorPositionRef = useRef(0)
+  const [timedPractice, setTimedPractice] = useState(true)
+  const practiceOpenedAt = useRef<number | null>(null)
   const timeLeftRef = useRef(mode === 'task1' ? 1200 : mode === 'task2' ? 2400 : 3600)
   const abortControllerRef = useRef<AbortController | null>(null)
   const pendingEvaluationsRef = useRef(new Map<string, Promise<EssayEvaluation>>())
@@ -479,9 +495,9 @@ export default function WritePage() {
           pastPaperId,
           mode
         })
-          .then((question) => ({ question, error: null as Error | null }))
+          .then((result) => ({ ...result, error: null as Error | null }))
           .catch((caught) => ({
-            question: null,
+            question: null, mock: undefined, timed: true,
             error: caught instanceof Error ? caught : new Error('后台题库中的指定题目读取失败。')
           }))
         const sourceRecordPromise = recordId
@@ -537,6 +553,8 @@ export default function WritePage() {
           return
         }
         setPromptSelection(selection)
+        setTimedPractice(assignedQuestionResult.timed)
+        practiceOpenedAt.current = Date.now()
 
         // A rewrite's source only seeds the draft before its first save.
         const hasDraftSnapshot = managedDraft?.kind === 'full_test'
@@ -585,8 +603,8 @@ export default function WritePage() {
               }
               return restored
             }
-            return questionFromDraftTask(fullDraft.task1, 'task1')
-              || (restoredTask1 ? fallback.task1 : generateInitialQuestion('task1', selection))
+            return questionFromDraftTask(fullDraft.task1, 'task1') ?? assignedQuestionResult.mock?.task1
+              ?? (restoredTask1 ? fallback.task1 : generateInitialQuestion('task1', selection))
           })()
 
           const task2QuestionPromise = (async () => {
@@ -608,8 +626,8 @@ export default function WritePage() {
                 imageUrl: task2Comp?.imageUrl
               })
             }
-            return questionFromDraftTask(fullDraft.task2, 'task2')
-              || (restoredTask2 ? fallback.task2 : generateInitialQuestion('task2', selection))
+            return questionFromDraftTask(fullDraft.task2, 'task2') ?? assignedQuestionResult.mock?.task2
+              ?? (restoredTask2 ? fallback.task2 : generateInitialQuestion('task2', selection))
           })()
 
           const [task1Question, task2Question] = await Promise.all([
@@ -1015,7 +1033,8 @@ export default function WritePage() {
         essay,
         originalEssay: essay,
         submittedAt: now,
-        durationSeconds: durationMinutes * 60 - timeLeftRef.current,
+        durationSeconds: timedPractice ? durationMinutes * 60 - timeLeftRef.current
+          : Math.round((Date.now() - (practiceOpenedAt.current ?? Date.now())) / 1000),
         wordCount,
         evaluation,
         acceptedChanges: [],
@@ -1436,11 +1455,11 @@ export default function WritePage() {
         </div>
 
         <div className="exam-info-pill">
-          <IsolatedTimer
+          {timedPractice && <IsolatedTimer
             timerKey={timerKey}
             durationMinutes={durationMinutes}
             onExpire={handleTimerExpire}
-          />
+          />}
           <div className="exam-divider" />
           <div className="exam-info-item">
             <span className="ui-label">{mode === 'mock' ? (activeMockTask === 'task1' ? 'Task 1' : 'Task 2') : '字数'}</span>
