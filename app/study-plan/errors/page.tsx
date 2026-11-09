@@ -140,7 +140,7 @@ export default function ErrorNotebookPage() {
   if (error) {
     return (
       <main className="ui-page" data-main-content tabIndex={-1}>
-        <section className="analytics-main" style={{ paddingTop: 40 }}>
+        <section className="analytics-main" style={{ paddingTop: 'var(--stack-sm)' }}>
           <GlassPanel level={2} className="empty-state" style={{ textAlign: 'center', padding: 48 }}>
             <MaterialIcon name="error" size={48} />
             <h2 className="ui-title-headline" style={{ marginTop: 16 }}>加载失败</h2>
@@ -160,19 +160,7 @@ export default function ErrorNotebookPage() {
 
   return (
     <main className="ui-page" data-main-content tabIndex={-1}>
-      <section className="analytics-main" style={{ paddingTop: 40 }}>
-        <header className="page-section-header">
-          <div>
-            <p className="ui-body-md">
-              自动汇总你在雅思写作中反复出现的错误，针对性复习。
-            </p>
-          </div>
-          <a href="/study-plan" className="ui-secondary-button" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <MaterialIcon name="arrow_back" size={18} />
-            返回学习规划
-          </a>
-        </header>
-
+      <section className="analytics-main" style={{ paddingTop: 'var(--stack-sm)' }}>
         {recordFilter ? (
           <div
             style={{
