@@ -32,7 +32,7 @@ export async function POST(
     .select('id, focus_criteria, focus_error_tags, estimated_minutes')
     .eq('id', id)
     .eq('user_id', check.user.id)
-    .in('status', ['pending', 'in_progress'])
+    .eq('status', 'pending')
     .single()
 
   if (fetchError || !existing) return json({ success: false, message: 'Task not found' }, { status: 404 })
@@ -48,6 +48,12 @@ export async function POST(
     .from('study_plan_tasks')
     .update({
       task_type: normalizedType,
+      is_locked: true,
+      assigned_questions: {},
+      question_id: null,
+      question_source: 'question_bank',
+      original_question_source: null,
+      fallback_reason: null,
       title: body.newTitle,
       description: body.newDescription,
       writing_mode: writingMode,
@@ -56,7 +62,7 @@ export async function POST(
       completed_at: null,
       writing_record_id: null
     })
-    .eq('id', id)
+    .eq('id', id).eq('user_id', check.user.id).eq('status', 'pending')
 
   if (error) return json({ success: false, message: 'Update failed' }, { status: 500 })
   return json({ success: true })

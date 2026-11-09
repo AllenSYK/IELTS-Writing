@@ -1,13 +1,18 @@
+import { after } from 'next/server'
+import { refreshRollingPlan } from '@/lib/study-plan/rolling'
 import { z } from 'zod'
 import { json } from '@/lib/http'
-import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { createSupabaseServerClient, createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 
+export const maxDuration = 300
+
 const PatchSchema = z.object({
   status: z.enum(['in_progress', 'skipped']).optional(),
-  writingRecordId: z.string().uuid().optional()
+  writingRecordId: z.string().uuid().optional(),
+  exerciseResponse: z.string().trim().min(8).max(4000).optional()
 })
 
 export async function PATCH(
@@ -61,7 +66,8 @@ export async function PATCH(
       return json({ success: true, result: { taskId: id, status: 'completed', idempotent: true } })
     }
 
-    const { data, error } = await service
+    const authenticated = await createSupabaseServerClient()
+    const { data, error } = await authenticated
       .rpc('complete_study_plan_task', { p_task_id: id, p_writing_record_id: body.writingRecordId })
       .single()
 
@@ -82,9 +88,28 @@ export async function PATCH(
       return json({ success: false, message: error.message }, { status: 500 })
     }
 
-    updateAbilityProfile(service, userId).catch(() => {})
+    after(async () => {
+      const adapted = await refreshRollingPlan(service, userId, 'completion').catch(error => {
+        console.error('Study plan adaptation failed', error)
+        return false
+      })
+      if (!adapted) await updateAbilityProfile(service, userId)
+    })
 
     return json({ success: true, result: data })
+  }
+
+  if (body.exerciseResponse && !body.status && !body.writingRecordId) {
+    const result = await service.from('study_plan_tasks')
+      .update({ status: 'completed', completed_at: new Date().toISOString(), exercise_response: body.exerciseResponse })
+      .eq('id', id).eq('user_id', userId)
+      .in('task_type', ['grammar_drill', 'vocabulary_drill', 'review']).in('status', ['pending', 'in_progress'])
+      .select('id').maybeSingle()
+    if (result.error || !result.data) return json({ success: false, message: '练习不可提交' }, { status: 409 })
+    after(() => refreshRollingPlan(service, userId, 'completion').catch(error => {
+      console.error('Study plan adaptation failed', error)
+    }))
+    return json({ success: true })
   }
 
   const updates: Record<string, unknown> = {}
@@ -99,6 +124,7 @@ export async function PATCH(
     .update(updates)
     .eq('id', id)
     .eq('user_id', userId)
+    .in('status', ['pending', 'in_progress'])
 
   if (error) return json({ success: false, message: error.message }, { status: 500 })
   return json({ success: true })
@@ -124,6 +150,7 @@ async function updateAbilityProfile(service: ReturnType<typeof createSupabaseSer
       .select('id, diagnosis')
       .eq('user_id', userId)
       .eq('status', 'active')
+      .is('adaptive_through', null)
       .maybeSingle()
 
     if (activePlan) {

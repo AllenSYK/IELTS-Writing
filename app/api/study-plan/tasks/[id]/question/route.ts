@@ -1,3 +1,4 @@
+import type { QuestionAssignments } from '@/lib/study-plan/question-allocation'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
@@ -29,13 +30,37 @@ export async function POST(
   const service = createSupabaseServiceRoleClient()
   const { data: task, error: taskError } = await service
     .from('study_plan_tasks')
-    .select('id, task_type, writing_mode, question_id, question_source')
+    .select('id, task_type, writing_mode, question_id, question_source, assigned_questions, training_reason, status')
     .eq('id', id)
     .eq('user_id', check.user.id)
     .maybeSingle()
 
   if (taskError || !task) {
     return json({ success: false, code: 'STUDY_PLAN_TASK_NOT_FOUND', message: '学习任务不存在。' }, { status: 404 })
+  }
+
+  const assigned = (task.assigned_questions ?? {}) as QuestionAssignments
+  if (assigned.task1?.question || assigned.task2?.question) {
+    if (task.status === 'pending') {
+      const started = await service.from('study_plan_tasks')
+        .update({ status: 'in_progress', started_at: new Date().toISOString() })
+        .eq('id', id).eq('user_id', check.user.id).eq('status', 'pending')
+        .select('id').maybeSingle()
+      if (started.error || !started.data) {
+        const resumed = await service.from('study_plan_tasks').select('id').eq('id', id)
+          .eq('user_id', check.user.id).eq('status', 'in_progress').maybeSingle()
+        if (!resumed.data) return json({ success: false, message: '学习任务已更新，请返回计划重新打开。' }, { status: 409 })
+      }
+    } else if (task.status !== 'in_progress') {
+      return json({ success: false, message: '此任务已经结束。' }, { status: 409 })
+    }
+    return json({
+      success: true,
+      assignedQuestion: task.task_type === 'task1' ? assigned.task1?.question : assigned.task2?.question,
+      mockQuestions: task.task_type === 'full_test'
+        ? { task1: assigned.task1?.question, task2: assigned.task2?.question } : undefined,
+      timed: (task.training_reason as { timed?: boolean } | null)?.timed !== false
+    })
   }
 
   if (task.question_source !== 'question_bank') {

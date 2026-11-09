@@ -1,14 +1,23 @@
+import { refreshRollingPlan } from '@/lib/study-plan/rolling'
+import { validDateKey } from '@/lib/study-plan/config'
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
 import { getDateKeyInTimeZone } from '@/lib/date-utils'
 
+export const maxDuration = 300
+
 const UpdateSettingsSchema = z.object({
   overallTarget: z.number().min(1).max(9).optional(),
   task1Target: z.number().min(1).max(9).optional(),
   task2Target: z.number().min(1).max(9).optional(),
-  examDate: z.string().nullable().optional(),
+  examDate: z.string().refine(validDateKey).nullable().optional(),
+  rewriteFrequency: z.enum(['none', 'weekly_1', 'weekly_2', 'auto_low']).optional(),
+  mockFrequency: z.enum(['none', 'biweekly', 'weekly', 'auto_sprint']).optional(),
+  useErrorNotebook: z.boolean().optional(),
+  adjustmentSensitivity: z.enum(['conservative', 'standard', 'active']).optional(),
+  preferredDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
   sessionsPerWeek: z.number().int().min(1).max(7).optional(),
   minutesPerSession: z.number().int().min(10).max(240).optional(),
   intensity: z.enum(['relaxed', 'standard', 'intensive']).optional(),
@@ -50,7 +59,7 @@ export async function PATCH(request: Request) {
 
   const { data: activePlan } = await service
     .from('study_plans')
-    .select('id')
+    .select('id, adaptive_through')
     .eq('user_id', userId)
     .eq('status', 'active')
     .maybeSingle()
@@ -64,6 +73,7 @@ export async function PATCH(request: Request) {
   if (body.task1Target !== undefined) profileUpdates.task1_target = body.task1Target
   if (body.task2Target !== undefined) profileUpdates.task2_target = body.task2Target
   if (body.examDate !== undefined) profileUpdates.exam_date = body.examDate
+  if (body.preferredDays !== undefined) profileUpdates.preferred_days = body.preferredDays
   if (body.sessionsPerWeek !== undefined) profileUpdates.sessions_per_week = body.sessionsPerWeek
   if (body.minutesPerSession !== undefined) profileUpdates.minutes_per_session = body.minutesPerSession
   if (body.intensity !== undefined) profileUpdates.intensity = body.intensity
@@ -71,6 +81,15 @@ export async function PATCH(request: Request) {
   if (body.includeFullTests !== undefined) profileUpdates.include_full_tests = body.includeFullTests
   if (body.questionBankRatio !== undefined) profileUpdates.question_bank_ratio = body.questionBankRatio
   if (body.aiGeneratedRatio !== undefined) profileUpdates.ai_generated_ratio = body.aiGeneratedRatio
+
+  const plannerOptions = Object.fromEntries(
+    Object.entries(body).filter(([key]) => ['rewriteFrequency', 'mockFrequency', 'useErrorNotebook', 'adjustmentSensitivity'].includes(key))
+  )
+  if (Object.keys(plannerOptions).length > 0) {
+    const existing = await service.from('study_plan_profiles').select('planner_options').eq('user_id', userId).maybeSingle()
+    if (existing.error) return json({ success: false, message: '学习设置读取失败。' }, { status: 500 })
+    profileUpdates.planner_options = { ...(existing.data?.planner_options ?? {}), ...plannerOptions }
+  }
 
   if (Object.keys(profileUpdates).length === 0) {
     return json({ success: false, message: 'No changes provided' }, { status: 400 })
@@ -97,37 +116,18 @@ export async function PATCH(request: Request) {
 
   const affectedCount = count ?? 0
 
-  if (affectedCount > 0 && body.minutesPerSession !== undefined) {
-    const newMinutes = body.minutesPerSession
-    await service
-      .from('study_plan_tasks')
-      .update({ estimated_minutes: newMinutes, updated_at: new Date().toISOString() })
-      .eq('plan_id', activePlan.id)
-      .eq('user_id', userId)
-      .in('status', ['pending', 'rescheduled'])
-      .gt('scheduled_date', today)
-  }
-
-  if (body.examDate !== undefined) {
-    const daysUntilExam = body.examDate
-      ? Math.ceil((new Date(body.examDate).getTime() - Date.now()) / 86400000)
-      : null
-
-    let newPhase = 'foundation'
-    if (daysUntilExam !== null) {
-      if (daysUntilExam <= 7) newPhase = 'sprint'
-      else if (daysUntilExam <= 14) newPhase = 'integrated'
-      else if (daysUntilExam <= 28) newPhase = 'focused'
+  if (activePlan.adaptive_through) {
+    try {
+      await refreshRollingPlan(service, userId, 'settings')
+    } catch (error) {
+      console.error('Study plan settings adaptation failed', error)
+      return json({ success: false, message: '偏好已保存，但暂时未能重排任务，请稍后再试。' }, { status: 503 })
     }
-
-    await service
-      .from('study_plans')
-      .update({ current_phase: newPhase })
-      .eq('id', activePlan.id)
   }
 
   return json({
     success: true,
-    affectedTaskCount: affectedCount
+    affectedTaskCount: activePlan.adaptive_through ? affectedCount : 0,
+    legacyPlan: !activePlan.adaptive_through
   })
 }

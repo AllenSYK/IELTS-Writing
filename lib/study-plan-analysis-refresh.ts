@@ -1,3 +1,4 @@
+import { refreshRollingPlan } from '@/lib/study-plan/rolling'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { buildStudyPlanDiagnosis } from '@/lib/study-plan-diagnosis'
 import { loadFullWritingRecordsForUser } from '@/lib/server-writing-records'
@@ -131,6 +132,10 @@ export async function processAnalysisRefreshJob(jobId: string, userId: string) {
         analysis_refresh_job_id: jobId
       })
       .eq('user_id', userId)
+
+    await refreshRollingPlan(service, userId, 'completion').catch(error => {
+      console.error('Study plan adaptation after analysis failed', error)
+    })
 
     // Step 7: Mark completed
     await service

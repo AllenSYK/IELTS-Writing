@@ -1,7 +1,11 @@
+import { after } from 'next/server'
+import { refreshRollingPlan } from '@/lib/study-plan/rolling'
 import { z } from 'zod'
 import { json } from '@/lib/http'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
 import { requireActiveWebLicense } from '@/lib/web-license/auth'
+
+export const maxDuration = 300
 
 const SkipSchema = z.object({
   reason: z.enum(['no_time', 'too_hard', 'not_interested', 'already_mastered', 'other'])
@@ -24,13 +28,17 @@ export async function POST(
   const { id } = await params
   const service = createSupabaseServiceRoleClient()
 
-  const { error } = await service
+  const { data, error } = await service
     .from('study_plan_tasks')
     .update({ status: 'skipped', skip_reason: body.reason })
     .eq('id', id)
     .eq('user_id', check.user.id)
     .in('status', ['pending', 'in_progress'])
+    .select('id').maybeSingle()
 
   if (error) return json({ success: false, message: 'Task not found' }, { status: 404 })
+  if (data) after(() => refreshRollingPlan(service, check.user.id, 'skip').catch(error => {
+    console.error('Study plan adaptation failed', error)
+  }))
   return json({ success: true })
 }

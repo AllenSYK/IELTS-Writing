@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { GlassPanel, MaterialIcon } from '@/components/app-ui'
 import { useToast } from '@/components/interaction-system'
@@ -576,6 +576,7 @@ export default function StudyPlanPage() {
   const profile = state.profile ?? data?.profile ?? null
 
   const checkReplanSuggestion = useCallback(async () => {
+    if (plan?.adaptiveThrough) return
     try {
       const res = await fetch('/api/study-plan')
       const planData = await res.json() as PlanData
@@ -830,7 +831,7 @@ export default function StudyPlanPage() {
   const isReplanSetup = state.viewMode === 'replan-setup'
   const isLoadingPlan = state.viewMode === 'loading-plan'
   const showJobFailedBanner = isJobFailed(state.activeJob) && plan
-  const today = getDateKeyInTimeZone()
+  const today = getDateKeyInTimeZone(new Date(), profile?.timezone)
   const examDatePassed = Boolean(profile?.examDate && profile.examDate < today)
   const planEnded = Boolean(plan?.periodEnd && plan.periodEnd < today)
 
@@ -902,12 +903,13 @@ export default function StudyPlanPage() {
             <MonthCalendar
               plan={plan}
               currentMonth={calendarMonth}
+              timezone={profile?.timezone}
               onMonthChange={setCalendarMonth}
               onSelectTask={setSelectedTask}
             />
 
             <TodayTasks
-              tasks={plan.tasks?.filter((t) => t.scheduledDate === getDateKeyInTimeZone() && t.status !== 'rescheduled') ?? []}
+              tasks={plan.tasks?.filter((t) => t.scheduledDate === today && t.status !== 'rescheduled') ?? []}
               onSelectTask={setSelectedTask}
             />
 

@@ -32,7 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return json({ success: false, message: 'Maximum retry attempts reached' }, { status: 429 })
   }
 
-  await service
+  const retry = await service
     .from('study_plan_generation_jobs')
     .update({
       status: 'queued',
@@ -43,7 +43,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       attempt_count: (job.attempt_count as number) + 1,
       updated_at: new Date().toISOString()
     })
-    .eq('id', id)
+    .eq('id', id).eq('user_id', check.user.id).eq('status', job.status)
+    .select('id').maybeSingle()
+
+  if (retry.error?.message.includes('STUDY_PLAN_MONTHLY_ADJUSTMENT_LIMIT')) {
+    return json({ success: false, message: '本月 3 次学习计划调整机会已用完。' }, { status: 429 })
+  }
+  if (retry.error || !retry.data) {
+    return json({ success: false, message: '已有生成任务正在处理，或任务状态已变化。' }, { status: 409 })
+  }
 
   after(async () => {
     try {

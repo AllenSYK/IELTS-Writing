@@ -7,7 +7,7 @@ import {
 type StudyPlanWritingTask = Pick<
   StudyPlanTask,
   'id' | 'taskType' | 'questionId' | 'questionSource'
->
+> & Pick<StudyPlanTask, 'hasAssignedMock'>
 
 export function studyPlanWritingHref(task: StudyPlanWritingTask) {
   if (!isWritableTaskType(task.taskType)) return null
@@ -18,8 +18,8 @@ export function studyPlanWritingHref(task: StudyPlanWritingTask) {
   const isSingleQuestionTask = mode === 'task1' || mode === 'task2'
 
   if (task.questionSource === 'question_bank') {
-    if (!isSingleQuestionTask) return null
-    if (task.questionId) params.set('pastPaper', task.questionId)
+    if (!isSingleQuestionTask && !task.hasAssignedMock) return null
+    if (isSingleQuestionTask && task.questionId) params.set('pastPaper', task.questionId)
   }
 
   return `/write/${mode}?${params.toString()}`

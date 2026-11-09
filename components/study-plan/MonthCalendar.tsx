@@ -11,6 +11,9 @@ import type { QuestionSource } from '@/lib/study-plan-types'
 import { styles } from './styles'
 
 function taskSourceLabel(task: StudyPlanTask) {
+  if (task.taskType === 'full_test' && task.hasAssignedMock && task.assignedSourceCounts) {
+    return `题库 ${task.assignedSourceCounts.bank} · AI ${task.assignedSourceCounts.ai}`
+  }
   if (isWritableTaskType(task.taskType)) {
     return QuestionSourceLabels[task.questionSource as QuestionSource] ?? '题库'
   }
@@ -30,13 +33,14 @@ function getTaskColor(taskType: string, completed: boolean): string {
   }
 }
 
-export function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask }: {
+export function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask, timezone }: {
   plan: StudyPlan
   currentMonth: string
+  timezone?: string
   onMonthChange: (m: string) => void
   onSelectTask: (task: StudyPlanTask) => void
 }) {
-  const today = getDateKeyInTimeZone()
+  const today = getDateKeyInTimeZone(new Date(), timezone)
   const [year, month] = currentMonth.split('-').map(Number)
   const firstDay = new Date(year, month - 1, 1)
   const lastDay = new Date(year, month, 0)
@@ -52,8 +56,7 @@ export function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask 
     onMonthChange(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
   const goToday = () => {
-    const now = new Date()
-    onMonthChange(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+    onMonthChange(today.slice(0, 7))
   }
 
   const tasksByDate = useMemo(() => {
@@ -87,7 +90,7 @@ export function MonthCalendar({ plan, currentMonth, onMonthChange, onSelectTask 
         </button>
       </div>
 
-      <p className="study-calendar-hint">点击有任务的日期查看当天安排。</p>
+      <p className="study-calendar-hint">{plan.adaptiveThrough ? `任务已排到 ${plan.adaptiveThrough}，之后会自动补排。点击日期查看安排。` : '点击有任务的日期查看当天安排。'}</p>
       <div className="study-calendar-weekdays">
         {weekDays.map((d) => (
           <div key={d} style={styles.calendarWeekDay}>{d}</div>
